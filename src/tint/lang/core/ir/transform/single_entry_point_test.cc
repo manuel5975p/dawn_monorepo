@@ -228,9 +228,9 @@ TEST_F(IR_SingleEntryPointTest, DirectVariables) {
 
     auto* src = R"(
 $B1: {  # root
-  %v1:ptr<private, i32, read_write> = var
-  %v2:ptr<private, i32, read_write> = var
-  %v3:ptr<private, i32, read_write> = var
+  %v1:ptr<private, i32, read_write> = var undef
+  %v2:ptr<private, i32, read_write> = var undef
+  %v3:ptr<private, i32, read_write> = var undef
 }
 
 %foo = @fragment func():void {
@@ -250,8 +250,8 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %v1:ptr<private, i32, read_write> = var
-  %v2:ptr<private, i32, read_write> = var
+  %v1:ptr<private, i32, read_write> = var undef
+  %v2:ptr<private, i32, read_write> = var undef
 }
 
 %foo = @fragment func():void {
@@ -280,9 +280,9 @@ TEST_F(IR_SingleEntryPointTest, DirectOverrides) {
 
     auto* src = R"(
 $B1: {  # root
-  %o1:i32 = override @id(1)
-  %o2:i32 = override @id(2)
-  %o3:i32 = override @id(3)
+  %o1:i32 = override undef @id(1)
+  %o2:i32 = override undef @id(2)
+  %o3:i32 = override undef @id(3)
 }
 
 %foo = @fragment func():void {
@@ -302,8 +302,8 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %o1:i32 = override @id(1)
-  %o2:i32 = override @id(2)
+  %o1:i32 = override undef @id(1)
+  %o2:i32 = override undef @id(2)
 }
 
 %foo = @fragment func():void {
@@ -350,9 +350,9 @@ $B1: {  # root
   %3:i32 = add %2, 4i
   %4:i32 = mul 3i, 5i
   %5:i32 = add %4, 5i
-  %o1:i32 = override, %1 @id(1)
-  %o2:i32 = override, %3 @id(2)
-  %o3:i32 = override, %5 @id(3)
+  %o1:i32 = override %1 @id(1)
+  %o2:i32 = override %3 @id(2)
+  %o3:i32 = override %5 @id(3)
 }
 
 %foo = @fragment func():void {
@@ -375,8 +375,8 @@ $B1: {  # root
   %1:i32 = mul 2i, 4i
   %2:i32 = mul 2i, 4i
   %3:i32 = add %2, 4i
-  %o1:i32 = override, %1 @id(1)
-  %o2:i32 = override, %3 @id(2)
+  %o1:i32 = override %1 @id(1)
+  %o2:i32 = override %3 @id(2)
 }
 
 %foo = @fragment func():void {
@@ -412,10 +412,10 @@ TEST_F(IR_SingleEntryPointTest, TransitiveVariableReferences) {
 
     auto* src = R"(
 $B1: {  # root
-  %unused_var:ptr<private, i32, read_write> = var
-  %v1:ptr<private, i32, read_write> = var
-  %v2:ptr<private, i32, read_write> = var
-  %v3:ptr<private, i32, read_write> = var
+  %unused_var:ptr<private, i32, read_write> = var undef
+  %v1:ptr<private, i32, read_write> = var undef
+  %v2:ptr<private, i32, read_write> = var undef
+  %v3:ptr<private, i32, read_write> = var undef
 }
 
 %unused_func = func():void {
@@ -453,9 +453,9 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %v1:ptr<private, i32, read_write> = var
-  %v2:ptr<private, i32, read_write> = var
-  %v3:ptr<private, i32, read_write> = var
+  %v1:ptr<private, i32, read_write> = var undef
+  %v2:ptr<private, i32, read_write> = var undef
+  %v3:ptr<private, i32, read_write> = var undef
 }
 
 %f1 = func():void {
@@ -509,10 +509,10 @@ TEST_F(IR_SingleEntryPointTest, TransitiveOverrideReferences) {
 
     auto* src = R"(
 $B1: {  # root
-  %unused_override:i32 = override @id(5)
-  %o1:i32 = override @id(1)
-  %o2:i32 = override @id(2)
-  %o3:i32 = override @id(3)
+  %unused_override:i32 = override undef @id(5)
+  %o1:i32 = override undef @id(1)
+  %o2:i32 = override undef @id(2)
+  %o3:i32 = override undef @id(3)
 }
 
 %unused_func = func():void {
@@ -550,9 +550,9 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %o1:i32 = override @id(1)
-  %o2:i32 = override @id(2)
-  %o3:i32 = override @id(3)
+  %o1:i32 = override undef @id(1)
+  %o2:i32 = override undef @id(2)
+  %o3:i32 = override undef @id(3)
 }
 
 %f1 = func():void {
@@ -699,13 +699,13 @@ TEST_F(IR_SingleEntryPointTest, RemoveMultipleVariables) {
 
     auto* src = R"(
 $B1: {  # root
-  %v1:ptr<private, i32, read_write> = var
-  %v2:ptr<private, i32, read_write> = var
-  %v3:ptr<private, i32, read_write> = var
-  %v4:ptr<private, i32, read_write> = var
-  %v5:ptr<private, i32, read_write> = var
-  %v6:ptr<private, i32, read_write> = var
-  %v7:ptr<private, i32, read_write> = var
+  %v1:ptr<private, i32, read_write> = var undef
+  %v2:ptr<private, i32, read_write> = var undef
+  %v3:ptr<private, i32, read_write> = var undef
+  %v4:ptr<private, i32, read_write> = var undef
+  %v5:ptr<private, i32, read_write> = var undef
+  %v6:ptr<private, i32, read_write> = var undef
+  %v7:ptr<private, i32, read_write> = var undef
 }
 
 %foo = @fragment func():void {
@@ -731,8 +731,8 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %v1:ptr<private, i32, read_write> = var
-  %v5:ptr<private, i32, read_write> = var
+  %v1:ptr<private, i32, read_write> = var undef
+  %v5:ptr<private, i32, read_write> = var undef
 }
 
 %foo = @fragment func():void {
@@ -765,13 +765,13 @@ TEST_F(IR_SingleEntryPointTest, RemoveMultipleOverrides) {
 
     auto* src = R"(
 $B1: {  # root
-  %o1:i32 = override @id(1)
-  %o2:i32 = override @id(2)
-  %o3:i32 = override @id(3)
-  %o4:i32 = override @id(4)
-  %o5:i32 = override @id(5)
-  %o6:i32 = override @id(6)
-  %o7:i32 = override @id(7)
+  %o1:i32 = override undef @id(1)
+  %o2:i32 = override undef @id(2)
+  %o3:i32 = override undef @id(3)
+  %o4:i32 = override undef @id(4)
+  %o5:i32 = override undef @id(5)
+  %o6:i32 = override undef @id(6)
+  %o7:i32 = override undef @id(7)
 }
 
 %foo = @fragment func():void {
@@ -797,8 +797,8 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %o1:i32 = override @id(1)
-  %o5:i32 = override @id(5)
+  %o1:i32 = override undef @id(1)
+  %o5:i32 = override undef @id(5)
 }
 
 %foo = @fragment func():void {
@@ -831,9 +831,9 @@ TEST_F(IR_SingleEntryPointTest, OverridesInWorkgroupSize) {
 
     auto* src = R"(
 $B1: {  # root
-  %o1:i32 = override @id(1)
-  %o2:i32 = override @id(2)
-  %o3:i32 = override @id(3)
+  %o1:i32 = override undef @id(1)
+  %o2:i32 = override undef @id(2)
+  %o3:i32 = override undef @id(3)
 }
 
 %foo = @compute @workgroup_size(%o1, %o2, %o1) func():void {
@@ -850,8 +850,8 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %o1:i32 = override @id(1)
-  %o2:i32 = override @id(2)
+  %o1:i32 = override undef @id(1)
+  %o2:i32 = override undef @id(2)
 }
 
 %foo = @compute @workgroup_size(%o1, %o2, %o1) func():void {
@@ -891,10 +891,10 @@ TEST_F(IR_SingleEntryPointTest, OverrideInArrayType) {
 
     auto* src = R"(
 $B1: {  # root
-  %o1:i32 = override @id(1)
-  %o2:i32 = override @id(2)
-  %a:ptr<workgroup, array<i32, %o1>, read_write> = var
-  %b:ptr<workgroup, array<i32, %o2>, read_write> = var
+  %o1:i32 = override undef @id(1)
+  %o2:i32 = override undef @id(2)
+  %a:ptr<workgroup, array<i32, %o1>, read_write> = var undef
+  %b:ptr<workgroup, array<i32, %o2>, read_write> = var undef
 }
 
 %foo = @fragment func():void {
@@ -913,8 +913,8 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %o1:i32 = override @id(1)
-  %a:ptr<workgroup, array<i32, %o1>, read_write> = var
+  %o1:i32 = override undef @id(1)
+  %a:ptr<workgroup, array<i32, %o1>, read_write> = var undef
 }
 
 %foo = @fragment func():void {

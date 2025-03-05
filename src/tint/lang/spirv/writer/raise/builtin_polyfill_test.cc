@@ -73,7 +73,7 @@ Buffer = struct @align(4) {
 }
 
 $B1: {  # root
-  %var:ptr<storage, Buffer, read_write> = var @binding_point(0, 0)
+  %var:ptr<storage, Buffer, read_write> = var undef @binding_point(0, 0)
 }
 
 %foo = func():u32 {
@@ -94,7 +94,7 @@ Buffer = struct @align(4) {
 }
 
 $B1: {  # root
-  %var:ptr<storage, Buffer, read_write> = var @binding_point(0, 0)
+  %var:ptr<storage, Buffer, read_write> = var undef @binding_point(0, 0)
 }
 
 %foo = func():u32 {
@@ -139,7 +139,7 @@ Buffer = struct @align(4) {
 }
 
 $B1: {  # root
-  %var:ptr<storage, Buffer, read_write> = var @binding_point(0, 0)
+  %var:ptr<storage, Buffer, read_write> = var undef @binding_point(0, 0)
 }
 
 %foo = func():u32 {
@@ -162,7 +162,7 @@ Buffer = struct @align(4) {
 }
 
 $B1: {  # root
-  %var:ptr<storage, Buffer, read_write> = var @binding_point(0, 0)
+  %var:ptr<storage, Buffer, read_write> = var undef @binding_point(0, 0)
 }
 
 %foo = func():u32 {
@@ -209,7 +209,7 @@ Buffer = struct @align(4) {
 }
 
 $B1: {  # root
-  %var:ptr<storage, Buffer, read_write> = var @binding_point(0, 0)
+  %var:ptr<storage, Buffer, read_write> = var undef @binding_point(0, 0)
 }
 
 %foo = func():u32 {
@@ -232,7 +232,7 @@ Buffer = struct @align(4) {
 }
 
 $B1: {  # root
-  %var:ptr<storage, Buffer, read_write> = var @binding_point(0, 0)
+  %var:ptr<storage, Buffer, read_write> = var undef @binding_point(0, 0)
 }
 
 %foo = func():u32 {
@@ -267,7 +267,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicAdd_Storage) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<storage, atomic<i32>, read_write> = var @binding_point(0, 0)
+  %1:ptr<storage, atomic<i32>, read_write> = var undef @binding_point(0, 0)
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -281,12 +281,12 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<storage, atomic<i32>, read_write> = var @binding_point(0, 0)
+  %1:ptr<storage, atomic<i32>, read_write> = var undef @binding_point(0, 0)
 }
 
 %foo = func(%arg1:i32):i32 {
   $B2: {
-    %4:i32 = spirv.atomic_iadd %1, 1u, 0u, %arg1
+    %4:i32 = spirv.atomic_i_add %1, 1u, 0u, %arg1
     ret %4
   }
 }
@@ -311,7 +311,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicAdd_Workgroup) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -325,12 +325,12 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
   $B2: {
-    %4:i32 = spirv.atomic_iadd %1, 2u, 0u, %arg1
+    %4:i32 = spirv.atomic_i_add %1, 2u, 0u, %arg1
     ret %4
   }
 }
@@ -355,7 +355,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicAnd) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -369,7 +369,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -407,7 +407,7 @@ __atomic_compare_exchange_result_i32 = struct @align(4) {
 }
 
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%cmp:i32, %val:i32):i32 {
@@ -427,7 +427,7 @@ __atomic_compare_exchange_result_i32 = struct @align(4) {
 }
 
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%cmp:i32, %val:i32):i32 {
@@ -460,7 +460,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicExchange) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -474,7 +474,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -502,7 +502,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicLoad) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func():i32 {
@@ -516,7 +516,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func():i32 {
@@ -546,7 +546,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicMax_I32) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -560,12 +560,12 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
   $B2: {
-    %4:i32 = spirv.atomic_smax %1, 2u, 0u, %arg1
+    %4:i32 = spirv.atomic_s_max %1, 2u, 0u, %arg1
     ret %4
   }
 }
@@ -590,7 +590,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicMax_U32) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<u32>, read_write> = var
+  %1:ptr<workgroup, atomic<u32>, read_write> = var undef
 }
 
 %foo = func(%arg1:u32):u32 {
@@ -604,12 +604,12 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<u32>, read_write> = var
+  %1:ptr<workgroup, atomic<u32>, read_write> = var undef
 }
 
 %foo = func(%arg1:u32):u32 {
   $B2: {
-    %4:u32 = spirv.atomic_umax %1, 2u, 0u, %arg1
+    %4:u32 = spirv.atomic_u_max %1, 2u, 0u, %arg1
     ret %4
   }
 }
@@ -634,7 +634,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicMin_I32) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -648,12 +648,12 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
   $B2: {
-    %4:i32 = spirv.atomic_smin %1, 2u, 0u, %arg1
+    %4:i32 = spirv.atomic_s_min %1, 2u, 0u, %arg1
     ret %4
   }
 }
@@ -678,7 +678,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicMin_U32) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<u32>, read_write> = var
+  %1:ptr<workgroup, atomic<u32>, read_write> = var undef
 }
 
 %foo = func(%arg1:u32):u32 {
@@ -692,12 +692,12 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<u32>, read_write> = var
+  %1:ptr<workgroup, atomic<u32>, read_write> = var undef
 }
 
 %foo = func(%arg1:u32):u32 {
   $B2: {
-    %4:u32 = spirv.atomic_umin %1, 2u, 0u, %arg1
+    %4:u32 = spirv.atomic_u_min %1, 2u, 0u, %arg1
     ret %4
   }
 }
@@ -722,7 +722,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicOr) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -736,7 +736,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -766,7 +766,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicStore) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):void {
@@ -780,7 +780,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):void {
@@ -810,7 +810,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicSub) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -824,12 +824,12 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
   $B2: {
-    %4:i32 = spirv.atomic_isub %1, 2u, 0u, %arg1
+    %4:i32 = spirv.atomic_i_sub %1, 2u, 0u, %arg1
     ret %4
   }
 }
@@ -854,7 +854,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, AtomicXor) {
 
     auto* src = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -868,7 +868,7 @@ $B1: {  # root
 
     auto* expect = R"(
 $B1: {  # root
-  %1:ptr<workgroup, atomic<i32>, read_write> = var
+  %1:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
 %foo = func(%arg1:i32):i32 {
@@ -1033,7 +1033,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, Dot4I8Packed) {
     auto* expect = R"(
 %foo = func(%arg1:u32, %arg2:u32):i32 {
   $B1: {
-    %4:i32 = spirv.sdot %arg1, %arg2, 0u
+    %4:i32 = spirv.s_dot %arg1, %arg2, 0u
     ret %4
   }
 }
@@ -1068,7 +1068,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, Dot4U8Packed) {
     auto* expect = R"(
 %foo = func(%arg1:u32, %arg2:u32):u32 {
   $B1: {
-    %4:u32 = spirv.udot %arg1, %arg2, 0u
+    %4:u32 = spirv.u_dot %arg1, %arg2, 0u
     ret %4
   }
 }
@@ -3216,8 +3216,8 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixLoad_Storage_ColMajor_F32)
     auto* func = b.Function("foo", mat);
     func->SetParams({p});
     b.Append(func->Block(), [&] {
-        auto* call = b.Call(mat, core::BuiltinFn::kSubgroupMatrixLoad, p, 64_u, true, 32_u);
-        call->SetExplicitTemplateParams(Vector{mat});
+        auto* call = b.CallExplicit(mat, core::BuiltinFn::kSubgroupMatrixLoad, Vector{mat}, p, 64_u,
+                                    true, 32_u);
         b.Return(func, call);
     });
 
@@ -3252,8 +3252,8 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixLoad_Workgroup_RowMajor_U3
     auto* func = b.Function("foo", mat);
     func->SetParams({p});
     b.Append(func->Block(), [&] {
-        auto* call = b.Call(mat, core::BuiltinFn::kSubgroupMatrixLoad, p, 64_u, false, 32_u);
-        call->SetExplicitTemplateParams(Vector{mat});
+        auto* call = b.CallExplicit(mat, core::BuiltinFn::kSubgroupMatrixLoad, Vector{mat}, p, 64_u,
+                                    false, 32_u);
         b.Return(func, call);
     });
 
@@ -3359,14 +3359,15 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiply_F32) {
     auto* func = b.Function("foo", result);
     func->SetParams({left, right});
     b.Append(func->Block(), [&] {
-        auto* call = b.Call(result, core::BuiltinFn::kSubgroupMatrixMultiply, left, right);
+        auto* call = b.CallExplicit(result, core::BuiltinFn::kSubgroupMatrixMultiply,
+                                    Vector{ty.f32()}, left, right);
         b.Return(func, call);
     });
 
     auto* src = R"(
 %foo = func(%left:subgroup_matrix_left<f32, 4, 8>, %right:subgroup_matrix_right<f32, 8, 4>):subgroup_matrix_result<f32, 8, 8> {
   $B1: {
-    %4:subgroup_matrix_result<f32, 8, 8> = subgroupMatrixMultiply %left, %right
+    %4:subgroup_matrix_result<f32, 8, 8> = subgroupMatrixMultiply<f32> %left, %right
     ret %4
   }
 }
@@ -3377,7 +3378,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiply_F32) {
 %foo = func(%left:subgroup_matrix_left<f32, 4, 8>, %right:subgroup_matrix_right<f32, 8, 4>):subgroup_matrix_result<f32, 8, 8> {
   $B1: {
     %4:subgroup_matrix_result<f32, 8, 8> = construct
-    %5:subgroup_matrix_result<f32, 8, 8> = spirv.cooperative_matrix_mul_add %left, %right, %4
+    %5:subgroup_matrix_result<f32, 8, 8> = spirv.cooperative_matrix_mul_add %left, %right, %4, 0u
     ret %5
   }
 }
@@ -3388,21 +3389,22 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiply_F32) {
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiply_U32) {
-    auto* left = b.FunctionParam("left", ty.subgroup_matrix_left(ty.u32(), 8, 4));
-    auto* right = b.FunctionParam("right", ty.subgroup_matrix_right(ty.u32(), 2, 8));
+TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiply_I32_U32) {
+    auto* left = b.FunctionParam("left", ty.subgroup_matrix_left(ty.i32(), 8, 4));
+    auto* right = b.FunctionParam("right", ty.subgroup_matrix_right(ty.i32(), 2, 8));
     auto* result = ty.subgroup_matrix_result(ty.u32(), 2, 4);
     auto* func = b.Function("foo", result);
     func->SetParams({left, right});
     b.Append(func->Block(), [&] {
-        auto* call = b.Call(result, core::BuiltinFn::kSubgroupMatrixMultiply, left, right);
+        auto* call = b.CallExplicit(result, core::BuiltinFn::kSubgroupMatrixMultiply,
+                                    Vector{ty.u32()}, left, right);
         b.Return(func, call);
     });
 
     auto* src = R"(
-%foo = func(%left:subgroup_matrix_left<u32, 8, 4>, %right:subgroup_matrix_right<u32, 2, 8>):subgroup_matrix_result<u32, 2, 4> {
+%foo = func(%left:subgroup_matrix_left<i32, 8, 4>, %right:subgroup_matrix_right<i32, 2, 8>):subgroup_matrix_result<u32, 2, 4> {
   $B1: {
-    %4:subgroup_matrix_result<u32, 2, 4> = subgroupMatrixMultiply %left, %right
+    %4:subgroup_matrix_result<u32, 2, 4> = subgroupMatrixMultiply<u32> %left, %right
     ret %4
   }
 }
@@ -3410,10 +3412,84 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiply_U32) {
     EXPECT_EQ(src, str());
 
     auto* expect = R"(
-%foo = func(%left:subgroup_matrix_left<u32, 8, 4>, %right:subgroup_matrix_right<u32, 2, 8>):subgroup_matrix_result<u32, 2, 4> {
+%foo = func(%left:subgroup_matrix_left<i32, 8, 4>, %right:subgroup_matrix_right<i32, 2, 8>):subgroup_matrix_result<u32, 2, 4> {
   $B1: {
     %4:subgroup_matrix_result<u32, 2, 4> = construct
-    %5:subgroup_matrix_result<u32, 2, 4> = spirv.cooperative_matrix_mul_add %left, %right, %4
+    %5:subgroup_matrix_result<u32, 2, 4> = spirv.cooperative_matrix_mul_add %left, %right, %4, 3u
+    ret %5
+  }
+}
+)";
+
+    Run(BuiltinPolyfill, true);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiply_U32_I32) {
+    auto* left = b.FunctionParam("left", ty.subgroup_matrix_left(ty.u32(), 8, 4));
+    auto* right = b.FunctionParam("right", ty.subgroup_matrix_right(ty.u32(), 2, 8));
+    auto* result = ty.subgroup_matrix_result(ty.i32(), 2, 4);
+    auto* func = b.Function("foo", result);
+    func->SetParams({left, right});
+    b.Append(func->Block(), [&] {
+        auto* call = b.CallExplicit(result, core::BuiltinFn::kSubgroupMatrixMultiply,
+                                    Vector{ty.i32()}, left, right);
+        b.Return(func, call);
+    });
+
+    auto* src = R"(
+%foo = func(%left:subgroup_matrix_left<u32, 8, 4>, %right:subgroup_matrix_right<u32, 2, 8>):subgroup_matrix_result<i32, 2, 4> {
+  $B1: {
+    %4:subgroup_matrix_result<i32, 2, 4> = subgroupMatrixMultiply<i32> %left, %right
+    ret %4
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%left:subgroup_matrix_left<u32, 8, 4>, %right:subgroup_matrix_right<u32, 2, 8>):subgroup_matrix_result<i32, 2, 4> {
+  $B1: {
+    %4:subgroup_matrix_result<i32, 2, 4> = construct
+    %5:subgroup_matrix_result<i32, 2, 4> = spirv.cooperative_matrix_mul_add %left, %right, %4, 12u
+    ret %5
+  }
+}
+)";
+
+    Run(BuiltinPolyfill, true);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiply_I32_I32) {
+    auto* left = b.FunctionParam("left", ty.subgroup_matrix_left(ty.i32(), 8, 4));
+    auto* right = b.FunctionParam("right", ty.subgroup_matrix_right(ty.i32(), 2, 8));
+    auto* result = ty.subgroup_matrix_result(ty.i32(), 2, 4);
+    auto* func = b.Function("foo", result);
+    func->SetParams({left, right});
+    b.Append(func->Block(), [&] {
+        auto* call = b.CallExplicit(result, core::BuiltinFn::kSubgroupMatrixMultiply,
+                                    Vector{ty.i32()}, left, right);
+        b.Return(func, call);
+    });
+
+    auto* src = R"(
+%foo = func(%left:subgroup_matrix_left<i32, 8, 4>, %right:subgroup_matrix_right<i32, 2, 8>):subgroup_matrix_result<i32, 2, 4> {
+  $B1: {
+    %4:subgroup_matrix_result<i32, 2, 4> = subgroupMatrixMultiply<i32> %left, %right
+    ret %4
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%left:subgroup_matrix_left<i32, 8, 4>, %right:subgroup_matrix_right<i32, 2, 8>):subgroup_matrix_result<i32, 2, 4> {
+  $B1: {
+    %4:subgroup_matrix_result<i32, 2, 4> = construct
+    %5:subgroup_matrix_result<i32, 2, 4> = spirv.cooperative_matrix_mul_add %left, %right, %4, 15u
     ret %5
   }
 }
@@ -3450,7 +3526,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiplyAccumulate_F32) {
     auto* expect = R"(
 %foo = func(%left:subgroup_matrix_left<f32, 4, 8>, %right:subgroup_matrix_right<f32, 8, 4>, %acc:subgroup_matrix_result<f32, 8, 8>):subgroup_matrix_result<f32, 8, 8> {
   $B1: {
-    %5:subgroup_matrix_result<f32, 8, 8> = spirv.cooperative_matrix_mul_add %left, %right, %acc
+    %5:subgroup_matrix_result<f32, 8, 8> = spirv.cooperative_matrix_mul_add %left, %right, %acc, 0u
     ret %5
   }
 }
@@ -3461,9 +3537,9 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiplyAccumulate_F32) {
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiplyAccumulate_U32) {
-    auto* left = b.FunctionParam("left", ty.subgroup_matrix_left(ty.u32(), 8, 4));
-    auto* right = b.FunctionParam("right", ty.subgroup_matrix_right(ty.u32(), 2, 8));
+TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiplyAccumulate_I32_U32) {
+    auto* left = b.FunctionParam("left", ty.subgroup_matrix_left(ty.i32(), 8, 4));
+    auto* right = b.FunctionParam("right", ty.subgroup_matrix_right(ty.i32(), 2, 8));
     auto* acc = b.FunctionParam("acc", ty.subgroup_matrix_result(ty.u32(), 2, 4));
     auto* result = ty.subgroup_matrix_result(ty.u32(), 2, 4);
     auto* func = b.Function("foo", result);
@@ -3475,7 +3551,7 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiplyAccumulate_U32) {
     });
 
     auto* src = R"(
-%foo = func(%left:subgroup_matrix_left<u32, 8, 4>, %right:subgroup_matrix_right<u32, 2, 8>, %acc:subgroup_matrix_result<u32, 2, 4>):subgroup_matrix_result<u32, 2, 4> {
+%foo = func(%left:subgroup_matrix_left<i32, 8, 4>, %right:subgroup_matrix_right<i32, 2, 8>, %acc:subgroup_matrix_result<u32, 2, 4>):subgroup_matrix_result<u32, 2, 4> {
   $B1: {
     %5:subgroup_matrix_result<u32, 2, 4> = subgroupMatrixMultiplyAccumulate %left, %right, %acc
     ret %5
@@ -3485,9 +3561,83 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiplyAccumulate_U32) {
     EXPECT_EQ(src, str());
 
     auto* expect = R"(
-%foo = func(%left:subgroup_matrix_left<u32, 8, 4>, %right:subgroup_matrix_right<u32, 2, 8>, %acc:subgroup_matrix_result<u32, 2, 4>):subgroup_matrix_result<u32, 2, 4> {
+%foo = func(%left:subgroup_matrix_left<i32, 8, 4>, %right:subgroup_matrix_right<i32, 2, 8>, %acc:subgroup_matrix_result<u32, 2, 4>):subgroup_matrix_result<u32, 2, 4> {
   $B1: {
-    %5:subgroup_matrix_result<u32, 2, 4> = spirv.cooperative_matrix_mul_add %left, %right, %acc
+    %5:subgroup_matrix_result<u32, 2, 4> = spirv.cooperative_matrix_mul_add %left, %right, %acc, 3u
+    ret %5
+  }
+}
+)";
+
+    Run(BuiltinPolyfill, true);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiplyAccumulate_U32_I32) {
+    auto* left = b.FunctionParam("left", ty.subgroup_matrix_left(ty.u32(), 8, 4));
+    auto* right = b.FunctionParam("right", ty.subgroup_matrix_right(ty.u32(), 2, 8));
+    auto* acc = b.FunctionParam("acc", ty.subgroup_matrix_result(ty.i32(), 2, 4));
+    auto* result = ty.subgroup_matrix_result(ty.i32(), 2, 4);
+    auto* func = b.Function("foo", result);
+    func->SetParams({left, right, acc});
+    b.Append(func->Block(), [&] {
+        auto* call =
+            b.Call(result, core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate, left, right, acc);
+        b.Return(func, call);
+    });
+
+    auto* src = R"(
+%foo = func(%left:subgroup_matrix_left<u32, 8, 4>, %right:subgroup_matrix_right<u32, 2, 8>, %acc:subgroup_matrix_result<i32, 2, 4>):subgroup_matrix_result<i32, 2, 4> {
+  $B1: {
+    %5:subgroup_matrix_result<i32, 2, 4> = subgroupMatrixMultiplyAccumulate %left, %right, %acc
+    ret %5
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%left:subgroup_matrix_left<u32, 8, 4>, %right:subgroup_matrix_right<u32, 2, 8>, %acc:subgroup_matrix_result<i32, 2, 4>):subgroup_matrix_result<i32, 2, 4> {
+  $B1: {
+    %5:subgroup_matrix_result<i32, 2, 4> = spirv.cooperative_matrix_mul_add %left, %right, %acc, 12u
+    ret %5
+  }
+}
+)";
+
+    Run(BuiltinPolyfill, true);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixMultiplyAccumulate_I32_I32) {
+    auto* left = b.FunctionParam("left", ty.subgroup_matrix_left(ty.i32(), 8, 4));
+    auto* right = b.FunctionParam("right", ty.subgroup_matrix_right(ty.i32(), 2, 8));
+    auto* acc = b.FunctionParam("acc", ty.subgroup_matrix_result(ty.i32(), 2, 4));
+    auto* result = ty.subgroup_matrix_result(ty.i32(), 2, 4);
+    auto* func = b.Function("foo", result);
+    func->SetParams({left, right, acc});
+    b.Append(func->Block(), [&] {
+        auto* call =
+            b.Call(result, core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate, left, right, acc);
+        b.Return(func, call);
+    });
+
+    auto* src = R"(
+%foo = func(%left:subgroup_matrix_left<i32, 8, 4>, %right:subgroup_matrix_right<i32, 2, 8>, %acc:subgroup_matrix_result<i32, 2, 4>):subgroup_matrix_result<i32, 2, 4> {
+  $B1: {
+    %5:subgroup_matrix_result<i32, 2, 4> = subgroupMatrixMultiplyAccumulate %left, %right, %acc
+    ret %5
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%left:subgroup_matrix_left<i32, 8, 4>, %right:subgroup_matrix_right<i32, 2, 8>, %acc:subgroup_matrix_result<i32, 2, 4>):subgroup_matrix_result<i32, 2, 4> {
+  $B1: {
+    %5:subgroup_matrix_result<i32, 2, 4> = spirv.cooperative_matrix_mul_add %left, %right, %acc, 15u
     ret %5
   }
 }

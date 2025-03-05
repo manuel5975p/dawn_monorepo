@@ -89,17 +89,22 @@ InstanceBase* AdapterBase::APIGetInstance() const {
     return instance;
 }
 
-wgpu::Status AdapterBase::APIGetLimits(SupportedLimits* limits) const {
+wgpu::Status AdapterBase::APIGetLimits(Limits* limits) const {
     DAWN_ASSERT(limits != nullptr);
-    UnpackedPtr<SupportedLimits> unpacked;
+    UnpackedPtr<Limits> unpacked;
     if (mInstance->ConsumedError(ValidateAndUnpack(limits), &unpacked)) {
         return wgpu::Status::Error;
     }
 
-    if (mUseTieredLimits) {
-        limits->limits = ApplyLimitTiers(mPhysicalDevice->GetLimits().v1);
-    } else {
-        limits->limits = mPhysicalDevice->GetLimits().v1;
+    {
+        wgpu::ChainedStructOut* originalChain = unpacked->nextInChain;
+        if (mUseTieredLimits) {
+            **unpacked = ApplyLimitTiers(mPhysicalDevice->GetLimits().v1);
+        } else {
+            **unpacked = mPhysicalDevice->GetLimits().v1;
+        }
+        // Recover origin chain.
+        unpacked->nextInChain = originalChain;
     }
 
     // TODO(crbug.com/382520104): Remove DawnExperimentalSubgroupLimits.
@@ -187,6 +192,11 @@ wgpu::Status AdapterBase::APIGetInfo(AdapterInfo* info) const {
         hadError |= mInstance->ConsumedError(
             DAWN_VALIDATION_ERROR("Feature AdapterPropertiesVk is not available."));
     }
+    if (unpacked.Get<AdapterPropertiesSubgroupMatrixConfigs>() != nullptr &&
+        !mSupportedFeatures.IsEnabled(wgpu::FeatureName::ChromiumExperimentalSubgroupMatrix)) {
+        hadError |= mInstance->ConsumedError(
+            DAWN_VALIDATION_ERROR("Feature ChromiumExperimentalSubgroupMatrix is not available."));
+    }
     if (hadError) {
         return wgpu::Status::Error;
     }
@@ -261,6 +271,11 @@ void APIDawnDrmFormatCapabilitiesFreeMembers(WGPUDawnDrmFormatCapabilities capab
     delete[] capabilities.properties;
 }
 
+void APIAdapterPropertiesSubgroupMatrixConfigsFreeMembers(
+    WGPUAdapterPropertiesSubgroupMatrixConfigs subgroupMatrixConfigs) {
+    delete[] subgroupMatrixConfigs.configs;
+}
+
 bool AdapterBase::APIHasFeature(wgpu::FeatureName feature) const {
     return mSupportedFeatures.IsEnabled(feature);
 }
@@ -321,6 +336,7 @@ ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDeviceInternal(
     for (uint32_t i = 0; i < descriptor->requiredFeatureCount; ++i) {
         requiredFeatureSet.insert(descriptor->requiredFeatures[i]);
     }
+
     // Validate all required features are supported by the adapter and suitable under device
     // toggles. Note that certain toggles in device toggles state may be overridden by user and
     // different from the adapter toggles state, and in this case a device may support features
@@ -351,12 +367,11 @@ ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDeviceInternal(
         DAWN_INVALID_IF(descriptor->requiredLimits->nextInChain != nullptr,
                         "can not chain after requiredLimits.");
 
-        SupportedLimits supportedLimits;
+        Limits supportedLimits;
         wgpu::Status status = APIGetLimits(&supportedLimits);
         DAWN_ASSERT(status == wgpu::Status::Success);
 
-        DAWN_TRY_CONTEXT(ValidateLimits(GetFeatureLevel(), supportedLimits.limits,
-                                        descriptor->requiredLimits->limits),
+        DAWN_TRY_CONTEXT(ValidateLimits(supportedLimits, *descriptor->requiredLimits),
                          "validating required limits");
     }
 

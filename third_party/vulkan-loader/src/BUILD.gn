@@ -81,8 +81,11 @@ config("vulkan_loader_config") {
     cflags = [ "/wd4201" ]
   }
   if (is_linux || is_chromeos) {
-    # assume secure_getenv() is available
     defines += [
+      # Enables `readlink()` and `strtok_r()`.
+      "_GNU_SOURCE",
+
+      # assume secure_getenv() is available
       "HAVE_SECURE_GETENV",
       "LOADER_ENABLE_LINUX_SORT",
     ]
@@ -260,8 +263,10 @@ if (!is_android) {
       frameworks = [ "CoreFoundation.framework" ]
     }
     public_deps = [ "$vulkan_headers_dir:vulkan_headers" ]
-    configs -= [ "//build/config/compiler:chromium_code" ]
-    configs += [ "//build/config/compiler:no_chromium_code" ]
+    if (build_with_chromium) {
+      configs -= [ "//build/config/compiler:chromium_code" ]
+      configs += [ "//build/config/compiler:no_chromium_code" ]
+    }
     configs += [ ":vulkan_internal_config" ]
     public_configs = [ ":vulkan_loader_config" ]
     configs -= vulkan_undefine_configs

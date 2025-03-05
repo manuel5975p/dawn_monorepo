@@ -77,9 +77,11 @@ if (${DAWN_ENABLE_EMSCRIPTEN})
                 "${arg_UNPARSED_ARGUMENTS}")
         endif()
 
+        # Note this requires Emscripten 4.0.3+ (prior to that it was located
+        # at tools/maint/gen_struct_info.py).
         set(ARGS
             ${Python3_EXECUTABLE}
-            "${DAWN_EMSCRIPTEN_TOOLCHAIN}/tools/maint/gen_struct_info.py"
+            "${DAWN_EMSCRIPTEN_TOOLCHAIN}/tools/gen_struct_info.py"
             -q
             "${EM_BUILD_GEN_DIR}/struct_info_webgpu.json"
             "-I=${EM_BUILD_GEN_DIR}/include"
@@ -202,6 +204,10 @@ if (${DAWN_ENABLE_EMSCRIPTEN})
         "--js-library=${EM_BUILD_GEN_DIR}/library_webgpu_generated_sig_info.js"
         "--js-library=${DAWN_EMDAWNWEBGPU_DIR}/library_webgpu.js"
         "--closure-args=--externs=${DAWN_EMSCRIPTEN_TOOLCHAIN}/src/closure-externs/webgpu-externs.js"
+    )
+    # Relink when library_webgpu.js file changes.
+    set_target_properties(emdawnwebgpu_config PROPERTIES
+        INTERFACE_LINK_DEPENDS "${DAWN_EMDAWNWEBGPU_DIR}/library_webgpu.js"
     )
 
     dawn_add_library(

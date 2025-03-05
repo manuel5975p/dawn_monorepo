@@ -2003,7 +2003,7 @@ void loader_initialize(void) {
 #endif
 }
 
-void loader_release() {
+void loader_release(void) {
     // Guarantee release of the preloaded ICD libraries. This may have already been called in vkDestroyInstance.
     loader_unload_preloaded_icds();
 
@@ -3126,8 +3126,8 @@ VkResult read_data_files_in_search_paths(const struct loader_instance *inst, enu
     char *cur_path_ptr = NULL;
     bool use_first_found_manifest = false;
 #if COMMON_UNIX_PLATFORMS
-    char *relative_location = NULL;  // Only used on unix platforms
-    size_t rel_size = 0;             // unused in windows, dont declare so no compiler warnings are generated
+    const char *relative_location = NULL;  // Only used on unix platforms
+    size_t rel_size = 0;                   // unused in windows, dont declare so no compiler warnings are generated
 #endif
 
 #if defined(_WIN32)
