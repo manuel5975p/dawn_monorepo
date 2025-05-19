@@ -50,7 +50,7 @@
 #include "dawn/native/Toggles.h"
 #include "dawn/native/dawn_platform.h"
 #include "partition_alloc/pointers/raw_ptr.h"
-#include "tint/lang/wgsl/features/language_feature.h"
+#include "tint/lang/wgsl/language_feature.h"
 
 namespace dawn::platform {
 class Platform;
@@ -83,8 +83,6 @@ class InstanceBase final : public ErrorSink, public RefCountedWithExternalCount<
     // All systems adapters that can be found are returned if no options are passed.
     // Otherwise, returns adapters based on the `options`.
     std::vector<Ref<AdapterBase>> EnumerateAdapters(const RequestAdapterOptions* options = nullptr);
-
-    size_t GetPhysicalDeviceCountForTesting() const;
 
     void EmitLog(WGPULoggingType type, const std::string_view message) const;
 

@@ -1394,5 +1394,107 @@ fn a() {
 )");
 }
 
+TEST_F(IR_FromProgramTest, OverrideWithPhony) {
+    auto* src = R"(
+override cond : bool;
+override zero_i32 = 0i;
+override one_f32 = 1.0f;
+override thirty_one = 31u;
+override foo = cond && (one_f32 / 0) == 0;
+
+@compute @workgroup_size(1)
+fn main() {
+  _ = cond;
+_ = foo;
+}
+)";
+    auto res = Build(src);
+    ASSERT_EQ(res, Success);
+
+    auto m = res.Move();
+    EXPECT_EQ(core::ir::Disassembler(m).Plain(), R"($B1: {  # root
+  %cond:bool = override undef @id(0)
+  %zero_i32:i32 = override 0i @id(1)
+  %one_f32:f32 = override 1.0f @id(2)
+  %thirty_one:u32 = override 31u @id(3)
+  %5:bool = constexpr_if %cond [t: $B2, f: $B3] {  # constexpr_if_1
+    $B2: {  # true
+      %6:f32 = div %one_f32, 0.0f
+      %7:bool = eq %6, 0.0f
+      exit_if %7  # constexpr_if_1
+    }
+    $B3: {  # false
+      exit_if false  # constexpr_if_1
+    }
+  }
+  %foo:bool = override %5 @id(4)
+}
+
+%main = @compute @workgroup_size(1i, 1i, 1i) func():void {
+  $B4: {
+    %10:bool = let %cond
+    %11:bool = let %foo
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_FromProgramTest, OverrideInExpressionInArraySize) {
+    auto* src = R"(
+override x : u32;
+var<workgroup> arr : array<u32, x*2>;
+
+@compute @workgroup_size(64)
+fn main() {
+  _ = arr[0];
+}
+)";
+
+    auto res = Build(src);
+    ASSERT_EQ(res, Success);
+
+    auto m = res.Move();
+    EXPECT_EQ(core::ir::Disassembler(m).Plain(), R"($B1: {  # root
+  %x:u32 = override undef @id(0)
+  %2:u32 = mul %x, 2u
+  %arr:ptr<workgroup, array<u32, %2>, read_write> = var undef
+}
+
+%main = @compute @workgroup_size(64i, 1i, 1i) func():void {
+  $B2: {
+    %5:ptr<workgroup, u32, read_write> = access %arr, 0i
+    %6:u32 = load %5
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_FromProgramTest, OverrideInExpressionInWorkgroupSizeAttribute) {
+    auto* src = R"(
+override x : u32;
+
+@compute @workgroup_size(x * 2)
+fn main() { }
+)";
+
+    auto res = Build(src);
+    ASSERT_EQ(res, Success);
+
+    auto m = res.Move();
+    EXPECT_EQ(core::ir::Disassembler(m).Plain(), R"($B1: {  # root
+  %x:u32 = override undef @id(0)
+  %2:u32 = mul %x, 2u
+}
+
+%main = @compute @workgroup_size(%2, 1u, 1u) func():void {
+  $B2: {
+    ret
+  }
+}
+)");
+}
+
 }  // namespace
 }  // namespace tint::wgsl::reader

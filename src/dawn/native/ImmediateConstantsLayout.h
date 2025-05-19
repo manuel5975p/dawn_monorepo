@@ -44,6 +44,7 @@ struct UserImmediateConstants {
     uint32_t userImmediateData[kMaxExternalImmediateConstantsPerPipeline];
 };
 
+// 8 bytes of immediate data data to be used by the ClampFragDepth Tint transform.
 struct ClampFragDepthArgs {
     float minClampFragDepth;
     float maxClampFragDepth;

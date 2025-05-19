@@ -393,8 +393,17 @@ void Disassembler::EmitFunction(const Function* func) {
 
 void Disassembler::EmitValueWithType(const Instruction* val) {
     SourceMarker sm(this);
+    // Always emit the first value, so that 'undef' is printed if there is no value
     EmitValueWithType(val->Result(0));
     sm.StoreResult(IndexedValue{val, 0});
+
+    if (auto results = val->Results(); !results.IsEmpty()) {
+        for (size_t i = 1; i < results.Length(); ++i) {
+            out_ << ", ";
+            EmitValueWithType(results[i]);
+            sm.StoreResult(IndexedValue{val, i});
+        }
+    }
 }
 
 void Disassembler::EmitValueWithType(const Value* val) {
@@ -541,7 +550,9 @@ void Disassembler::EmitInstruction(const Instruction* inst) {
             out_ << " = ";
             EmitInstructionName(o);
             EmitOperandList(o);
-            out_ << " @id(" << o->OverrideId().value << ")";
+            if (o->OverrideId().has_value()) {
+                out_ << " @id(" << o->OverrideId().value().value << ")";
+            }
         },
         [&](const Var* v) {
             EmitValueWithType(v);
@@ -940,8 +951,15 @@ void Disassembler::EmitUnary(const Unary* u) {
 void Disassembler::EmitStructDecl(const core::type::Struct* str) {
     out_ << StyleType(str->Name().Name()) << " = " << StyleKeyword("struct") << " "
          << StyleAttribute("@align") << "(" << StyleLiteral(str->Align()) << ")";
-    if (str->StructFlags().Contains(core::type::StructFlag::kBlock)) {
-        out_ << ", " << StyleAttribute("@block");
+    for (auto flag : str->StructFlags()) {
+        switch (flag) {
+            case core::type::kBlock:
+                out_ << ", " << StyleAttribute("@block");
+                break;
+            case core::type::kExplicitLayout:
+                out_ << ", " << StyleAttribute("@core.explicit_layout");
+                break;
+        }
     }
     out_ << " {";
     EmitLine();
@@ -974,6 +992,10 @@ void Disassembler::EmitStructDecl(const core::type::Struct* str) {
         if (member->Attributes().builtin.has_value()) {
             out_ << ", " << StyleAttribute("@builtin") << "("
                  << StyleLiteral(member->Attributes().builtin.value()) << ")";
+        }
+        if (member->Attributes().binding_point.has_value()) {
+            out_ << ", ";
+            EmitBindingPoint(member->Attributes().binding_point.value());
         }
         EmitLine();
     }

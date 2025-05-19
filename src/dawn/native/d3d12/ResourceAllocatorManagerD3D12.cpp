@@ -321,7 +321,7 @@ ResourceAllocatorManager::~ResourceAllocatorManager() {
         mSubAllocatedResourceAllocators[i] = nullptr;
     }
 
-    DestroyPool();
+    FreeRecycledAllocations();
 
     DAWN_ASSERT(mAllocationsToDelete.Empty());
     DAWN_ASSERT(mHeapsToDelete.Empty());
@@ -560,15 +560,16 @@ ResultOrError<ResourceHeapAllocation> ResourceAllocatorManager::CreateCommittedR
 
     AllocationInfo info;
     info.mMethod = AllocationMethod::kDirect;
+    info.mRequestedSize = resourceInfo.SizeInBytes;
 
     return ResourceHeapAllocation{info,
                                   /*offset*/ 0, std::move(committedResource), heap,
                                   resourceHeapKind};
 }
 
-void ResourceAllocatorManager::DestroyPool() {
+void ResourceAllocatorManager::FreeRecycledAllocations() {
     for (auto& alloc : mPooledHeapAllocators) {
-        alloc->DestroyPool();
+        alloc->FreeRecycledAllocations();
     }
 }
 

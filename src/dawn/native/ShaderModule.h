@@ -29,6 +29,7 @@
 #define SRC_DAWN_NATIVE_SHADERMODULE_H_
 
 #include <bitset>
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -43,6 +44,7 @@
 #include "dawn/common/ContentLessObjectCacheable.h"
 #include "dawn/common/MutexProtected.h"
 #include "dawn/common/RefCountedWithExternalCount.h"
+#include "dawn/common/Sha3.h"
 #include "dawn/common/ityp_array.h"
 #include "dawn/native/BindingInfo.h"
 #include "dawn/native/CachedObject.h"
@@ -60,13 +62,6 @@
 namespace tint {
 
 class Program;
-
-namespace ast::transform {
-class DataMap;
-class Manager;
-class Transform;
-class VertexPulling;
-}  // namespace ast::transform
 
 }  // namespace tint
 
@@ -133,43 +128,47 @@ struct ShaderModuleEntryPoint {
     std::string name;
 };
 
-MaybeError ValidateAndParseShaderModule(
-    DeviceBase* device,
-    const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-    const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* parseResult,
-    OwnedCompilationMessages* outMessages);
+// Parse a shader module from a validated ShaderModuleDescriptor. Errors are generated only if the
+// shader code itself is invalid.
+MaybeError ParseShaderModule(DeviceBase* device,
+                             const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
+                             const std::vector<tint::wgsl::Extension>& internalExtensions,
+                             ShaderModuleParseResult* parseResult,
+                             OwnedCompilationMessages* outMessages);
+
 MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
                                                    const EntryPointMetadata& entryPoint,
                                                    const PipelineLayoutBase* layout);
 
 // Return extent3D with workgroup size dimension info if it is valid.
 // width = x, height = y, depthOrArrayLength = z.
-ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(const tint::Program& program,
-                                                          const char* entryPointName,
-                                                          const LimitsForCompilationRequest& limits,
-                                                          const AdapterBase* adapter);
+ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
+    const tint::Program& program,
+    const char* entryPointName,
+    bool usesSubgroupMatrix,
+    uint32_t maxSubgroupSize,
+    const LimitsForCompilationRequest& limits,
+    const LimitsForCompilationRequest& adaterSupportedlimits);
 
 // Return extent3D with workgroup size dimension info if it is valid.
 // width = x, height = y, depthOrArrayLength = z.
-ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(uint32_t x,
-                                                          uint32_t y,
-                                                          uint32_t z,
-                                                          size_t workgroupStorageSize,
-                                                          const LimitsForCompilationRequest& limits,
-                                                          const AdapterBase* adapter);
+ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
+    uint32_t x,
+    uint32_t y,
+    uint32_t z,
+    size_t workgroupStorageSize,
+    bool usesSubgroupMatrix,
+    uint32_t maxSubgroupSize,
+    const LimitsForCompilationRequest& limits,
+    const LimitsForCompilationRequest& adaterSupportedlimits);
 
 RequiredBufferSizes ComputeRequiredBufferSizesForLayout(const EntryPointMetadata& entryPoint,
                                                         const PipelineLayoutBase* layout);
-ResultOrError<tint::Program> RunTransforms(tint::ast::transform::Manager* transformManager,
-                                           const tint::Program* program,
-                                           const tint::ast::transform::DataMap& inputs,
-                                           tint::ast::transform::DataMap* outputs,
-                                           OwnedCompilationMessages* messages);
 
 // Shader metadata for a binding, very similar to information contained in a pipeline layout.
 struct ShaderBindingInfo {
     BindingNumber binding;
+    BindingIndex arraySize;
 
     // The variable name of the binding resource.
     std::string name;
@@ -213,7 +212,32 @@ struct EntryPointMetadata {
         BindingSlot sampler;
         BindingSlot texture;
     };
-    std::vector<SamplerTexturePair> samplerTexturePairs;
+    // TODO(crbug.com/409438000): Remove the hack of sampler placeholders for non-sampler texture.
+    static constexpr const BindingSlot nonSamplerBindingPoint = {
+        BindGroupIndex(std::numeric_limits<uint32_t>::max()),
+        BindingNumber(std::numeric_limits<uint32_t>::max())};
+    // Contains the reflection information of all sampler and non-sampler texture (storage texture
+    // not included) usage in the entry point. For non-sampler usage, nonSamplerBindingPoint is used
+    // for sampler slot.
+    std::vector<SamplerTexturePair> samplerAndNonSamplerTexturePairs;
+
+    /// Match tint::inspector::Inspector::LevelSampleInfo
+    struct TextureMetadataQuery {
+        /// The information needed to be supplied.
+        enum class TextureQueryType : uint8_t {
+            /// Texture Num Levels
+            TextureNumLevels,
+            /// Texture Num Samples
+            TextureNumSamples,
+        };
+        /// The type of function
+        TextureQueryType type = TextureQueryType::TextureNumLevels;
+        /// The group number
+        uint32_t group = 0;
+        /// The binding number
+        uint32_t binding = 0;
+    };
+    std::vector<TextureMetadataQuery> textureQueries;
 
     // The set of vertex attributes this entryPoint uses.
     PerVertexAttribute<VertexFormatBaseType> vertexInputBaseTypes;
@@ -259,6 +283,9 @@ struct EntryPointMetadata {
         // Then it is required for the pipeline stage to have a constant record to initialize a
         // value
         bool isInitialized;
+
+        // Set to true if the override is used in the entry point
+        bool isUsed = true;
     };
 
     using OverridesMap = absl::flat_hash_map<std::string, Override>;
@@ -289,6 +316,7 @@ struct EntryPointMetadata {
     bool usesVertexIndex = false;
     bool usesTextureLoadWithDepthTexture = false;
     bool usesDepthTextureWithNonComparisonSampler = false;
+    bool usesSubgroupMatrix = false;
 
     // Immediate Data block byte size
     uint32_t immediateDataRangeByteSize = 0;
@@ -314,7 +342,10 @@ class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
                      std::vector<tint::wgsl::Extension> internalExtensions);
     ~ShaderModuleBase() override;
 
-    static Ref<ShaderModuleBase> MakeError(DeviceBase* device, StringView label);
+    static Ref<ShaderModuleBase> MakeError(
+        DeviceBase* device,
+        StringView label,
+        std::unique_ptr<OwnedCompilationMessages> compilationMessages);
 
     ObjectType GetType() const override;
 
@@ -341,6 +372,10 @@ class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
 
     std::optional<bool> GetStrictMath() const;
 
+    using ShaderModuleHasher = Sha3_512;
+    using ShaderModuleHash = ShaderModuleHasher::Output;
+    const ShaderModuleHash& GetHash() const;
+
     using ScopedUseTintProgram = APIRef<ShaderModuleBase>;
     ScopedUseTintProgram UseTintProgram();
 
@@ -349,8 +384,8 @@ class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
 
     Future APIGetCompilationInfo(const WGPUCompilationInfoCallbackInfo& callbackInfo);
 
-    void InjectCompilationMessages(std::unique_ptr<OwnedCompilationMessages> compilationMessages);
     OwnedCompilationMessages* GetCompilationMessages() const;
+    std::string GetCompilationLog() const;
 
     // Return nullable tintProgram directly without any recreation, can be used for testing the
     // releasing/recreation behaviors.
@@ -361,10 +396,13 @@ class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
     void DestroyImpl() override;
 
     MaybeError InitializeBase(ShaderModuleParseResult* parseResult,
-                              OwnedCompilationMessages* compilationMessages);
+                              std::unique_ptr<OwnedCompilationMessages>* compilationMessages);
 
   private:
-    ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag, StringView label);
+    ShaderModuleBase(DeviceBase* device,
+                     ObjectBase::ErrorTag tag,
+                     StringView label,
+                     std::unique_ptr<OwnedCompilationMessages> compilationMessages);
 
     void WillDropLastExternalRef() override;
 
@@ -373,6 +411,10 @@ class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
     Type mType;
     std::vector<uint32_t> mOriginalSpirv;
     std::string mWgsl;
+
+    // Secure hash computed from shader code and other metadata to be used as a cache key
+    // representing the shader module.
+    ShaderModuleHash mHash;
 
     // TODO(dawn:2503): Remove the optional when Dawn can has a consistent default across backends.
     // Right now D3D uses strictness by default, and Vulkan/Metal use fast math by default.

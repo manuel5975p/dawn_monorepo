@@ -5,9 +5,9 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2017 The Khronos Group Inc.
- * Copyright (c) 2015-2017 Valve Corporation
- * Copyright (c) 2015-2017 LunarG, Inc.
+ * Copyright (c) 2015-2025 The Khronos Group Inc.
+ * Copyright (c) 2015-2025 Valve Corporation
+ * Copyright (c) 2015-2025 LunarG, Inc.
  * Copyright (c) 2015-2017 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +27,7 @@
  * Author: Tobin Ehlis <tobine@google.com>
  * Author: Chris Forbes <chrisforbes@google.com>
  * Author: John Zulauf<jzulauf@lunarg.com>
+ * Author: Charles Giessen<charles@lunarg.com>
  *
  ****************************************************************************/
 
@@ -89,12 +90,13 @@ typedef enum VulkanObjectType {
     kVulkanObjectTypeMicromapEXT = 49,
     kVulkanObjectTypeOpticalFlowSessionNV = 50,
     kVulkanObjectTypeShaderEXT = 51,
-    kVulkanObjectTypeIndirectExecutionSetEXT = 52,
-    kVulkanObjectTypeIndirectCommandsLayoutEXT = 53,
-    kVulkanObjectTypeMax = 54,
+    kVulkanObjectTypeExternalComputeQueueNV = 52,
+    kVulkanObjectTypeIndirectExecutionSetEXT = 53,
+    kVulkanObjectTypeIndirectCommandsLayoutEXT = 54,
+    kVulkanObjectTypeMax = 55,
     // Aliases for backwards compatibilty of "promoted" types
-    kVulkanObjectTypeDescriptorUpdateTemplateKHR = kVulkanObjectTypeDescriptorUpdateTemplate,
     kVulkanObjectTypeSamplerYcbcrConversionKHR = kVulkanObjectTypeSamplerYcbcrConversion,
+    kVulkanObjectTypeDescriptorUpdateTemplateKHR = kVulkanObjectTypeDescriptorUpdateTemplate,
     kVulkanObjectTypePrivateDataSlotEXT = kVulkanObjectTypePrivateDataSlot,
 } VulkanObjectType;
 
@@ -152,6 +154,7 @@ static const char * const object_string[kVulkanObjectTypeMax] = {
     "MicromapEXT",
     "OpticalFlowSessionNV",
     "ShaderEXT",
+    "ExternalComputeQueueNV",
     "IndirectExecutionSetEXT",
     "IndirectCommandsLayoutEXT",
 };
@@ -210,6 +213,7 @@ const VkDebugReportObjectTypeEXT get_debug_report_enum[] = {
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeMicromapEXT
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeOpticalFlowSessionNV
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeShaderEXT
+    VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeExternalComputeQueueNV
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeIndirectExecutionSetEXT
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeIndirectCommandsLayoutEXT
 };
@@ -268,6 +272,7 @@ const VkObjectType get_object_type_enum[] = {
     VK_OBJECT_TYPE_MICROMAP_EXT,   // kVulkanObjectTypeMicromapEXT
     VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV,   // kVulkanObjectTypeOpticalFlowSessionNV
     VK_OBJECT_TYPE_SHADER_EXT,   // kVulkanObjectTypeShaderEXT
+    VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV,   // kVulkanObjectTypeExternalComputeQueueNV
     VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT,   // kVulkanObjectTypeIndirectExecutionSetEXT
     VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT,   // kVulkanObjectTypeIndirectCommandsLayoutEXT
 };
@@ -346,12 +351,8 @@ static inline VkObjectType convertDebugReportObjectToCoreObject(VkDebugReportObj
         return VK_OBJECT_TYPE_CU_MODULE_NVX;
     } else if (debug_report_obj == VK_DEBUG_REPORT_OBJECT_TYPE_CU_FUNCTION_NVX_EXT) {
         return VK_OBJECT_TYPE_CU_FUNCTION_NVX;
-    } else if (debug_report_obj == VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_KHR_EXT) {
-        return VK_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_KHR;
     } else if (debug_report_obj == VK_DEBUG_REPORT_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR_EXT) {
         return VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR;
-    } else if (debug_report_obj == VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR_EXT) {
-        return VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR;
     } else if (debug_report_obj == VK_DEBUG_REPORT_OBJECT_TYPE_VALIDATION_CACHE_EXT_EXT) {
         return VK_OBJECT_TYPE_VALIDATION_CACHE_EXT;
     } else if (debug_report_obj == VK_DEBUG_REPORT_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV_EXT) {
@@ -440,12 +441,8 @@ static inline VkDebugReportObjectTypeEXT convertCoreObjectToDebugReportObject(Vk
         return VK_DEBUG_REPORT_OBJECT_TYPE_CU_MODULE_NVX_EXT;
     } else if (core_report_obj == VK_OBJECT_TYPE_CU_FUNCTION_NVX) {
         return VK_DEBUG_REPORT_OBJECT_TYPE_CU_FUNCTION_NVX_EXT;
-    } else if (core_report_obj == VK_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_KHR) {
-        return VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_KHR_EXT;
     } else if (core_report_obj == VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR) {
         return VK_DEBUG_REPORT_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR_EXT;
-    } else if (core_report_obj == VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR) {
-        return VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR_EXT;
     } else if (core_report_obj == VK_OBJECT_TYPE_VALIDATION_CACHE_EXT) {
         return VK_DEBUG_REPORT_OBJECT_TYPE_VALIDATION_CACHE_EXT_EXT;
     } else if (core_report_obj == VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV) {

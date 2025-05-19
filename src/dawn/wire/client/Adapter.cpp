@@ -73,7 +73,7 @@ class RequestDeviceEvent : public TrackedEvent {
   private:
     void CompleteImpl(FutureID futureID, EventCompletionType completionType) override {
         if (completionType == EventCompletionType::Shutdown) {
-            mStatus = WGPURequestDeviceStatus_InstanceDropped;
+            mStatus = WGPURequestDeviceStatus_CallbackCancelled;
             mMessage = "A valid external Instance reference no longer exists.";
         }
 
@@ -91,9 +91,9 @@ class RequestDeviceEvent : public TrackedEvent {
         if (mStatus != WGPURequestDeviceStatus_Success) {
             // If there was an error and we didn't return a device, we need to call the device lost
             // callback and reclaim the device allocation.
-            if (mStatus == WGPURequestDeviceStatus_InstanceDropped) {
+            if (mStatus == WGPURequestDeviceStatus_CallbackCancelled) {
                 mDevice->HandleDeviceLost(
-                    WGPUDeviceLostReason_InstanceDropped,
+                    WGPUDeviceLostReason_CallbackCancelled,
                     ToOutputStringView("A valid external Instance reference no longer exists."));
             } else {
                 mDevice->HandleDeviceLost(WGPUDeviceLostReason_FailedCreation,
@@ -198,6 +198,12 @@ void Adapter::SetInfo(const WGPUAdapterInfo* info) {
                     subgroupMatrixConfigs->configs + subgroupMatrixConfigs->configCount};
                 break;
             }
+            case WGPUSType_DawnAdapterPropertiesPowerPreference: {
+                auto* powerProperties =
+                    reinterpret_cast<WGPUDawnAdapterPropertiesPowerPreference*>(chain);
+                mPowerProperties.powerPreference = powerProperties->powerPreference;
+                break;
+            }
             default:
                 DAWN_UNREACHABLE();
                 break;
@@ -255,6 +261,12 @@ WGPUStatus Adapter::GetInfo(WGPUAdapterInfo* info) const {
                 // Write out the pointer and count to the subgroup matrix configs out-struct.
                 subgroupMatrixConfigs->configCount = configCount;
                 subgroupMatrixConfigs->configs = configs;
+                break;
+            }
+            case WGPUSType_DawnAdapterPropertiesPowerPreference: {
+                auto* powerProperties =
+                    reinterpret_cast<WGPUDawnAdapterPropertiesPowerPreference*>(chain);
+                powerProperties->powerPreference = mPowerProperties.powerPreference;
                 break;
             }
             default:

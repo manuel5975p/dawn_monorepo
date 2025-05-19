@@ -26,6 +26,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <dawn/webgpu_cpp_print.h>
+#include <emscripten.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <webgpu/webgpu_cpp.h>
@@ -50,6 +51,14 @@ class InstanceLevelTests : public testing::Test {
 
   protected:
     wgpu::Adapter RequestAdapter(const wgpu::RequestAdapterOptions* adapterOptions = nullptr) {
+        // TODO(crbug.com/404535888): Remove this sleep once we figure out regression.
+        static bool sSleepWorkaround = false;
+        if (!sSleepWorkaround) {
+            // Make the test sleep for an additional 2 seconds before trying to requestAdapter.
+            emscripten_sleep(2000);
+            sSleepWorkaround = true;
+        }
+
         wgpu::RequestAdapterStatus status;
         wgpu::Adapter result = nullptr;
         EXPECT_EQ(instance.WaitAny(
@@ -107,7 +116,7 @@ TEST_F(AdapterLevelTests, RequestDevice) {
 
 TEST_F(AdapterLevelTests, RequestDeviceThenDestroy) {
     wgpu::Device device = nullptr;
-    wgpu::DeviceLostReason reason;
+    wgpu::DeviceLostReason reason{};
 
     wgpu::DeviceDescriptor descriptor = {};
     descriptor.SetDeviceLostCallback(
@@ -125,12 +134,17 @@ TEST_F(AdapterLevelTests, RequestDeviceThenDestroy) {
 }
 
 TEST_F(AdapterLevelTests, RequestDeviceThenDrop) {
-    wgpu::DeviceLostReason reason;
+    wgpu::DeviceLostReason reason{};
 
     wgpu::DeviceDescriptor descriptor = {};
     descriptor.SetDeviceLostCallback(
         wgpu::CallbackMode::AllowSpontaneous,
-        [&reason](const wgpu::Device&, wgpu::DeviceLostReason r, wgpu::StringView) { reason = r; });
+        [&reason](const wgpu::Device& d, wgpu::DeviceLostReason r, wgpu::StringView) {
+            reason = r;
+            // d should be null even though this is called during wgpuDeviceRelease()
+            // so the allocation hasn't been freed yet.
+            EXPECT_EQ(nullptr, d.Get());
+        });
     wgpu::Device device = RequestDevice(&descriptor);
 
     auto deviceLostFuture = device.GetLostFuture();
@@ -352,20 +366,33 @@ TEST_F(DeviceLevelTests, GetCompilationInfo) {
 
     wgpu::CompilationMessageType messageType;
     std::string message;
-    EXPECT_EQ(instance.WaitAny(shader.GetCompilationInfo(
-                                   wgpu::CallbackMode::AllowSpontaneous,
-                                   [&message, &messageType](wgpu::CompilationInfoRequestStatus s,
-                                                            const wgpu::CompilationInfo* info) {
-                                       ASSERT_EQ(s, wgpu::CompilationInfoRequestStatus::Success);
-                                       ASSERT_NE(info, nullptr);
-                                       ASSERT_EQ(info->messageCount, 1);
+    bool hasUtf16 = false;
+    EXPECT_EQ(instance.WaitAny(
+                  shader.GetCompilationInfo(
+                      wgpu::CallbackMode::AllowSpontaneous,
+                      [&message, &messageType, &hasUtf16](wgpu::CompilationInfoRequestStatus s,
+                                                          const wgpu::CompilationInfo* info) {
+                          ASSERT_EQ(s, wgpu::CompilationInfoRequestStatus::Success);
+                          ASSERT_NE(info, nullptr);
+                          ASSERT_EQ(info->messageCount, 1);
 
-                                       message = info->messages[0].message;
-                                       messageType = info->messages[0].type;
-                                   }),
-                               UINT64_MAX),
+                          message = info->messages[0].message;
+                          messageType = info->messages[0].type;
+
+                          size_t chainLength = 0;
+                          for (const auto* chain = info->messages[0].nextInChain; chain != nullptr;
+                               chain = chain->nextInChain) {
+                              if (chain->sType == wgpu::SType::DawnCompilationMessageUtf16) {
+                                  hasUtf16 = true;
+                              }
+                              chainLength++;
+                          }
+                          ASSERT_EQ(chainLength, 1);
+                      }),
+                  UINT64_MAX),
               wgpu::WaitStatus::Success);
     EXPECT_EQ(messageType, wgpu::CompilationMessageType::Warning);
+    EXPECT_TRUE(hasUtf16);
     EXPECT_THAT(message, HasSubstr("unreachable"));
 }
 

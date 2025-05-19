@@ -33,7 +33,6 @@
 #include "src/tint/lang/core/ir/ir_helper_test.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/glsl/builtin_fn.h"
-#include "src/tint/utils/result/result.h"
 
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
@@ -57,8 +56,8 @@ TEST_F(IR_GlslMemberBuiltinCallTest, Clone) {
     auto* new_b = clone_ctx.Clone(builtin);
 
     EXPECT_NE(builtin, new_b);
-    EXPECT_NE(builtin->Result(0), new_b->Result(0));
-    EXPECT_EQ(mod.Types().i32(), new_b->Result(0)->Type());
+    EXPECT_NE(builtin->Result(), new_b->Result());
+    EXPECT_EQ(mod.Types().i32(), new_b->Result()->Type());
 
     EXPECT_EQ(BuiltinFn::kLength, new_b->Func());
     EXPECT_TRUE(new_b->Object()->Type()->UnwrapPtr()->Is<core::type::Array>());
@@ -85,7 +84,7 @@ TEST_F(IR_GlslMemberBuiltinCallTest, DoesNotMatchIncorrectType) {
 
     auto res = core::ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.Str(),
+    EXPECT_EQ(res.Failure().reason,
               R"(:12:17 error: length: no matching call to 'length(ptr<storage, u32, read_write>)'
 
 1 candidate function:
@@ -155,7 +154,7 @@ TEST_F(IR_GlslMemberBuiltinCallTest, MissingResult) {
 
     auto res = core::ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.Str(),
+    EXPECT_EQ(res.Failure().reason,
               R"(:12:16 error: length: expected exactly 1 results, got 0
     undef = %3.length
                ^^^^^^
@@ -201,7 +200,7 @@ TEST_F(IR_GlslMemberBuiltinCallTest, TooManyArgs) {
     auto res = core::ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.Str(),
+        res.Failure().reason,
         R"(:12:17 error: length: no matching call to 'length(ptr<storage, array<u32>, read_write>, u32)'
 
 1 candidate function:

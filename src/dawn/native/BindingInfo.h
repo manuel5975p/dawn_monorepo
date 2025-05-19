@@ -70,50 +70,54 @@ enum class BindingInfoType {
 
 // A mirror of wgpu::BufferBindingLayout for use inside dawn::native.
 struct BufferBindingInfo {
-    BufferBindingInfo();
-    explicit BufferBindingInfo(const BufferBindingLayout& apiLayout);
+    static BufferBindingInfo From(const BufferBindingLayout& layout);
 
     wgpu::BufferBindingType type;
     uint64_t minBindingSize;
 
     // Always false in shader reflection.
     bool hasDynamicOffset = false;
+
+    bool operator==(const BufferBindingInfo& other) const = default;
 };
 
 // A mirror of wgpu::TextureBindingLayout for use inside dawn::native.
 struct TextureBindingInfo {
-    TextureBindingInfo();
-    explicit TextureBindingInfo(const TextureBindingLayout& apiLayout);
+    static TextureBindingInfo From(const TextureBindingLayout& layout);
 
     // For shader reflection UnfilterableFloat is never used and the sample type is Float for any
     // texture_Nd<f32>.
     wgpu::TextureSampleType sampleType;
     wgpu::TextureViewDimension viewDimension;
     bool multisampled;
+
+    bool operator==(const TextureBindingInfo& other) const = default;
 };
 
 // A mirror of wgpu::StorageTextureBindingLayout for use inside dawn::native.
 struct StorageTextureBindingInfo {
-    StorageTextureBindingInfo();
-    explicit StorageTextureBindingInfo(const StorageTextureBindingLayout& apiLayout);
+    static StorageTextureBindingInfo From(const StorageTextureBindingLayout& layout);
 
     wgpu::TextureFormat format;
     wgpu::TextureViewDimension viewDimension;
     wgpu::StorageTextureAccess access;
+
+    bool operator==(const StorageTextureBindingInfo& other) const = default;
 };
 
 // A mirror of wgpu::SamplerBindingLayout for use inside dawn::native.
 struct SamplerBindingInfo {
-    SamplerBindingInfo();
-    explicit SamplerBindingInfo(const SamplerBindingLayout& apiLayout);
+    static SamplerBindingInfo From(const SamplerBindingLayout& layout);
 
     // For shader reflection NonFiltering is never used and Filtering is used for any `sampler`.
     wgpu::SamplerBindingType type;
+
+    bool operator==(const SamplerBindingInfo& other) const = default;
 };
 
 // A mirror of wgpu::StaticSamplerBindingLayout for use inside dawn::native.
 struct StaticSamplerBindingInfo {
-    explicit StaticSamplerBindingInfo(const StaticSamplerBindingLayout& apiLayout);
+    static StaticSamplerBindingInfo From(const StaticSamplerBindingLayout& layout);
 
     // Holds a ref instead of an unowned pointer.
     Ref<SamplerBase> sampler;
@@ -122,22 +126,30 @@ struct StaticSamplerBindingInfo {
     BindingNumber sampledTextureBinding;
     // Whether this instance is statically paired with a single texture.
     bool isUsedForSingleTextureBinding = false;
+
+    bool operator==(const StaticSamplerBindingInfo& other) const = default;
 };
 
 // A mirror of wgpu::ExternalTextureBindingLayout for use inside dawn::native.
-struct ExternalTextureBindingInfo {};
+struct ExternalTextureBindingInfo {
+    bool operator==(const ExternalTextureBindingInfo& other) const = default;
+};
 
 // Internal to vulkan only.
 struct InputAttachmentBindingInfo {
-    InputAttachmentBindingInfo();
-    explicit InputAttachmentBindingInfo(wgpu::TextureSampleType sampleType);
-
     wgpu::TextureSampleType sampleType;
+
+    bool operator==(const InputAttachmentBindingInfo& other) const = default;
 };
 
 struct BindingInfo {
     BindingNumber binding;
     wgpu::ShaderStage visibility;
+
+    // The size of the array this binding is part of. Each BindingInfy represents a single entry.
+    BindingIndex arraySize{1};
+    // The index of this entry in the array. Must be 0 if this entry is not in an array.
+    BindingIndex indexInArray{0};
 
     std::variant<BufferBindingInfo,
                  SamplerBindingInfo,
@@ -146,13 +158,18 @@ struct BindingInfo {
                  StaticSamplerBindingInfo,
                  InputAttachmentBindingInfo>
         bindingLayout;
+
+    bool operator==(const BindingInfo& other) const = default;
 };
 
 BindingInfoType GetBindingInfoType(const BindingInfo& bindingInfo);
 
+// Match tint::BindingPoint, can convert to/from tint::BindingPoint using ToTint and FromTint.
 struct BindingSlot {
     BindGroupIndex group;
     BindingNumber binding;
+
+    constexpr bool operator==(const BindingSlot& rhs) const = default;
 };
 
 struct PerStageBindingCounts {

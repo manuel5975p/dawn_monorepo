@@ -102,6 +102,7 @@ enum OperandClass {
     OperandCooperativeMatrixReduce,
     OperandTensorClampMode,
     OperandTensorAddressingOperands,
+    OperandTensorOperands,
     OperandInitializationModeQualifier,
     OperandHostAccessQualifier,
     OperandLoadCacheControl,
@@ -147,6 +148,7 @@ public:
     void setOptional();
     OperandClass getClass(int op) const { return opClass[op]; }
     const char* getDesc(int op) const { return desc[op].c_str(); }
+    void setDesc(int op, const std::string& d) { desc[op] = d; }
     bool isOptional(int op) const { return optional[op]; }
     int getNum() const { return (int)opClass.size(); }
 

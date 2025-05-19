@@ -32,7 +32,6 @@
 #include <vector>
 
 #include "absl/container/inlined_vector.h"
-#include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Enumerator.h"
 #include "dawn/common/Math.h"
 #include "dawn/common/NonMovable.h"
@@ -40,6 +39,7 @@
 #include "dawn/native/ApplyClearColorValueWithDrawHelper.h"
 #include "dawn/native/BindGroup.h"
 #include "dawn/native/BlitBufferToDepthStencil.h"
+#include "dawn/native/BlitBufferToTexture.h"
 #include "dawn/native/BlitDepthToDepth.h"
 #include "dawn/native/BlitTextureToBuffer.h"
 #include "dawn/native/Buffer.h"
@@ -58,6 +58,7 @@
 #include "dawn/native/RenderPassEncoder.h"
 #include "dawn/native/RenderPassWorkaroundsHelper.h"
 #include "dawn/native/RenderPipeline.h"
+#include "dawn/native/ValidationUtils.h"
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/native/utils/WGPUHelpers.h"
 #include "dawn/platform/DawnPlatform.h"
@@ -74,10 +75,7 @@ struct RecordedAttachment {
     // For 3d color attachment, it's the attachment's depthSlice.
     uint32_t depthOrArrayLayer;
 
-    bool operator==(const RecordedAttachment& other) const {
-        return ((other.texture == texture) && (other.mipLevel == mipLevel) &&
-                (other.depthOrArrayLayer == depthOrArrayLayer));
-    }
+    bool operator==(const RecordedAttachment& other) const = default;
 };
 
 enum class AttachmentType : uint8_t {
@@ -154,6 +152,43 @@ class RenderPassValidationState final : public NonMovable {
                 attachment->GetTexture()->GetMipLevelSingleSubresourceVirtualSize(
                     attachment->GetBaseMipLevel(), Aspect::Plane0);
         }
+
+        if (mExpandResolveRect) {
+            if (attachmentType == AttachmentType::ColorAttachment) {
+                DAWN_INVALID_IF(
+                    static_cast<uint64_t>(mExpandResolveRect->colorOffsetX) +
+                            static_cast<uint64_t>(mExpandResolveRect->width) >
+                        renderSize.width,
+                    "The color's x (%u) and width (%u) of ExpandResolveRect is out of the render "
+                    "area width(%u).",
+                    mExpandResolveRect->colorOffsetX, mExpandResolveRect->width, renderSize.width);
+                DAWN_INVALID_IF(static_cast<uint64_t>(mExpandResolveRect->colorOffsetY) +
+                                        static_cast<uint64_t>(mExpandResolveRect->height) >
+                                    renderSize.height,
+                                "The color's y (%u) and height (%u) of ExpandResolveRect is out of "
+                                "the render area "
+                                "height(%u).",
+                                mExpandResolveRect->colorOffsetY, mExpandResolveRect->height,
+                                renderSize.height);
+            } else if (attachmentType == AttachmentType::ResolveTarget) {
+                DAWN_INVALID_IF(static_cast<uint64_t>(mExpandResolveRect->resolveOffsetX) +
+                                        static_cast<uint64_t>(mExpandResolveRect->width) >
+                                    renderSize.width,
+                                "The resolve's x (%u) and width (%u) of ExpandResolveRect is out "
+                                "of the resolve "
+                                "area width(%u).",
+                                mExpandResolveRect->resolveOffsetX, mExpandResolveRect->width,
+                                renderSize.width);
+                DAWN_INVALID_IF(static_cast<uint64_t>(mExpandResolveRect->resolveOffsetY) +
+                                        static_cast<uint64_t>(mExpandResolveRect->height) >
+                                    renderSize.height,
+                                "The resolve's y (%u) and height (%u) of ExpandResolveRect is out "
+                                "of the resolve area "
+                                "height(%u).",
+                                mExpandResolveRect->resolveOffsetY, mExpandResolveRect->height,
+                                renderSize.height);
+            }
+        }
         if (HasAttachment()) {
             switch (attachmentType) {
                 case AttachmentType::ColorAttachment:
@@ -173,12 +208,16 @@ class RenderPassValidationState final : public NonMovable {
                                     "The resolve target %s used as resolve target is from a "
                                     "multi-planar texture. It is not supported by dawn yet.",
                                     attachment);
-                    DAWN_INVALID_IF(
-                        renderSize.width != mRenderWidth || renderSize.height != mRenderHeight,
-                        "The resolve target %s size (width: %u, height: %u) does not match the "
-                        "size of the other attachments (width: %u, height: %u).",
-                        attachment, renderSize.width, renderSize.height, mRenderWidth,
-                        mRenderHeight);
+                    // RenderPassDescriptorResolveRect relaxes the requirement for the color
+                    // attachment texture size to match the resolve texture size.
+                    if (!mExpandResolveRect) {
+                        DAWN_INVALID_IF(
+                            renderSize.width != mRenderWidth || renderSize.height != mRenderHeight,
+                            "The resolve target %s size (width: %u, height: %u) does not match the "
+                            "size of the other attachments (width: %u, height: %u).",
+                            attachment, renderSize.width, renderSize.height, mRenderWidth,
+                            mRenderHeight);
+                    }
                     break;
                 }
                 case AttachmentType::DepthStencilAttachment: {
@@ -208,6 +247,7 @@ class RenderPassValidationState final : public NonMovable {
                             attachmentTypeStr, attachment, implicitPrefixStr,
                             attachment->GetTexture()->GetSampleCount(), mSampleCount);
         } else {
+            DAWN_ASSERT(attachmentType != AttachmentType::ResolveTarget);
             mRenderWidth = renderSize.width;
             mRenderHeight = renderSize.height;
             mAttachmentValidationWidth = attachmentValidationSize.width;
@@ -265,6 +305,10 @@ class RenderPassValidationState final : public NonMovable {
 
     bool WillExpandResolveTexture() const { return mWillExpandResolveTexture; }
     void SetWillExpandResolveTexture(bool enabled) { mWillExpandResolveTexture = enabled; }
+    void SetExpandResolveRect(
+        const std::optional<RenderPassDescriptorResolveRect>& expandResolveRect) {
+        mExpandResolveRect = expandResolveRect;
+    }
 
   private:
     const bool mUnsafeApi;
@@ -283,6 +327,7 @@ class RenderPassValidationState final : public NonMovable {
     absl::InlinedVector<RecordedAttachment, kMaxColorAttachments> mRecords;
 
     bool mWillExpandResolveTexture = false;
+    std::optional<RenderPassDescriptorResolveRect> mExpandResolveRect;
 };
 
 MaybeError ValidateB2BCopyAlignment(uint64_t dataSize, uint64_t srcOffset, uint64_t dstOffset) {
@@ -573,9 +618,7 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
 
     const dawn::native::Color& clearValue = colorAttachment.clearValue;
     if (colorAttachment.loadOp == wgpu::LoadOp::Clear) {
-        DAWN_INVALID_IF(std::isnan(clearValue.r) || std::isnan(clearValue.g) ||
-                            std::isnan(clearValue.b) || std::isnan(clearValue.a),
-                        "Color clear value (%s) contains a NaN.", &clearValue);
+        DAWN_TRY(ValidateColor("clearValue", clearValue));
     } else if (colorAttachment.loadOp == wgpu::LoadOp::ExpandResolveTexture) {
         DAWN_INVALID_IF(colorAttachment.resolveTarget == nullptr,
                         "%s is used without resolve target.", wgpu::LoadOp::ExpandResolveTexture);
@@ -724,10 +767,7 @@ MaybeError ValidateRenderPassPLS(DeviceBase* device,
 
         const dawn::native::Color& clearValue = attachment.clearValue;
         if (attachment.loadOp == wgpu::LoadOp::Clear) {
-            DAWN_INVALID_IF(std::isnan(clearValue.r) || std::isnan(clearValue.g) ||
-                                std::isnan(clearValue.b) || std::isnan(clearValue.a),
-                            "storageAttachments[%i].clearValue (%s) contains a NaN.", i,
-                            &clearValue);
+            DAWN_TRY(ValidateColor("clearValue", clearValue));
         }
 
         DAWN_TRY(
@@ -754,12 +794,29 @@ ResultOrError<UnpackedPtr<RenderPassDescriptor>> ValidateRenderPassDescriptor(
         descriptor->colorAttachmentCount > maxColorAttachments,
         "Color attachment count (%u) exceeds the maximum number of color attachments (%u).%s",
         descriptor->colorAttachmentCount, maxColorAttachments,
-        DAWN_INCREASE_LIMIT_MESSAGE(device->GetAdapter(), maxColorAttachments,
+        DAWN_INCREASE_LIMIT_MESSAGE(device->GetAdapter()->GetLimits().v1, maxColorAttachments,
                                     descriptor->colorAttachmentCount));
 
     auto colorAttachments = ityp::SpanFromUntyped<ColorAttachmentIndex>(
         descriptor->colorAttachments, descriptor->colorAttachmentCount);
     ColorAttachmentFormats colorAttachmentFormats;
+    std::optional<RenderPassDescriptorResolveRect> expandResolveRect;
+    if (auto* legacyResolveRect = descriptor.Get<RenderPassDescriptorExpandResolveRect>()) {
+        // This is a deprecated option.
+        // TODO(417768364): Remove this once the all the call sites are updated to use the new rect.
+        RenderPassDescriptorResolveRect rect;
+        rect.colorOffsetX = legacyResolveRect->x;
+        rect.colorOffsetY = legacyResolveRect->y;
+        rect.resolveOffsetX = legacyResolveRect->x;
+        rect.resolveOffsetY = legacyResolveRect->y;
+        rect.width = legacyResolveRect->width;
+        rect.height = legacyResolveRect->height;
+        expandResolveRect = rect;
+    } else if (auto* resolveRect = descriptor.Get<RenderPassDescriptorResolveRect>()) {
+        expandResolveRect = *resolveRect;
+    }
+    validationState->SetExpandResolveRect(expandResolveRect);
+
     for (auto [i, attachment] : Enumerate(colorAttachments)) {
         DAWN_TRY_CONTEXT(ValidateRenderPassColorAttachment(device, attachment, usageValidationMode,
                                                            validationState),
@@ -819,24 +876,14 @@ ResultOrError<UnpackedPtr<RenderPassDescriptor>> ValidateRenderPassDescriptor(
                         wgpu::LoadOp::ExpandResolveTexture);
     }
 
-    if (const auto* rect = descriptor.Get<RenderPassDescriptorExpandResolveRect>()) {
+    if (expandResolveRect) {
         DAWN_INVALID_IF(!device->HasFeature(Feature::DawnPartialLoadResolveTexture),
                         "RenderPassDescriptorExpandResolveRect can't be used without %s.",
                         ToAPI(Feature::DawnPartialLoadResolveTexture));
+        // TODO(417631315): Support other load ops like wgpu::LoadOp::Load and wgpu::LoadOp::Clear.
         DAWN_INVALID_IF(
             !validationState->WillExpandResolveTexture(),
             "ExpandResolveRect is invalid to use without wgpu::LoadOp::ExpandResolveTexture.");
-
-        DAWN_INVALID_IF(
-            static_cast<uint64_t>(rect->x) + static_cast<uint64_t>(rect->width) >
-                validationState->GetRenderWidth(),
-            "The x (%u) and width (%u) of ExpandResolveRect is out of the render area width(% u).",
-            rect->x, rect->width, validationState->GetRenderWidth());
-        DAWN_INVALID_IF(static_cast<uint64_t>(rect->y) + static_cast<uint64_t>(rect->height) >
-                            validationState->GetRenderHeight(),
-                        "The y (%u) and height (%u) of ExpandResolveRect is out of the render area "
-                        "height(% u).",
-                        rect->y, rect->height, validationState->GetRenderHeight());
     }
 
     return descriptor;
@@ -943,7 +990,13 @@ MaybeError EncodeTimestampsToNanosecondsConversion(CommandEncoder* encoder,
 
 bool ShouldUseTextureToBufferBlit(const DeviceBase* device,
                                   const Format& format,
-                                  const Aspect& aspect) {
+                                  const Aspect& aspect,
+                                  const Extent3D& copySize) {
+    // Noop copy, do not use blit.
+    if (copySize.width == 0 || copySize.height == 0 || copySize.depthOrArrayLayers == 0) {
+        return false;
+    }
+
     // Snorm
     if (format.IsSnorm() && device->IsToggleEnabled(Toggle::UseBlitForSnormTextureToBufferCopy)) {
         return true;
@@ -1254,7 +1307,7 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
 
             auto descColorAttachments = ityp::SpanFromUntyped<ColorAttachmentIndex>(
                 descriptor->colorAttachments, descriptor->colorAttachmentCount);
-            for (auto i : IterateBitSet(cmd->attachmentState->GetColorAttachmentsMask())) {
+            for (auto i : cmd->attachmentState->GetColorAttachmentsMask()) {
                 auto& descColorAttachment = descColorAttachments[i];
                 auto& cmdColorAttachment = cmd->colorAttachments[i];
 
@@ -1621,6 +1674,18 @@ void CommandEncoder::APICopyBufferToTexture(const TexelCopyBufferInfo* source,
                                  "copying from %s to stencil aspect of %s using blit workaround.",
                                  source->buffer, dst.texture.Get());
                 return {};
+            } else if (GetDevice()->IsToggleEnabled(Toggle::UseBlitForB2T) &&
+                       IsBufferToTextureBlitSupported(source->buffer, dst, *copySize)) {
+                // This function might create new resources. Need to lock the Device.
+                // TODO(crbug.com/dawn/1618): In future, all temp resources should be created at
+                // Command Submit time, so the locking would be removed from here at that point.
+                auto deviceLock(GetDevice()->GetScopedLock());
+                DAWN_TRY_CONTEXT(BlitBufferToTexture(GetDevice(), this, source->buffer, srcLayout,
+                                                     dst, *copySize),
+                                 "copying buffer %s to %s using blit workaround.", source->buffer,
+                                 dst.texture.Get());
+
+                return {};
             }
 
             CopyBufferToTextureCmd* copy =
@@ -1685,17 +1750,11 @@ void CommandEncoder::APICopyTextureToBuffer(const TexelCopyTextureInfo* sourceOr
             TexelCopyBufferLayout dstLayout = destination->layout;
             ApplyDefaultTexelCopyBufferLayoutOptions(&dstLayout, blockInfo, *copySize);
 
-            if (copySize->width == 0 || copySize->height == 0 ||
-                copySize->depthOrArrayLayers == 0) {
-                // Noop copy but is valid, simply skip encoding any command.
-                return {};
-            }
-
             auto format = source.texture->GetFormat();
             auto aspect = ConvertAspect(format, source.aspect);
 
             // Workaround to use compute pass to emulate texture to buffer copy
-            if (ShouldUseTextureToBufferBlit(GetDevice(), format, aspect)) {
+            if (ShouldUseTextureToBufferBlit(GetDevice(), format, aspect, *copySize)) {
                 // This function might create new resources. Need to lock the Device.
                 // TODO(crbug.com/dawn/1618): In future, all temp resources should be created at
                 // Command Submit time, so the locking would be removed from here at that point.

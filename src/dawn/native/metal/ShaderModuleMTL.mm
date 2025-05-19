@@ -52,20 +52,21 @@
 namespace dawn::native::metal {
 namespace {
 
-// The name to use when remapping entry points.
-constexpr char kRemappedEntryPointName[] = "dawn_entry_point";
-
 using OptionalVertexPullingTransformConfig = std::optional<tint::VertexPullingConfig>;
+using SubstituteOverrideConfig = std::unordered_map<tint::OverrideId, double>;
 
-#define MSL_COMPILATION_REQUEST_MEMBERS(X)                                                       \
-    X(SingleShaderStage, stage)                                                                  \
-    X(const tint::Program*, inputProgram)                                                        \
-    X(std::optional<tint::ast::transform::SubstituteOverride::Config>, substituteOverrideConfig) \
-    X(LimitsForCompilationRequest, limits)                                                       \
-    X(CacheKey::UnsafeUnkeyedValue<const AdapterBase*>, adapter)                                 \
-    X(std::string, entryPointName)                                                               \
-    X(bool, disableSymbolRenaming)                                                               \
-    X(tint::msl::writer::Options, tintOptions)                                                   \
+#define MSL_COMPILATION_REQUEST_MEMBERS(X)                                                \
+    X(SingleShaderStage, stage)                                                           \
+    X(ShaderModuleBase::ShaderModuleHash, shaderModuleHash)                               \
+    X(CacheKey::UnsafeUnkeyedValue<ShaderModuleBase::ScopedUseTintProgram>, inputProgram) \
+    X(SubstituteOverrideConfig, substituteOverrideConfig)                                 \
+    X(LimitsForCompilationRequest, limits)                                                \
+    X(CacheKey::UnsafeUnkeyedValue<LimitsForCompilationRequest>, adapterSupportedLimits)  \
+    X(uint32_t, maxSubgroupSize)                                                          \
+    X(std::string, entryPointName)                                                        \
+    X(bool, usesSubgroupMatrix)                                                           \
+    X(bool, disableSymbolRenaming)                                                        \
+    X(tint::msl::writer::Options, tintOptions)                                            \
     X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, platform)
 
 DAWN_MAKE_CACHE_REQUEST(MslCompilationRequest, MSL_COMPILATION_REQUEST_MEMBERS);
@@ -81,7 +82,17 @@ using WorkgroupAllocations = std::vector<uint32_t>;
     X(WorkgroupAllocations, workgroupAllocations) \
     X(Extent3D, localWorkgroupSize)
 
-DAWN_SERIALIZABLE(struct, MslCompilation, MSL_COMPILATION_MEMBERS){};
+// clang-format off
+DAWN_SERIALIZABLE(struct, MslCompilation, MSL_COMPILATION_MEMBERS) {
+    static ResultOrError<MslCompilation> FromValidatedBlob(Blob blob) {
+        MslCompilation result;
+        DAWN_TRY_ASSIGN(result, FromBlob(std::move(blob)));
+        DAWN_INVALID_IF(result.msl.empty() || result.remappedEntryPointName.empty(),
+                        "Cached MslCompilation result has no MSL");
+        return result;
+    }
+};
+// clang-format on
 #undef MSL_COMPILATION_MEMBERS
 
 }  // namespace
@@ -95,7 +106,7 @@ ResultOrError<Ref<ShaderModule>> ShaderModule::Create(
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
     const std::vector<tint::wgsl::Extension>& internalExtensions,
     ShaderModuleParseResult* parseResult,
-    OwnedCompilationMessages* compilationMessages) {
+    std::unique_ptr<OwnedCompilationMessages>* compilationMessages) {
     Ref<ShaderModule> module = AcquireRef(new ShaderModule(device, descriptor, internalExtensions));
     DAWN_TRY(module->Initialize(parseResult, compilationMessages));
     return module;
@@ -108,8 +119,9 @@ ShaderModule::ShaderModule(Device* device,
 
 ShaderModule::~ShaderModule() = default;
 
-MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult,
-                                    OwnedCompilationMessages* compilationMessages) {
+MaybeError ShaderModule::Initialize(
+    ShaderModuleParseResult* parseResult,
+    std::unique_ptr<OwnedCompilationMessages>* compilationMessages) {
     return InitializeBase(parseResult, compilationMessages);
 }
 
@@ -122,7 +134,7 @@ tint::msl::writer::Bindings generateBindingInfo(
     tint::msl::writer::ArrayLengthFromUniformOptions& arrayLengthFromUniform) {
     tint::msl::writer::Bindings bindings;
 
-    for (BindGroupIndex group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
+    for (BindGroupIndex group : layout->GetBindGroupLayoutsMask()) {
         const BindGroupLayout* bgl = ToBackend(layout->GetBindGroupLayout(group));
 
         for (const auto& currentModuleBindingInfo : moduleBindingInfo[group]) {
@@ -152,6 +164,7 @@ tint::msl::writer::Bindings generateBindingInfo(
                         case kInternalStorageBufferBinding:
                         case wgpu::BufferBindingType::Storage:
                         case wgpu::BufferBindingType::ReadOnlyStorage:
+                        case kInternalReadOnlyStorageBufferBinding:
                             bindings.storage.emplace(
                                 srcBindingPoint,
                                 tint::msl::writer::binding::Storage{dstBindingPoint.binding});
@@ -212,7 +225,6 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     uint32_t sampleMask,
     const RenderPipeline* renderPipeline,
     const BindingInfoArray& moduleBindingInfo) {
-
     std::ostringstream errorStream;
     errorStream << "Tint MSL failure:\n";
 
@@ -228,7 +240,7 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
         vertexPullingTransformConfig =
             BuildVertexPullingTransformConfig(*renderPipeline, kPullingBufferBindingSet);
 
-        for (VertexBufferSlot slot : IterateBitSet(renderPipeline->GetVertexBuffersUsed())) {
+        for (VertexBufferSlot slot : renderPipeline->GetVertexBuffersUsed()) {
             uint32_t metalIndex = renderPipeline->GetMtlVertexBufferIndex(slot);
 
             // Tell Tint to map (kPullingBufferBindingSet, slot) to this MSL buffer index.
@@ -247,11 +259,6 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
         }
     }
 
-    std::optional<tint::ast::transform::SubstituteOverride::Config> substituteOverrideConfig;
-    if (!programmableStage.metadata->overrides.empty()) {
-        substituteOverrideConfig = BuildSubstituteOverridesTransformConfig(programmableStage);
-    }
-
     std::unordered_map<uint32_t, uint32_t> pixelLocalAttachments;
     if (stage == SingleShaderStage::Fragment && layout->HasPixelLocalStorage()) {
         const AttachmentState* attachmentState = renderPipeline->GetAttachmentState();
@@ -267,15 +274,16 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
 
     MslCompilationRequest req = {};
     req.stage = stage;
-    auto tintProgram = programmableStage.module->GetTintProgram();
-    req.inputProgram = &(tintProgram->program);
-    req.substituteOverrideConfig = std::move(substituteOverrideConfig);
+    req.shaderModuleHash = programmableStage.module->GetHash();
+    req.inputProgram = programmableStage.module->UseTintProgram();
+    req.substituteOverrideConfig = BuildSubstituteOverridesTransformConfig(programmableStage);
     req.entryPointName = programmableStage.entryPoint.c_str();
     req.disableSymbolRenaming = device->IsToggleEnabled(Toggle::DisableSymbolRenaming);
+    req.usesSubgroupMatrix = programmableStage.metadata->usesSubgroupMatrix;
     req.platform = UnsafeUnkeyedValue(device->GetPlatform());
 
     req.tintOptions.strip_all_names = !req.disableSymbolRenaming;
-    req.tintOptions.remapped_entry_point_name = kRemappedEntryPointName;
+    req.tintOptions.remapped_entry_point_name = device->GetIsolatedEntryPointName();
     req.tintOptions.disable_robustness = !device->IsRobustnessEnabled();
     req.tintOptions.buffer_size_ubo_index = kBufferLengthBufferSlot;
     req.tintOptions.fixed_sample_mask = sampleMask;
@@ -292,100 +300,102 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
         device->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
     req.tintOptions.vertex_pulling_config = std::move(vertexPullingTransformConfig);
 
-    const CombinedLimits& limits = device->GetLimits();
-    req.limits = LimitsForCompilationRequest::Create(limits.v1);
-    req.adapter = UnsafeUnkeyedValue(static_cast<const AdapterBase*>(device->GetAdapter()));
+    req.limits = LimitsForCompilationRequest::Create(device->GetLimits().v1);
+    req.adapterSupportedLimits =
+        LimitsForCompilationRequest::Create(device->GetAdapter()->GetLimits().v1);
+    req.maxSubgroupSize = device->GetAdapter()->GetPhysicalDevice()->GetSubgroupMaxSize();
 
     CacheResult<MslCompilation> mslCompilation;
-    {
-        ScopedTintICEHandler scopedICEHandler(device);
-        DAWN_TRY_LOAD_OR_RUN(
-            mslCompilation, device, std::move(req), MslCompilation::FromBlob,
-            [](MslCompilationRequest r) -> ResultOrError<MslCompilation> {
-                tint::ast::transform::Manager transformManager;
-                tint::ast::transform::DataMap transformInputs;
-
-                // We only remap bindings for the target entry point, so we need to strip all other
-                // entry points to avoid generating invalid bindings for them.
-                // Run before the renamer so that the entry point name matches `entryPointName`
-                // still.
-                transformManager.Add<tint::ast::transform::SingleEntryPoint>();
-                transformInputs.Add<tint::ast::transform::SingleEntryPoint::Config>(
-                    r.entryPointName);
-
-                tint::Program program;
-                tint::ast::transform::DataMap transformOutputs;
-                {
-                    TRACE_EVENT0(r.platform.UnsafeGetValue(), General, "RunTransforms");
-                    DAWN_TRY_ASSIGN(
-                        program, RunTransforms(&transformManager, r.inputProgram, transformInputs,
-                                               &transformOutputs, nullptr));
-                }
-
-                Extent3D localSize{0, 0, 0};
-
-                TRACE_EVENT0(r.platform.UnsafeGetValue(), General, "tint::msl::writer::Generate");
-
-                // Convert the AST program to an IR module.
-                auto ir = tint::wgsl::reader::ProgramToLoweredIR(program);
+    DAWN_TRY_LOAD_OR_RUN(
+        mslCompilation, device, std::move(req), MslCompilation::FromValidatedBlob,
+        [](MslCompilationRequest r) -> ResultOrError<MslCompilation> {
+            TRACE_EVENT0(r.platform.UnsafeGetValue(), General, "tint::msl::writer::Generate");
+            // Requires Tint Program here right before actual using.
+            auto inputProgram = r.inputProgram.UnsafeGetValue()->GetTintProgram();
+            const tint::Program* tintInputProgram = &(inputProgram->program);
+            // Convert the AST program to an IR module.
+            tint::Result<tint::core::ir::Module> ir;
+            {
+                SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(r.platform.UnsafeGetValue(),
+                                                   "ShaderModuleProgramToIR");
+                ir = tint::wgsl::reader::ProgramToLoweredIR(*tintInputProgram);
                 DAWN_INVALID_IF(ir != tint::Success,
                                 "An error occurred while generating Tint IR\n%s",
-                                ir.Failure().reason.Str());
+                                ir.Failure().reason);
+            }
 
-                if (r.substituteOverrideConfig) {
-                    // this needs to run after SingleEntryPoint transform which removes unused
-                    // overrides for the current entry point.
-                    tint::core::ir::transform::SubstituteOverridesConfig cfg;
-                    cfg.map = r.substituteOverrideConfig->map;
-                    auto substituteOverridesResult =
-                        tint::core::ir::transform::SubstituteOverrides(ir.Get(), cfg);
-                    DAWN_INVALID_IF(substituteOverridesResult != tint::Success,
-                                    "Pipeline override substitution (IR) failed:\n%s",
-                                    substituteOverridesResult.Failure().reason.Str());
-                }
+            {
+                SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(r.platform.UnsafeGetValue(),
+                                                   "ShaderModuleSingleEntryPoint");
+                auto singleEntryPointResult =
+                    tint::core::ir::transform::SingleEntryPoint(ir.Get(), r.entryPointName);
+                DAWN_INVALID_IF(singleEntryPointResult != tint::Success,
+                                "Pipeline single entry point (IR) failed:\n%s",
+                                singleEntryPointResult.Failure().reason);
+            }
 
-                // Generate MSL.
-                auto result = tint::msl::writer::Generate(ir.Get(), r.tintOptions);
+            // this needs to run after SingleEntryPoint transform which removes unused
+            // overrides for the current entry point.
+            {
+                SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(r.platform.UnsafeGetValue(),
+                                                   "ShaderModuleSubstituteOverrides");
+                tint::core::ir::transform::SubstituteOverridesConfig cfg;
+                cfg.map = std::move(r.substituteOverrideConfig);
+                auto substituteOverridesResult =
+                    tint::core::ir::transform::SubstituteOverrides(ir.Get(), cfg);
+                DAWN_INVALID_IF(substituteOverridesResult != tint::Success,
+                                "Pipeline override substitution (IR) failed:\n%s",
+                                substituteOverridesResult.Failure().reason);
+            }
+
+            // Generate MSL.
+            tint::Result<tint::msl::writer::Output> result;
+            {
+                SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(r.platform.UnsafeGetValue(),
+                                                   "ShaderModuleGenerateMSL");
+                result = tint::msl::writer::Generate(ir.Get(), r.tintOptions);
                 DAWN_INVALID_IF(result != tint::Success,
                                 "An error occurred while generating MSL:\n%s",
-                                result.Failure().reason.Str());
+                                result.Failure().reason);
+            }
 
-                // Workgroup validation has to come after `Generate` because it may require
-                // overrides to have been substituted.
-                if (r.stage == SingleShaderStage::Compute) {
-                    // Validate workgroup size and workgroup storage size.
-                    DAWN_TRY_ASSIGN(
-                        localSize,
-                        ValidateComputeStageWorkgroupSize(
-                            result->workgroup_info.x, result->workgroup_info.y,
-                            result->workgroup_info.z, result->workgroup_info.storage_size, r.limits,
-                            r.adapter.UnsafeGetValue()));
-                }
+            // Workgroup validation has to come after `Generate` because it may require
+            // overrides to have been substituted.
+            Extent3D localSize{0, 0, 0};
+            if (r.stage == SingleShaderStage::Compute) {
+                // Validate workgroup size and workgroup storage size.
+                DAWN_TRY_ASSIGN(localSize,
+                                ValidateComputeStageWorkgroupSize(
+                                    result->workgroup_info.x, result->workgroup_info.y,
+                                    result->workgroup_info.z, result->workgroup_info.storage_size,
+                                    r.usesSubgroupMatrix, r.maxSubgroupSize, r.limits,
+                                    r.adapterSupportedLimits.UnsafeGetValue()));
+            }
 
-                // Metal uses Clang to compile the shader as C++14. Disable everything in the -Wall
-                // category. -Wunused-variable in particular comes up a lot in generated code, and
-                // some (old?) Metal drivers accidentally treat it as a MTLLibraryErrorCompileError
-                // instead of a warning.
-                auto msl = std::move(result->msl);
-                msl = R"(
+            // Metal uses Clang to compile the shader as C++14. Disable everything in the -Wall
+            // category. -Wunused-variable in particular comes up a lot in generated code, and
+            // some (old?) Metal drivers accidentally treat it as a MTLLibraryErrorCompileError
+            // instead of a warning.
+            auto msl = std::move(result->msl);
+            msl = R"(
                     #ifdef __clang__
                     #pragma clang diagnostic ignored "-Wall"
                     #endif
-                )" + msl;
+                )" +
+                  msl;
 
-                auto workgroupAllocations =
-                    std::move(result->workgroup_info.allocations.at(kRemappedEntryPointName));
-                return MslCompilation{{
-                    std::move(msl),
-                    std::move(kRemappedEntryPointName),
-                    result->needs_storage_buffer_sizes,
-                    result->has_invariant_attribute,
-                    std::move(workgroupAllocations),
-                    localSize,
-                }};
-            },
-            "Metal.CompileShaderToMSL");
-    }
+            auto workgroupAllocations = std::move(
+                result->workgroup_info.allocations.at(r.tintOptions.remapped_entry_point_name));
+            return MslCompilation{{
+                std::move(msl),
+                r.tintOptions.remapped_entry_point_name,
+                result->needs_storage_buffer_sizes,
+                result->has_invariant_attribute,
+                std::move(workgroupAllocations),
+                localSize,
+            }};
+        },
+        "Metal.CompileShaderToMSL");
 
     if (device->IsToggleEnabled(Toggle::DumpShaders)) {
         std::ostringstream dumpedMsg;

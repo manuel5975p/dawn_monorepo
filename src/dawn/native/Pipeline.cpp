@@ -118,7 +118,7 @@ ResultOrError<ShaderModuleEntryPoint> ValidateProgrammableStage(DeviceBase* devi
         absl::string_view key = {constants[i].key};
         double value = constants[i].value;
 
-        DAWN_INVALID_IF(metadata.overrides.count(key) == 0,
+        DAWN_INVALID_IF(!metadata.overrides.contains(key),
                         "Pipeline overridable constant \"%s\" not found in %s.", constants[i].key,
                         module);
         DAWN_INVALID_IF(!std::isfinite(value),
@@ -386,6 +386,10 @@ MaybeError PipelineBase::Initialize(std::optional<ScopedUseShaderPrograms> scope
 
 void PipelineBase::SetImmediateMaskForTesting(ImmediateConstantMask immediateConstantMask) {
     mImmediateMask = immediateConstantMask;
+}
+
+uint32_t PipelineBase::GetImmediateConstantSize() const {
+    return static_cast<uint32_t>(mImmediateMask.count());
 }
 
 }  // namespace dawn::native

@@ -43,6 +43,7 @@
 #include "src/tint/lang/core/type/matrix.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/reference.h"
+#include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/type.h"
 #include "src/tint/lang/core/type/u32.h"
@@ -53,6 +54,45 @@
 #include "src/tint/utils/macros/compiler.h"
 
 namespace tint::core::type {
+namespace {
+
+const Type* SubtypeFor(core::TexelFormat format, Manager& type_mgr) {
+    switch (format) {
+        case core::TexelFormat::kR32Uint:
+        case core::TexelFormat::kRgba8Uint:
+        case core::TexelFormat::kRg32Uint:
+        case core::TexelFormat::kRgba16Uint:
+        case core::TexelFormat::kRgba32Uint: {
+            return type_mgr.u32();
+        }
+
+        case core::TexelFormat::kR32Sint:
+        case core::TexelFormat::kRgba8Sint:
+        case core::TexelFormat::kRg32Sint:
+        case core::TexelFormat::kRgba16Sint:
+        case core::TexelFormat::kRgba32Sint: {
+            return type_mgr.i32();
+        }
+
+        case core::TexelFormat::kR8Unorm:
+        case core::TexelFormat::kBgra8Unorm:
+        case core::TexelFormat::kRgba8Unorm:
+        case core::TexelFormat::kRgba8Snorm:
+        case core::TexelFormat::kR32Float:
+        case core::TexelFormat::kRg32Float:
+        case core::TexelFormat::kRgba16Float:
+        case core::TexelFormat::kRgba32Float: {
+            return type_mgr.f32();
+        }
+
+        case core::TexelFormat::kUndefined:
+            break;
+    }
+
+    return nullptr;
+}
+
+}  // namespace
 
 Manager::Manager() = default;
 
@@ -153,11 +193,30 @@ const core::type::Vector* Manager::vec4(const core::type::Type* inner) {
     return vec(inner, 4);
 }
 
+const core::type::SampledTexture* Manager::sampled_texture(TextureDimension dim,
+                                                           const core::type::Type* type) {
+    return Get<core::type::SampledTexture>(dim, type);
+}
+
+const core::type::MultisampledTexture* Manager::multisampled_texture(TextureDimension dim,
+                                                                     const core::type::Type* type) {
+    return Get<core::type::MultisampledTexture>(dim, type);
+}
+
 const core::type::StorageTexture* Manager::storage_texture(TextureDimension dim,
                                                            core::TexelFormat format,
                                                            core::Access access) {
-    const auto* subtype = StorageTexture::SubtypeFor(format, *this);
+    const auto* subtype = SubtypeFor(format, *this);
     return Get<core::type::StorageTexture>(dim, format, access, subtype);
+}
+
+const core::type::DepthTexture* Manager::depth_texture(TextureDimension dim) {
+    return Get<core::type::DepthTexture>(dim);
+}
+
+const core::type::DepthMultisampledTexture* Manager::depth_multisampled_texture(
+    TextureDimension dim) {
+    return Get<core::type::DepthMultisampledTexture>(dim);
 }
 
 const core::type::Matrix* Manager::mat(const core::type::Type* inner,

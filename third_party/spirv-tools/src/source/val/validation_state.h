@@ -32,6 +32,7 @@
 #include "source/name_mapper.h"
 #include "source/spirv_definition.h"
 #include "source/spirv_validator_options.h"
+#include "source/table2.h"
 #include "source/val/decoration.h"
 #include "source/val/function.h"
 #include "source/val/instruction.h"
@@ -633,6 +634,9 @@ class ValidationState_t {
   // Returns true iff |id| is a type corresponding to the name of the function.
   // Only works for types not for objects.
   bool IsVoidType(uint32_t id) const;
+  bool IsScalarType(uint32_t id) const;
+  bool IsBfloat16ScalarType(uint32_t id) const;
+  bool IsBfloat16VectorType(uint32_t id) const;
   bool IsFloatScalarType(uint32_t id) const;
   bool IsFloatArrayType(uint32_t id) const;
   bool IsFloatVectorType(uint32_t id) const;
@@ -640,7 +644,7 @@ class ValidationState_t {
   bool IsFloatScalarOrVectorType(uint32_t id) const;
   bool IsFloatMatrixType(uint32_t id) const;
   bool IsIntScalarType(uint32_t id) const;
-  bool IsIntArrayType(uint32_t id) const;
+  bool IsIntArrayType(uint32_t id, uint64_t length = 0) const;
   bool IsIntVectorType(uint32_t id) const;
   bool IsIntScalarOrVectorType(uint32_t id) const;
   bool IsUnsignedIntScalarType(uint32_t id) const;
@@ -786,12 +790,12 @@ class ValidationState_t {
 
   // Returns the string name for |decoration|.
   std::string SpvDecorationString(uint32_t decoration) {
-    spv_operand_desc desc = nullptr;
-    if (grammar_.lookupOperand(SPV_OPERAND_TYPE_DECORATION, decoration,
-                               &desc) != SPV_SUCCESS) {
+    const spvtools::OperandDesc* desc = nullptr;
+    if (spvtools::LookupOperand(SPV_OPERAND_TYPE_DECORATION, decoration,
+                                &desc) != SPV_SUCCESS) {
       return std::string("Unknown");
     }
-    return std::string(desc->name);
+    return std::string(desc->name().data());
   }
   std::string SpvDecorationString(spv::Decoration decoration) {
     return SpvDecorationString(uint32_t(decoration));

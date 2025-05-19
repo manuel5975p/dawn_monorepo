@@ -28,7 +28,6 @@
 #ifndef SRC_TINT_LANG_SPIRV_READER_PARSER_HELPER_TEST_H_
 #define SRC_TINT_LANG_SPIRV_READER_PARSER_HELPER_TEST_H_
 
-#include <iostream>
 #include <string>
 #include <vector>
 
@@ -47,7 +46,7 @@ namespace tint::spirv::reader {
 #define EXPECT_IR(asm, ir)                                                                  \
     do {                                                                                    \
         auto result = Run(asm);                                                             \
-        ASSERT_EQ(result, Success) << result.Failure().reason.Str();                        \
+        ASSERT_EQ(result, Success) << result.Failure();                                     \
         auto got = "\n" + result.Get();                                                     \
         ASSERT_THAT(got, testing::HasSubstr(ir)) << "GOT:\n" << got << "EXPECTED:\n" << ir; \
     } while (false)
@@ -67,7 +66,7 @@ class SpirvParserTestHelperBase : public BASE {
         }
 
         // Parse the SPIR-V to produce an IR module.
-        auto parsed = Parse(Slice(binary.Get().data(), binary.Get().size()));
+        auto parsed = Parse(Slice(binary.Get().data(), binary.Get().size()), options);
         if (parsed != Success) {
             return parsed.Failure();
         }
@@ -75,6 +74,7 @@ class SpirvParserTestHelperBase : public BASE {
         // Validate the IR module against the capabilities supported by the SPIR-V dialect.
         auto validated =
             core::ir::Validate(parsed.Get(), core::ir::Capabilities{
+                                                 core::ir::Capability::kAllowOverrides,
                                                  core::ir::Capability::kAllowVectorElementPointer,
                                              });
         if (validated != Success) {
@@ -84,6 +84,9 @@ class SpirvParserTestHelperBase : public BASE {
         // Return the disassembled IR module.
         return core::ir::Disassembler(parsed.Get()).Plain();
     }
+
+    /// Parser options
+    spirv::reader::Options options;
 };
 
 using SpirvParserTest = SpirvParserTestHelperBase<testing::Test>;

@@ -162,10 +162,11 @@ ResultOrError<Ref<Buffer>> Buffer::CreateFromSharedBufferMemory(
 
 MaybeError Buffer::InitializeAsExternalBuffer(ComPtr<ID3D12Resource> d3d12Buffer,
                                               const UnpackedPtr<BufferDescriptor>& descriptor) {
+    mAllocatedSize = descriptor->size;
     AllocationInfo info;
     info.mMethod = AllocationMethod::kExternal;
+    info.mRequestedSize = mAllocatedSize;
     mResourceAllocation = {info, 0, std::move(d3d12Buffer), nullptr, ResourceHeapKind::InvalidEnum};
-    mAllocatedSize = descriptor->size;
     return {};
 }
 
@@ -312,7 +313,7 @@ MaybeError Buffer::InitializeHostMapped(const BufferHostMappedPointer* hostMappe
                                                        IID_PPV_ARGS(&placedResource)),
         "ID3D12Device::CreatePlacedResource"));
 
-    mResourceAllocation = {AllocationInfo{0, AllocationMethod::kExternal}, 0,
+    mResourceAllocation = {AllocationInfo{0, AllocationMethod::kExternal, mAllocatedSize}, 0,
                            std::move(placedResource),
                            /* heap is external, and not tracked for residency */ nullptr,
                            ResourceHeapKind::InvalidEnum};
@@ -339,6 +340,10 @@ ID3D12Resource* Buffer::GetD3D12Resource() const {
 bool Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* commandContext,
                                              D3D12_RESOURCE_BARRIER* barrier,
                                              wgpu::BufferUsage newUsage) {
+    if (mResourceAllocation.GetInfo().mMethod == AllocationMethod::kExternal) {
+        commandContext->AddToSharedBufferList(this);
+    }
+
     // Track the underlying heap to ensure residency.
     // There may be no heap if the allocation is an external one.
     Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
@@ -423,10 +428,6 @@ bool Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* commandCon
 
 void Buffer::TrackUsageAndTransitionNow(CommandRecordingContext* commandContext,
                                         wgpu::BufferUsage newUsage) {
-    if (mResourceAllocation.GetInfo().mMethod == AllocationMethod::kExternal) {
-        commandContext->AddToSharedBufferList(this);
-    }
-
     D3D12_RESOURCE_BARRIER barrier;
 
     if (TrackUsageAndGetResourceBarrier(commandContext, &barrier, newUsage)) {
@@ -452,6 +453,8 @@ bool Buffer::IsCPUWritableAtCreation() const {
 }
 
 MaybeError Buffer::MapInternal(bool isWrite, size_t offset, size_t size, const char* contextInfo) {
+    DAWN_TRY(SynchronizeBufferBeforeMapping());
+
     // The mapped buffer can be accessed at any time, so it must be locked to ensure it is never
     // evicted. This buffer should already have been made resident when it was created.
     TRACE_EVENT0(GetDevice()->GetPlatform(), General, "BufferD3D12::MapInternal");
@@ -492,9 +495,6 @@ MaybeError Buffer::MapAtCreationImpl() {
 }
 
 MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) {
-    // Externally allocated buffers must be synchronized before any usage.
-    DAWN_TRY(SynchronizeBufferBeforeUse());
-
     // GetPendingCommandContext() call might create a new commandList. Dawn will handle
     // it in Tick() by execute the commandList and signal a fence for it even it is empty.
     // Skip the unnecessary GetPendingCommandContext() call saves an extra fence.
@@ -629,21 +629,38 @@ MaybeError Buffer::EnsureDataInitializedAsDestination(CommandRecordingContext* c
     return {};
 }
 
-MaybeError Buffer::SynchronizeBufferBeforeUse() {
+MaybeError Buffer::SynchronizeBufferBeforeMapping() {
     // Buffers imported with the SharedBufferMemory feature can include fences that must finish
-    // before Dawn can use the buffer. We acquire and wait for them here.
+    // before Dawn can use the buffer for mapping operations on the CPU timeline. We acquire and
+    // wait for them here.
+    if (SharedResourceMemoryContents* contents = GetSharedResourceMemoryContents()) {
+        SharedBufferMemoryBase::PendingFenceList fences;
+        contents->AcquirePendingFences(&fences);
+        for (const auto& fence : fences) {
+            HANDLE fenceEvent = 0;
+            ComPtr<ID3D12Fence> d3dFence = ToBackend(fence.object)->GetD3DFence();
+            if (d3dFence->GetCompletedValue() < fence.signaledValue) {
+                d3dFence->SetEventOnCompletion(fence.signaledValue, fenceEvent);
+                WaitForSingleObject(fenceEvent, INFINITE);
+            }
+        }
+    }
+
+    return {};
+}
+
+MaybeError Buffer::SynchronizeBufferBeforeUseOnGPU() {
+    // Buffers imported with the SharedBufferMemory feature can include fences that must finish
+    // before Dawn can use the buffer on the GPU timeline. We acquire and wait for them here.
     if (SharedResourceMemoryContents* contents = GetSharedResourceMemoryContents()) {
         Device* device = ToBackend(GetDevice());
         Queue* queue = ToBackend(device->GetQueue());
 
-        std::vector<FenceAndSignalValue> waitFences;
         SharedBufferMemoryBase::PendingFenceList fences;
         contents->AcquirePendingFences(&fences);
-        waitFences.insert(waitFences.end(), std::make_move_iterator(fences.begin()),
-                          std::make_move_iterator(fences.end()));
 
         ID3D12CommandQueue* commandQueue = queue->GetCommandQueue();
-        for (const auto& fence : waitFences) {
+        for (const auto& fence : fences) {
             DAWN_TRY(CheckHRESULT(commandQueue->Wait(ToBackend(fence.object)->GetD3DFence(),
                                                      fence.signaledValue),
                                   "D3D12 fence wait"););

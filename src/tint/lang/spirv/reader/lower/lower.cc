@@ -29,8 +29,10 @@
 
 #include "src/tint/lang/core/ir/transform/remove_terminator_args.h"
 #include "src/tint/lang/core/ir/validator.h"
+#include "src/tint/lang/spirv/reader/lower/atomics.h"
 #include "src/tint/lang/spirv/reader/lower/builtins.h"
 #include "src/tint/lang/spirv/reader/lower/shader_io.h"
+#include "src/tint/lang/spirv/reader/lower/texture.h"
 #include "src/tint/lang/spirv/reader/lower/vector_element_pointer.h"
 
 namespace tint::spirv::reader {
@@ -47,6 +49,8 @@ Result<SuccessType> Lower(core::ir::Module& mod) {
     RUN_TRANSFORM(lower::VectorElementPointer, mod);
     RUN_TRANSFORM(lower::ShaderIO, mod);
     RUN_TRANSFORM(lower::Builtins, mod);
+    RUN_TRANSFORM(lower::Atomics, mod);
+    RUN_TRANSFORM(lower::Texture, mod);
 
     // Remove the terminator args at this point. There are no logical short-circuiting operators in
     // SPIR-V that we will lose track of, all the terminators are for hoisted values. We don't do
@@ -56,7 +60,12 @@ Result<SuccessType> Lower(core::ir::Module& mod) {
     // `||` statements.
     RUN_TRANSFORM(core::ir::transform::RemoveTerminatorArgs, mod);
 
-    if (auto res = core::ir::ValidateAndDumpIfNeeded(mod, "spirv.Lower"); res != Success) {
+    auto res = core::ir::ValidateAndDumpIfNeeded(mod, "spirv.Lower",
+                                                 core::ir::Capabilities{
+                                                     core::ir::Capability::kAllowOverrides,
+                                                 },
+                                                 "after");
+    if (res != Success) {
         return res.Failure();
     }
 

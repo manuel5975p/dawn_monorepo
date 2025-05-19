@@ -60,11 +60,11 @@ TEST_F(IR_ValidatorTest, CallToFunctionOutsideModule) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:3:20 error: call: %g is not part of the module
     %2:void = call %g
                    ^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToEntryPointFunction) {
@@ -79,11 +79,11 @@ TEST_F(IR_ValidatorTest, CallToEntryPointFunction) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:3:20 error: call: call target must not have a pipeline stage
     %2:void = call %g
                    ^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToFunctionTooFewArguments) {
@@ -99,12 +99,12 @@ TEST_F(IR_ValidatorTest, CallToFunctionTooFewArguments) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(
                     R"(:8:20 error: call: function has 2 parameters, but call provides 1 arguments
     %5:void = call %g, 42i
                    ^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToFunctionTooManyArguments) {
@@ -120,12 +120,12 @@ TEST_F(IR_ValidatorTest, CallToFunctionTooManyArguments) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(
                     R"(:8:20 error: call: function has 2 parameters, but call provides 3 arguments
     %5:void = call %g, 1i, 2i, 3i
                    ^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToFunctionWrongArgType) {
@@ -142,12 +142,12 @@ TEST_F(IR_ValidatorTest, CallToFunctionWrongArgType) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
-        res.Failure().reason.Str(),
+        res.Failure().reason,
         testing::HasSubstr(
             R"(:8:28 error: call: type 'i32' of function parameter 1 does not match argument type 'f32'
     %6:void = call %g, 1i, 2.0f, 3i
                            ^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToFunctionNullArg) {
@@ -163,11 +163,10 @@ TEST_F(IR_ValidatorTest, CallToFunctionNullArg) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
-                testing::HasSubstr(R"(:8:24 error: call: operand is undefined
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(R"(:8:24 error: call: operand is undefined
     %4:void = call %g, undef
                        ^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToNullFunction) {
@@ -183,11 +182,10 @@ TEST_F(IR_ValidatorTest, CallToNullFunction) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
-                testing::HasSubstr(R"(:8:20 error: call: operand is undefined
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(R"(:8:20 error: call: operand is undefined
     %3:void = call undef
                    ^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToFunctionNoResult) {
@@ -203,11 +201,11 @@ TEST_F(IR_ValidatorTest, CallToFunctionNoResult) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:8:13 error: call: expected exactly 1 results, got 0
     undef = call %g
             ^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToFunctionNoOperands) {
@@ -223,11 +221,11 @@ TEST_F(IR_ValidatorTest, CallToFunctionNoOperands) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:8:15 error: call: expected at least 1 operands, got 0
     %3:void = call
               ^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToNonFunctionTarget) {
@@ -244,11 +242,11 @@ TEST_F(IR_ValidatorTest, CallToNonFunctionTarget) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:3:20 error: call: target not defined or not a function
     %2:void = call 0i
                    ^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToBuiltin_MissingResult) {
@@ -261,30 +259,29 @@ TEST_F(IR_ValidatorTest, CallToBuiltin_MissingResult) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
-                testing::HasSubstr(R"(:3:5 error: abs: result is undefined
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(R"(:3:5 error: abs: result is undefined
     undef = abs 1.0f
     ^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToBuiltin_MismatchResultType) {
     auto* f = b.Function("f", ty.void_());
     b.Append(f->Block(), [&] {
         auto* c = b.Call(ty.f32(), BuiltinFn::kAbs, 1_f);
-        c->Result(0)->SetType(ty.i32());
+        c->Result()->SetType(ty.i32());
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
-        res.Failure().reason.Str(),
+        res.Failure().reason,
         testing::HasSubstr(
             R"(:3:14 error: abs: call result type 'i32' does not match builtin return type 'f32'
     %2:i32 = abs 1.0f
              ^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToBuiltin_MissingArg) {
@@ -293,18 +290,17 @@ TEST_F(IR_ValidatorTest, CallToBuiltin_MissingArg) {
         auto* i = b.Var<function, f32>("i");
         i->SetInitializer(b.Constant(0_f));
         auto* load = b.Load(i);
-        auto* c = b.Call(ty.f32(), BuiltinFn::kAbs, load->Result(0));
+        auto* c = b.Call(ty.f32(), BuiltinFn::kAbs, load->Result());
         c->SetOperands(Vector{static_cast<ir::Value*>(nullptr)});
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
-                testing::HasSubstr(R"(:5:18 error: abs: operand is undefined
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(R"(:5:18 error: abs: operand is undefined
     %4:f32 = abs undef
                  ^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToBuiltin_OutOfScopeArg) {
@@ -313,19 +309,18 @@ TEST_F(IR_ValidatorTest, CallToBuiltin_OutOfScopeArg) {
         auto* i = b.Var<function, f32>("i");
         i->SetInitializer(b.Constant(0_f));
         auto* load = b.Load(i);
-        auto* c = b.Call(ty.f32(), BuiltinFn::kAbs, load->Result(0));
+        auto* c = b.Call(ty.f32(), BuiltinFn::kAbs, load->Result());
         auto* new_load = b.Load(i);
-        c->SetOperands(Vector{new_load->Result(0)});
+        c->SetOperands(Vector{new_load->Result()});
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
-                testing::HasSubstr(R"(:5:18 error: abs: %5 is not in scope
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(R"(:5:18 error: abs: %5 is not in scope
     %4:f32 = abs %5
                  ^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToBuiltin_TooFewResults) {
@@ -334,18 +329,18 @@ TEST_F(IR_ValidatorTest, CallToBuiltin_TooFewResults) {
         auto* i = b.Var<function, f32>("i");
         i->SetInitializer(b.Constant(0_f));
         auto* load = b.Load(i);
-        auto* too_few_call = b.Call(ty.f32(), BuiltinFn::kAbs, load->Result(0));
+        auto* too_few_call = b.Call(ty.f32(), BuiltinFn::kAbs, load->Result());
         too_few_call->ClearResults();
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:5:13 error: abs: expected exactly 1 results, got 0
     undef = abs %3
             ^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToBuiltin_TooManyResults) {
@@ -354,18 +349,18 @@ TEST_F(IR_ValidatorTest, CallToBuiltin_TooManyResults) {
         auto* i = b.Var<function, f32>("i");
         i->SetInitializer(b.Constant(0_f));
         auto* load = b.Load(i);
-        auto* too_many_call = b.Call(ty.f32(), BuiltinFn::kAbs, load->Result(0));
-        too_many_call->SetResults(Vector{load->Result(0), load->Result(0)});
+        auto* too_many_call = b.Call(ty.f32(), BuiltinFn::kAbs, load->Result());
+        too_many_call->SetResults(Vector{b.InstructionResult<f32>(), b.InstructionResult<f32>()});
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
-                testing::HasSubstr(R"(:5:14 error: abs: expected exactly 1 results, got 2
-    %3:f32 = abs %3
-             ^^^
-)")) << res.Failure().reason.Str();
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:5:22 error: abs: expected exactly 1 results, got 2
+    %4:f32, %5:f32 = abs %3
+                     ^^^
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToBuiltin_TooFewArgs) {
@@ -374,16 +369,16 @@ TEST_F(IR_ValidatorTest, CallToBuiltin_TooFewArgs) {
         auto* i = b.Var<function, f32>("i");
         i->SetInitializer(b.Constant(0_f));
         auto* load = b.Load(i);
-        auto* too_few_call = b.Call(ty.f32(), BuiltinFn::kAbs, load->Result(0));
+        auto* too_few_call = b.Call(ty.f32(), BuiltinFn::kAbs, load->Result());
         too_few_call->ClearOperands();
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:5:14 error: abs: no matching call to 'abs()')"))
-        << res.Failure().reason.Str();
+        << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, CallToBuiltin_TooManyArgs) {
@@ -392,16 +387,16 @@ TEST_F(IR_ValidatorTest, CallToBuiltin_TooManyArgs) {
         auto* i = b.Var<function, f32>("i");
         i->SetInitializer(b.Constant(0_f));
         auto* load = b.Load(i);
-        auto* too_many_call = b.Call(ty.f32(), BuiltinFn::kAbs, load->Result(0));
-        too_many_call->SetOperands(Vector{load->Result(0), load->Result(0)});
+        auto* too_many_call = b.Call(ty.f32(), BuiltinFn::kAbs, load->Result());
+        too_many_call->SetOperands(Vector{load->Result(), load->Result()});
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:5:14 error: abs: no matching call to 'abs(f32, f32)')"))
-        << res.Failure().reason.Str();
+        << res.Failure();
 }
 
 // Test that a user declared structure cannot be used as the result type for a frexp builtin, even
@@ -423,12 +418,12 @@ TEST_F(IR_ValidatorTest, CallToBuiltin_Frexp_UserDeclaredResultStruct) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
-        res.Failure().reason.Str(),
+        res.Failure().reason,
         testing::HasSubstr(
             R"(error: frexp: call result type '__frexp_result_f32' does not match builtin return type '__frexp_result_f32'
     %2:__frexp_result_f32 = frexp 1.0f
                             ^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 // Test that a user declared structure cannot be used as the result type for a modf builtin, even
@@ -450,12 +445,12 @@ TEST_F(IR_ValidatorTest, CallToBuiltin_Modf_UserDeclaredResultStruct) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
-        res.Failure().reason.Str(),
+        res.Failure().reason,
         testing::HasSubstr(
             R"(error: modf: call result type '__modf_result_vec4_f32' does not match builtin return type '__modf_result_vec4_f32'
     %2:__modf_result_vec4_f32 = modf vec4<f32>(1.0f)
                                 ^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 // Test that a user declared structure cannot be used as the result type for an
@@ -480,12 +475,12 @@ TEST_F(IR_ValidatorTest, CallToBuiltin_AtomicCompareExchange_UserDeclaredResultS
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
-        res.Failure().reason.Str(),
+        res.Failure().reason,
         testing::HasSubstr(
             R"(error: atomicCompareExchangeWeak: call result type '__atomic_compare_exchange_result_u32' does not match builtin return type '__atomic_compare_exchange_result_u32'
     %3:__atomic_compare_exchange_result_u32 = atomicCompareExchangeWeak %a, 0u, 1u
                                               ^^^^^^^^^^^^^^^^^^^^^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 }  // namespace tint::core::ir

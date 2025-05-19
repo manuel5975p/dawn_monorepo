@@ -99,20 +99,6 @@ interop::Interface<interop::GPUSupportedFeatures> GPUAdapter::getFeatures(Napi::
 
 interop::Interface<interop::GPUSupportedLimits> GPUAdapter::getLimits(Napi::Env env) {
     wgpu::Limits limits{};
-    wgpu::DawnExperimentalImmediateDataLimits immediateDataLimits{};
-
-    auto InsertInChain = [&](wgpu::ChainedStructOut* node) {
-        node->nextInChain = limits.nextInChain;
-        limits.nextInChain = node;
-    };
-
-    wgpu::ChainedStructOut** limitsListTail = &limits.nextInChain;
-    // Query the immediate data limits only if ChromiumExperimentalImmediateData feature
-    // is available on adapter.
-    if (adapter_.HasFeature(FeatureName::ChromiumExperimentalImmediateData)) {
-        InsertInChain(&immediateDataLimits);
-    }
-
     if (!adapter_.GetLimits(&limits)) {
         Napi::Error::New(env, "failed to get adapter limits").ThrowAsJavaScriptException();
     }
@@ -131,28 +117,6 @@ interop::Interface<interop::GPUAdapterInfo> GPUAdapter::getInfo(Napi::Env env) {
     adapter_.GetInfo(&info);
 
     return interop::GPUAdapterInfo::Create<GPUAdapterInfo>(env, info);
-}
-
-bool GPUAdapter::getIsFallbackAdapter(Napi::Env) {
-    wgpu::AdapterInfo adapterInfo = {};
-    adapter_.GetInfo(&adapterInfo);
-    return adapterInfo.adapterType == wgpu::AdapterType::CPU;
-}
-
-bool GPUAdapter::getIsCompatibilityMode(Napi::Env) {
-    wgpu::AdapterInfo adapterInfo = {};
-    adapter_.GetInfo(&adapterInfo);
-    return adapterInfo.compatibilityMode;
-}
-
-std::string GPUAdapter::getFeatureLevel(Napi::Env) {
-    wgpu::AdapterInfo adapterInfo = {};
-    // TODO(crbug.com/382291443): Report feature level from wgpu::Adapter.
-    adapter_.GetInfo(&adapterInfo);
-    if (adapterInfo.compatibilityMode) {
-        return "compatibility";
-    }
-    return "core";
 }
 
 namespace {
@@ -261,7 +225,7 @@ interop::Promise<interop::Interface<interop::GPUDevice>> GPUAdapter::requestDevi
             auto r = interop::GPUDeviceLostReason::kDestroyed;
             switch (reason) {
                 case wgpu::DeviceLostReason::Destroyed:
-                case wgpu::DeviceLostReason::InstanceDropped:
+                case wgpu::DeviceLostReason::CallbackCancelled:
                     r = interop::GPUDeviceLostReason::kDestroyed;
                     break;
                 case wgpu::DeviceLostReason::FailedCreation:

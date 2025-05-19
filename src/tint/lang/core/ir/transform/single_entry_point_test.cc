@@ -29,6 +29,8 @@
 
 #include <utility>
 
+#include "src/tint/lang/core/access.h"
+#include "src/tint/lang/core/address_space.h"
 #include "src/tint/lang/core/ir/transform/helper_test.h"
 #include "src/tint/lang/core/ir/type/array_count.h"
 
@@ -67,7 +69,7 @@ class IR_SingleEntryPointTest : public TransformTest {
     InstructionResult* Var(const char* name) {
         auto* var = b.Var<private_, i32>(name);
         mod.root_block->Append(var);
-        return var->Result(0);
+        return var->Result();
     }
 
     /// @returns a new module-scope override called `name` with override `id` and possible
@@ -79,7 +81,7 @@ class IR_SingleEntryPointTest : public TransformTest {
             var->SetInitializer(initializer);
         }
         mod.root_block->Append(var);
-        return var->Result(0);
+        return var->Result();
     }
 };
 using IR_SingleEntryPointDeathTest = IR_SingleEntryPointTest;
@@ -328,12 +330,12 @@ TEST_F(IR_SingleEntryPointTest, DirectOverridesWithInitializer) {
     Value* init2 = nullptr;
     Value* init3 = nullptr;
     b.Append(mod.root_block, [&] {
-        init1 = b.Multiply(ty.i32(), 2_i, 4_i)->Result(0);
+        init1 = b.Multiply(ty.i32(), 2_i, 4_i)->Result();
         auto* x = b.Multiply(ty.i32(), 2_i, 4_i);
-        init2 = b.Add(ty.i32(), x, 4_i)->Result(0);
+        init2 = b.Add(ty.i32(), x, 4_i)->Result();
 
         auto* y = b.Multiply(ty.i32(), 3_i, 5_i);
-        init3 = b.Add(ty.i32(), y, 5_i)->Result(0);
+        init3 = b.Add(ty.i32(), y, 5_i)->Result();
     });
 
     auto* o1 = Override("o1", 1, init1);
@@ -882,8 +884,8 @@ TEST_F(IR_SingleEntryPointTest, OverrideInArrayType) {
         auto* c2 = ty.Get<core::ir::type::ValueArrayCount>(o2);
         auto* a2 = ty.Get<core::type::Array>(ty.i32(), c2, 4u, 4u, 4u, 4u);
 
-        v1 = b.Var("a", ty.ptr(workgroup, a1, read_write))->Result(0);
-        v2 = b.Var("b", ty.ptr(workgroup, a2, read_write))->Result(0);
+        v1 = b.Var("a", ty.ptr(workgroup, a1, read_write))->Result();
+        v2 = b.Var("b", ty.ptr(workgroup, a2, read_write))->Result();
     });
 
     EntryPoint("foo", {v1});
@@ -920,6 +922,314 @@ $B1: {  # root
 %foo = @fragment func():void {
   $B2: {
     %4:ptr<workgroup, array<i32, %o1>, read_write> = let %a
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
+    Run(SingleEntryPoint, "foo");
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_SingleEntryPointTest, OverrideWithComplexIncludingOverride) {
+    core::ir::Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        auto* x = b.Override("x", ty.u32());
+        x->SetOverrideId({2});
+        auto* add = b.Add(ty.u32(), x, 4_u);
+        o = b.Override(Source{{1, 2}}, "a", ty.u32());
+        o->SetOverrideId({1});
+        o->SetInitializer(add->Result());
+    });
+
+    auto* func = b.Function("foo", ty.u32());
+    b.Append(func->Block(), [&] { b.Return(func, o->Result()); });
+    EntryPoint("foo", {func});
+    auto* src = R"(
+$B1: {  # root
+  %x:u32 = override undef @id(2)
+  %2:u32 = add %x, 4u
+  %a:u32 = override %2 @id(1)
+}
+
+%foo = func():u32 {
+  $B2: {
+    ret %a
+  }
+}
+%foo_1 = @fragment func():void {  # %foo_1: 'foo'
+  $B3: {
+    %6:u32 = call %foo
+    ret
+  }
+}
+)";
+
+    auto* expect = R"(
+$B1: {  # root
+  %x:u32 = override undef @id(2)
+  %2:u32 = add %x, 4u
+  %a:u32 = override %2 @id(1)
+}
+
+%foo = func():u32 {
+  $B2: {
+    ret %a
+  }
+}
+%foo_1 = @fragment func():void {  # %foo_1: 'foo'
+  $B3: {
+    %6:u32 = call %foo
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
+    Run(SingleEntryPoint, "foo");
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_SingleEntryPointTest, OverrideInitVar) {
+    core::ir::Override* x = nullptr;
+    core::ir::Value* v1 = nullptr;
+    b.Append(mod.root_block, [&] {
+        x = b.Override("x", ty.u32());
+        x->SetOverrideId({2});
+        auto* add = b.Add(ty.u32(), x, 3_u);
+        auto* var_local =
+            b.Var("a", core::AddressSpace::kPrivate, ty.u32(), core::Access::kReadWrite);
+        var_local->SetInitializer(add->Result());
+        v1 = var_local->Result();
+    });
+
+    EntryPoint("foo", {v1});
+    auto* src = R"(
+$B1: {  # root
+  %x:u32 = override undef @id(2)
+  %2:u32 = add %x, 3u
+  %a:ptr<private, u32, read_write> = var %2
+}
+
+%foo = @fragment func():void {
+  $B2: {
+    %5:ptr<private, u32, read_write> = let %a
+    ret
+  }
+}
+)";
+
+    auto* expect = R"(
+$B1: {  # root
+  %x:u32 = override undef @id(2)
+  %2:u32 = add %x, 3u
+  %a:ptr<private, u32, read_write> = var %2
+}
+
+%foo = @fragment func():void {
+  $B2: {
+    %5:ptr<private, u32, read_write> = let %a
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
+    Run(SingleEntryPoint, "foo");
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_SingleEntryPointTest, OverrideInitVarIntermediateUnused) {
+    core::ir::Override* x = nullptr;
+    core::ir::Value* v1 = nullptr;
+    b.Append(mod.root_block, [&] {
+        x = b.Override("x", ty.u32());
+        x->SetOverrideId({2});
+        auto* add_a = b.Add(ty.u32(), x, 3_u);
+        auto* add_b = b.Add(ty.u32(), x, 3_u);
+        auto* var_local =
+            b.Var("a", core::AddressSpace::kPrivate, ty.u32(), core::Access::kReadWrite);
+        auto* var_local_b =
+            b.Var("b", core::AddressSpace::kPrivate, ty.u32(), core::Access::kReadWrite);
+        var_local_b->SetInitializer(add_b->Result());
+        var_local->SetInitializer(add_a->Result());
+        v1 = var_local->Result();
+    });
+
+    EntryPoint("foo", {v1});
+    auto* src = R"(
+$B1: {  # root
+  %x:u32 = override undef @id(2)
+  %2:u32 = add %x, 3u
+  %3:u32 = add %x, 3u
+  %a:ptr<private, u32, read_write> = var %2
+  %b:ptr<private, u32, read_write> = var %3
+}
+
+%foo = @fragment func():void {
+  $B2: {
+    %7:ptr<private, u32, read_write> = let %a
+    ret
+  }
+}
+)";
+
+    auto* expect = R"(
+$B1: {  # root
+  %x:u32 = override undef @id(2)
+  %2:u32 = add %x, 3u
+  %a:ptr<private, u32, read_write> = var %2
+}
+
+%foo = @fragment func():void {
+  $B2: {
+    %5:ptr<private, u32, read_write> = let %a
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
+    Run(SingleEntryPoint, "foo");
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_SingleEntryPointTest, OverideInitVarUnused) {
+    core::ir::Override* x = nullptr;
+    core::ir::Value* v1 = nullptr;
+    b.Append(mod.root_block, [&] {
+        x = b.Override("x", ty.u32());
+        x->SetOverrideId({2});
+        auto* add = b.Add(ty.u32(), x, 3_u);
+        auto* var_local =
+            b.Var("a", core::AddressSpace::kPrivate, ty.u32(), core::Access::kReadWrite);
+        var_local->SetInitializer(add->Result());
+        v1 = var_local->Result();
+    });
+
+    EntryPoint("foo", {});
+    auto* src = R"(
+$B1: {  # root
+  %x:u32 = override undef @id(2)
+  %2:u32 = add %x, 3u
+  %a:ptr<private, u32, read_write> = var %2
+}
+
+%foo = @fragment func():void {
+  $B2: {
+    ret
+  }
+}
+)";
+
+    auto* expect = R"(
+%foo = @fragment func():void {
+  $B1: {
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
+    Run(SingleEntryPoint, "foo");
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_SingleEntryPointTest, OverrideCondConstExprFailure) {
+    core::ir::Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        auto* cond = b.Override("cond", ty.bool_());
+        cond->SetOverrideId({0});
+        auto* one_f32 = b.Override("one_f32", 1_f);
+        one_f32->SetOverrideId({2});
+        auto* constexpr_if = b.ConstExprIf(cond);
+        constexpr_if->SetResult(b.InstructionResult(ty.bool_()));
+        b.Append(constexpr_if->True(), [&] {
+            auto* three = b.Divide(ty.f32(), one_f32, 0.0_f);
+            auto* four = b.Equal(ty.bool_(), three, 0.0_f);
+            b.ExitIf(constexpr_if, four);
+        });
+        b.Append(constexpr_if->False(), [&] { b.ExitIf(constexpr_if, false); });
+        o = b.Override(Source{{1, 2}}, "osrc", ty.bool_());
+        o->SetOverrideId({1});
+        o->SetInitializer(constexpr_if->Result());
+    });
+
+    auto* func = b.Function("foo2", ty.bool_());
+    b.Append(func->Block(), [&] { b.Return(func, o->Result()); });
+    EntryPoint("foo", {func});
+
+    auto* src = R"(
+$B1: {  # root
+  %cond:bool = override undef @id(0)
+  %one_f32:f32 = override 1.0f @id(2)
+  %3:bool = constexpr_if %cond [t: $B2, f: $B3] {  # constexpr_if_1
+    $B2: {  # true
+      %4:f32 = div %one_f32, 0.0f
+      %5:bool = eq %4, 0.0f
+      exit_if %5  # constexpr_if_1
+    }
+    $B3: {  # false
+      exit_if false  # constexpr_if_1
+    }
+  }
+  %osrc:bool = override %3 @id(1)
+}
+
+%foo2 = func():bool {
+  $B4: {
+    ret %osrc
+  }
+}
+%foo = @fragment func():void {
+  $B5: {
+    %9:bool = call %foo2
+    ret
+  }
+}
+)";
+
+    auto* expect = R"(
+$B1: {  # root
+  %cond:bool = override undef @id(0)
+  %one_f32:f32 = override 1.0f @id(2)
+  %3:bool = constexpr_if %cond [t: $B2, f: $B3] {  # constexpr_if_1
+    $B2: {  # true
+      %4:f32 = div %one_f32, 0.0f
+      %5:bool = eq %4, 0.0f
+      exit_if %5  # constexpr_if_1
+    }
+    $B3: {  # false
+      exit_if false  # constexpr_if_1
+    }
+  }
+  %osrc:bool = override %3 @id(1)
+}
+
+%foo2 = func():bool {
+  $B4: {
+    ret %osrc
+  }
+}
+%foo = @fragment func():void {
+  $B5: {
+    %9:bool = call %foo2
     ret
   }
 }

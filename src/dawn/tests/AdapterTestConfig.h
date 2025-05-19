@@ -48,7 +48,7 @@ struct BackendTestConfig {
 };
 
 struct TestAdapterProperties {
-    TestAdapterProperties(const wgpu::AdapterInfo& info, bool selected);
+    TestAdapterProperties(const wgpu::AdapterInfo& info, bool selected, bool compatibilityMode);
     uint32_t vendorID;
     std::string vendorName;
     std::string architecture;
@@ -86,6 +86,9 @@ BackendTestConfig MetalBackend(std::initializer_list<const char*> forceEnabledWo
 
 BackendTestConfig NullBackend(std::initializer_list<const char*> forceEnabledWorkarounds = {},
                               std::initializer_list<const char*> forceDisabledWorkarounds = {});
+
+BackendTestConfig WebGPUBackend(std::initializer_list<const char*> forceEnabledWorkarounds = {},
+                                std::initializer_list<const char*> forceDisabledWorkarounds = {});
 
 BackendTestConfig OpenGLBackend(std::initializer_list<const char*> forceEnabledWorkarounds = {},
                                 std::initializer_list<const char*> forceDisabledWorkarounds = {});

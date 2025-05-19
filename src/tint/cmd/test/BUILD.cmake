@@ -45,6 +45,7 @@ tint_add_target(tint_cmd_test_test_cmd test_cmd
 tint_target_add_dependencies(tint_cmd_test_test_cmd test_cmd
   tint_api
   tint_api_common_test
+  tint_cmd_fuzz_ir_helpers_test
   tint_lang_core_constant_test
   tint_lang_core_intrinsic_test
   tint_lang_core_ir_analysis_test
@@ -57,15 +58,15 @@ tint_target_add_dependencies(tint_cmd_test_test_cmd test_cmd
   tint_lang_hlsl_type_test
   tint_lang_hlsl_writer_common_test
   tint_lang_hlsl_writer_raise_test
+  tint_lang_msl_ir_transform_test
   tint_lang_msl_ir_test
   tint_lang_msl_type_test
   tint_lang_spirv_ir_test
   tint_lang_spirv_reader_lower_test
   tint_lang_spirv_type_test
   tint_lang_wgsl_ast_test
-  tint_lang_wgsl_common_test
-  tint_lang_wgsl_helpers_test
   tint_lang_wgsl_intrinsic_test
+  tint_lang_wgsl_ir_test
   tint_lang_wgsl_program_test
   tint_lang_wgsl_reader_lower_test
   tint_lang_wgsl_resolver_test
@@ -82,7 +83,6 @@ tint_target_add_dependencies(tint_cmd_test_test_cmd test_cmd
   tint_utils_macros_test
   tint_utils_math_test
   tint_utils_memory_test
-  tint_utils_result_test
   tint_utils_rtti_test
   tint_utils_strconv_test
   tint_utils_symbol_test
@@ -92,6 +92,7 @@ tint_target_add_dependencies(tint_cmd_test_test_cmd test_cmd
 
 tint_target_add_external_dependencies(tint_cmd_test_test_cmd test_cmd
   "gtest"
+  "src_utils_chromium_test_compat"
 )
 
 if(TINT_BUILD_GLSL_WRITER)

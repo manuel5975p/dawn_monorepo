@@ -31,6 +31,7 @@
 #include "src/tint/lang/core/ir/let.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/phony.h"
+#include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/ir/var.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/reference.h"
@@ -44,7 +45,7 @@ struct Impl {
     core::ir::Module& mod;
     core::ir::Builder b{mod};
 
-    Result<SuccessType> Run() {
+    void Run() {
         Vector<core::ir::Block*, 32> blocks;
         for (auto fn : mod.functions) {
             blocks.Push(fn->Block());
@@ -89,8 +90,6 @@ struct Impl {
                     });
             }
         }
-
-        return Success;
     }
 
     void OperandsRefToPtr(core::ir::Instruction* inst) {
@@ -111,8 +110,7 @@ struct Impl {
     }
 
     const core::type::Pointer* RefToPtr(const core::type::Reference* ref_ty) {
-        return mod.Types().Get<core::type::Pointer>(ref_ty->AddressSpace(), ref_ty->StoreType(),
-                                                    ref_ty->Access());
+        return mod.Types().ptr(ref_ty->AddressSpace(), ref_ty->StoreType(), ref_ty->Access());
     }
 
     void OperandPtrToRef(const core::ir::Usage& use) {
@@ -126,22 +124,35 @@ struct Impl {
     }
 
     void ResultPtrToRef(core::ir::Instruction* inst) {
-        auto* result = inst->Result(0);
+        auto* result = inst->Result();
         if (auto* ptr = result->Type()->As<core::type::Pointer>()) {
             result->SetType(PtrToRef(ptr));
         }
     }
 
     const core::type::Reference* PtrToRef(const core::type::Pointer* ptr_ty) {
-        return mod.Types().Get<core::type::Reference>(ptr_ty->AddressSpace(), ptr_ty->StoreType(),
-                                                      ptr_ty->Access());
+        return mod.Types().ref(ptr_ty->AddressSpace(), ptr_ty->StoreType(), ptr_ty->Access());
     }
 };
 
 }  // namespace
 
 Result<SuccessType> PtrToRef(core::ir::Module& mod) {
-    return Impl{mod}.Run();
+    auto result =
+        core::ir::ValidateAndDumpIfNeeded(mod, "wgsl.PtrToRef",
+                                          core::ir::Capabilities{
+                                              core::ir::Capability::kAllowOverrides,
+                                              core::ir::Capability::kAllowPhonyInstructions,
+                                          }
+
+        );
+    if (result != Success) {
+        return result;
+    }
+
+    Impl{mod}.Run();
+
+    return Success;
 }
 
 }  // namespace tint::wgsl::writer::raise

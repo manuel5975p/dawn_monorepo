@@ -608,5 +608,466 @@ INSTANTIATE_TEST_SUITE_P(SpirvParser,
                                  "var undef @location(6) @interpolate(linear, centroid)",
                              }));
 
+TEST_F(SpirvParserTest, Var_OpSpecConstantTrue) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %c "myconst"
+               OpDecorate %c SpecId 12
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+        %f32 = OpTypeFloat 32
+      %vec4f = OpTypeVector %f32 4
+          %c = OpSpecConstantTrue %bool
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %b = OpLogicalAnd %bool %c %c
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %myconst:bool = override true @id(12)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %3:bool = and %myconst, %myconst
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstant_f16) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpCapability Float16
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %c "myconst"
+               OpDecorate %c SpecId 12
+       %void = OpTypeVoid
+        %f16 = OpTypeFloat 16
+          %c = OpSpecConstant %f16 2
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %b = OpFAdd %f16 %c %c
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %myconst:f16 = override 2.0h @id(12)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %3:f16 = add %myconst, %myconst
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstant_f32) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %c "myconst"
+               OpDecorate %c SpecId 12
+       %void = OpTypeVoid
+        %f32 = OpTypeFloat 32
+          %c = OpSpecConstant %f32 2
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %b = OpFAdd %f32 %c %c
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %myconst:f32 = override 2.0f @id(12)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %3:f32 = add %myconst, %myconst
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstant_u32) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %c "myconst"
+               OpDecorate %c SpecId 12
+       %void = OpTypeVoid
+        %u32 = OpTypeInt 32 0
+          %c = OpSpecConstant %u32 2
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %b = OpIAdd %u32 %c %c
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %myconst:u32 = override 2u @id(12)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %3:u32 = spirv.add<u32> %myconst, %myconst
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstant_i32) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %c "myconst"
+               OpDecorate %c SpecId 12
+       %void = OpTypeVoid
+        %i32 = OpTypeInt 32 1
+          %c = OpSpecConstant %i32 2
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %b = OpIAdd %i32 %c %c
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %myconst:i32 = override 2i @id(12)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %3:i32 = spirv.add<i32> %myconst, %myconst
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantTrue_NoSpecId) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %c "myconst"
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+        %f32 = OpTypeFloat 32
+      %vec4f = OpTypeVector %f32 4
+          %c = OpSpecConstantTrue %bool
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %b = OpLogicalAnd %bool %c %c
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:bool = and true, true
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantFalse) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %c "myconst"
+               OpDecorate %c SpecId 12
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+        %f32 = OpTypeFloat 32
+      %vec4f = OpTypeVector %f32 4
+          %c = OpSpecConstantFalse %bool
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %b = OpLogicalAnd %bool %c %c
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %myconst:bool = override false @id(12)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %3:bool = and %myconst, %myconst
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantFalse_NoSpecId) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %c "myconst"
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+        %f32 = OpTypeFloat 32
+      %vec4f = OpTypeVector %f32 4
+          %c = OpSpecConstantFalse %bool
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %b = OpLogicalAnd %bool %c %c
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:bool = and false, false
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantOp_LogicalAnd) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %cond "myconst"
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+      %false = OpSpecConstantFalse %bool
+       %true = OpSpecConstantTrue %bool
+       %cond = OpSpecConstantOp %bool LogicalAnd %false %true
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %b = OpLogicalAnd %bool %cond %cond
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %1:bool = and false, true
+  %myconst:bool = override %1
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %4:bool = and %myconst, %myconst
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantOp_LogicalOr) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %cond "myconst"
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+      %false = OpSpecConstantFalse %bool
+       %true = OpSpecConstantTrue %bool
+       %cond = OpSpecConstantOp %bool LogicalOr %false %true
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %b = OpLogicalOr %bool %cond %cond
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %1:bool = or false, true
+  %myconst:bool = override %1
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %4:bool = or %myconst, %myconst
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantOp_LogicalNot) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %cond "myconst"
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+      %false = OpSpecConstantFalse %bool
+       %true = OpSpecConstantTrue %bool
+       %cond = OpSpecConstantOp %bool LogicalNot %false
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %b = OpLogicalNot %bool %cond
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %1:bool = not false
+  %myconst:bool = override %1
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %4:bool = not %myconst
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantOp_LogicalEqual) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %cond "myconst"
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+      %false = OpSpecConstantFalse %bool
+       %true = OpSpecConstantTrue %bool
+       %cond = OpSpecConstantOp %bool LogicalEqual %true %false
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %1 = OpLogicalEqual %bool %cond %cond
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %1:bool = eq true, false
+  %myconst:bool = override %1
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %4:bool = eq %myconst, %myconst
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantOp_LogicalNotEqual) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %cond "myconst"
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+      %false = OpSpecConstantFalse %bool
+       %true = OpSpecConstantTrue %bool
+       %cond = OpSpecConstantOp %bool LogicalNotEqual %true %false
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %1 = OpLogicalNotEqual %bool %cond %cond
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %1:bool = neq true, false
+  %myconst:bool = override %1
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %4:bool = neq %myconst, %myconst
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantOp_Not) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %cond "myconst"
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+        %i32 = OpTypeInt 32 1
+      %false = OpSpecConstantFalse %bool
+       %true = OpSpecConstantTrue %bool
+        %one = OpConstant %i32 1
+       %cond = OpSpecConstantOp %i32 Not %one
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %1 = OpNot %i32 %cond
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %1:i32 = spirv.not<i32> 1i
+  %myconst:i32 = override %1
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %4:i32 = spirv.not<i32> %myconst
+    ret
+  }
+}
+)");
+}
+
 }  // namespace
 }  // namespace tint::spirv::reader

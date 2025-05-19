@@ -25,6 +25,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <limits>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -365,7 +366,8 @@ TEST_F(BindGroupValidationTest, BufferBindingType) {
     }
 }
 
-// Check that an external texture binding must contain exactly an external texture
+// Check that an external texture binding must contain either exactly an external texture or a
+// texture view.
 TEST_F(BindGroupValidationTest, ExternalTextureBindingType) {
     // Create an external texture
     wgpu::Texture texture =
@@ -391,64 +393,78 @@ TEST_F(BindGroupValidationTest, ExternalTextureBindingType) {
     descriptor.entryCount = 1;
     descriptor.entries = &binding;
 
+    wgpu::ExternalTextureBindingEntry externalBindingEntry;
+    externalBindingEntry.externalTexture = externalTexture;
+
     // Not setting anything fails
     ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
 
-    // Control case: setting just the external texture works
-    wgpu::ExternalTextureBindingEntry externalBindingEntry;
-    externalBindingEntry.externalTexture = externalTexture;
-    binding.nextInChain = &externalBindingEntry;
-    device.CreateBindGroup(&descriptor);
-
-    // Setting the texture view as well is an error
-    binding.textureView = mSampledTextureView;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
-    binding.textureView = nullptr;
-
-    // Setting the sampler as well is an error
-    binding.sampler = mSampler;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
-    binding.sampler = nullptr;
-
-    // Setting the buffer as well is an error
-    binding.buffer = mUBO;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
-    binding.buffer = nullptr;
-
-    // Setting the external texture to an error external texture is an error.
-    {
-        wgpu::Texture errorTexture =
-            CreateTexture(wgpu::TextureUsage::TextureBinding, wgpu::TextureFormat::R8Unorm, 1);
-        wgpu::ExternalTextureDescriptor errorExternalDescriptor =
-            CreateDefaultExternalTextureDescriptor();
-        errorExternalDescriptor.plane0 = errorTexture.CreateView();
-
-        wgpu::ExternalTexture errorExternalTexture;
-        ASSERT_DEVICE_ERROR(errorExternalTexture =
-                                device.CreateExternalTexture(&errorExternalDescriptor));
-
-        wgpu::ExternalTextureBindingEntry errorExternalBindingEntry;
-        errorExternalBindingEntry.externalTexture = errorExternalTexture;
-        binding.nextInChain = &errorExternalBindingEntry;
-        ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
+    for (bool bindTextureViewOnly : {false, true}) {
+        binding.textureView = nullptr;
         binding.nextInChain = nullptr;
-    }
 
-    // Setting an external texture with another external texture chained is an error.
-    {
-        wgpu::ExternalTexture externalTexture2 = device.CreateExternalTexture(&externalDesc);
-        wgpu::ExternalTextureBindingEntry externalBindingEntry2;
-        externalBindingEntry2.externalTexture = externalTexture2;
-        externalBindingEntry.nextInChain = &externalBindingEntry2;
+        if (bindTextureViewOnly) {
+            // Control case: setting just the texture view works
+            binding.textureView = mSampledTextureView;
+            device.CreateBindGroup(&descriptor);
+        } else {
+            // Control case: setting just the external texture works
+            binding.nextInChain = &externalBindingEntry;
+            device.CreateBindGroup(&descriptor);
+        }
 
+        // Setting the sampler as well is an error
+        binding.sampler = mSampler;
         ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
-    }
+        binding.sampler = nullptr;
 
-    // Chaining a struct that isn't an external texture binding entry is an error.
-    {
-        wgpu::ExternalTextureBindingLayout externalBindingLayout;
-        binding.nextInChain = &externalBindingLayout;
+        // Setting the buffer as well is an error
+        binding.buffer = mUBO;
         ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
+        binding.buffer = nullptr;
+
+        // Setting the external texture to an error external texture is an error.
+        {
+            wgpu::Texture errorTexture =
+                CreateTexture(wgpu::TextureUsage::TextureBinding, wgpu::TextureFormat::R8Unorm, 1);
+            wgpu::ExternalTextureDescriptor errorExternalDescriptor =
+                CreateDefaultExternalTextureDescriptor();
+            errorExternalDescriptor.plane0 = errorTexture.CreateView();
+
+            wgpu::ExternalTexture errorExternalTexture;
+            ASSERT_DEVICE_ERROR(errorExternalTexture =
+                                    device.CreateExternalTexture(&errorExternalDescriptor));
+
+            wgpu::ExternalTextureBindingEntry errorExternalBindingEntry;
+            errorExternalBindingEntry.externalTexture = errorExternalTexture;
+            binding.nextInChain = &errorExternalBindingEntry;
+            ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
+            binding.nextInChain = nullptr;
+        }
+
+        if (!bindTextureViewOnly) {
+            // Setting the texture view as well is an error
+            binding.nextInChain = &externalBindingEntry;
+            binding.textureView = mSampledTextureView;
+            ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
+            binding.nextInChain = nullptr;
+            binding.textureView = nullptr;
+
+            // Setting an external texture with another external texture chained is an error.
+            wgpu::ExternalTexture externalTexture2 = device.CreateExternalTexture(&externalDesc);
+            wgpu::ExternalTextureBindingEntry externalBindingEntry2;
+            externalBindingEntry2.externalTexture = externalTexture2;
+            externalBindingEntry.nextInChain = &externalBindingEntry2;
+
+            ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
+        }
+
+        // Chaining a struct that isn't an external texture binding entry is an error.
+        {
+            wgpu::ExternalTextureBindingLayout externalBindingLayout;
+            binding.nextInChain = &externalBindingLayout;
+            ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
+        }
     }
 }
 
@@ -1185,6 +1201,46 @@ TEST_F(BindGroupValidationTest, EffectiveStorageBufferBindingSize) {
     }
 }
 
+// Test making that all the bindings for an BGL with arraySize must be specified.
+TEST_F(BindGroupValidationTest, AllArrayElementsMustBeSpecified) {
+    // Create the BGL with three entries for the array.
+    wgpu::BindGroupLayoutEntryArraySize arraySize;
+    arraySize.arraySize = 3;
+
+    wgpu::BindGroupLayoutEntry entry;
+    entry.binding = 1;
+    entry.visibility = wgpu::ShaderStage::Fragment;
+    entry.texture.sampleType = wgpu::TextureSampleType::Float;
+    entry.nextInChain = &arraySize;
+
+    wgpu::BindGroupLayoutDescriptor bglDesc;
+    bglDesc.entryCount = 1;
+    bglDesc.entries = &entry;
+    wgpu::BindGroupLayout bgl = device.CreateBindGroupLayout(&bglDesc);
+
+    // The texture used for the test.
+    wgpu::TextureDescriptor tDesc;
+    tDesc.size = {1, 1};
+    tDesc.format = wgpu::TextureFormat::RGBA8Unorm;
+    tDesc.usage = wgpu::TextureUsage::TextureBinding;
+    wgpu::Texture t = device.CreateTexture(&tDesc);
+
+    // Success case, making a BindGroup with all three entries
+    utils::MakeBindGroup(device, bgl,
+                         {
+                             {1, t.CreateView()},
+                             {2, t.CreateView()},
+                             {3, t.CreateView()},
+                         });
+
+    // Error case, one element is missing
+    ASSERT_DEVICE_ERROR(utils::MakeBindGroup(device, bgl,
+                                             {
+                                                 {1, t.CreateView()},
+                                                 {3, t.CreateView()},
+                                             }));
+}
+
 // Test what happens when the layout is an error.
 TEST_F(BindGroupValidationTest, ErrorLayout) {
     wgpu::BindGroupLayout goodLayout = utils::MakeBindGroupLayout(
@@ -1782,6 +1838,406 @@ TEST_F(BindGroupLayoutValidationTest, StaticSamplerNotSupportedWithoutFeatureEna
     ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
 }
 
+// Control case for a valid use of wgpu::BindGroupLayoutEntryArraySize
+TEST_F(BindGroupLayoutValidationTest, ArraySizeSuccess) {
+    wgpu::BindGroupLayoutEntryArraySize arraySize;
+    arraySize.arraySize = 1;
+
+    wgpu::BindGroupLayoutEntry entry;
+    entry.binding = 0;
+    entry.visibility = wgpu::ShaderStage::Fragment;
+    entry.texture.sampleType = wgpu::TextureSampleType::Float;
+    entry.nextInChain = &arraySize;
+
+    wgpu::BindGroupLayoutDescriptor desc;
+    desc.entryCount = 1;
+    desc.entries = &entry;
+    device.CreateBindGroupLayout(&desc);
+}
+
+class BindGroupLayoutArraySizeDisabledValidationTest : public BindGroupValidationTest {
+  protected:
+    std::vector<const char*> GetEnabledToggles() override {
+        return {"disable_bind_group_layout_entry_array_size"};
+    }
+};
+
+// Check that using a wgpu::BindGroupLayoutEntryArraySize is disallowed by that toggle.
+TEST_F(BindGroupLayoutArraySizeDisabledValidationTest, ArraySizeDisabled) {
+    wgpu::BindGroupLayoutEntryArraySize arraySize;
+    arraySize.arraySize = 1;
+
+    wgpu::BindGroupLayoutEntry entry;
+    entry.binding = 0;
+    entry.visibility = wgpu::ShaderStage::Fragment;
+    entry.texture.sampleType = wgpu::TextureSampleType::Float;
+    entry.nextInChain = &arraySize;
+
+    wgpu::BindGroupLayoutDescriptor desc;
+    desc.entryCount = 1;
+    desc.entries = &entry;
+    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+}
+
+// Check that using a binding_array statically in an entry point is disabled.
+TEST_F(BindGroupLayoutArraySizeDisabledValidationTest, BindingArrayDisabled) {
+    ASSERT_DEVICE_ERROR(utils::CreateShaderModule(device, R"(
+        @group(0) @binding(0) var textures : binding_array<texture_2d<f32>, 3>;
+        @fragment fn fs() -> @location(0) u32 {
+            let _ = textures[0];
+            return 0;
+        }
+    )"));
+
+    // Even an array of size 1 is an error.
+    ASSERT_DEVICE_ERROR(utils::CreateShaderModule(device, R"(
+        @group(0) @binding(0) var textures : binding_array<texture_2d<f32>, 1>;
+        @fragment fn fs() -> @location(0) u32 {
+            let _ = textures[0];
+            return 0;
+        }
+    )"));
+}
+
+// Check that using arraySize != 1 is only allowed for sampled textures.
+TEST_F(BindGroupLayoutValidationTest, ArraySizeAllowedBindingTypes) {
+    wgpu::BindGroupLayoutEntryArraySize arraySize1;
+    arraySize1.arraySize = 1;
+
+    wgpu::BindGroupLayoutEntryArraySize arraySize2;
+    arraySize2.arraySize = 2;
+
+    // Sampled texture
+    {
+        wgpu::BindGroupLayoutEntry entry;
+        entry.binding = 0;
+        entry.visibility = wgpu::ShaderStage::Fragment;
+        entry.texture.sampleType = wgpu::TextureSampleType::Float;
+
+        wgpu::BindGroupLayoutDescriptor desc;
+        desc.entryCount = 1;
+        desc.entries = &entry;
+
+        // Success case, arraySize 1
+        entry.nextInChain = &arraySize1;
+        device.CreateBindGroupLayout(&desc);
+        // Second success case, arraySize 2
+        entry.nextInChain = &arraySize2;
+        device.CreateBindGroupLayout(&desc);
+    }
+
+    // Uniform buffer
+    {
+        wgpu::BindGroupLayoutEntry entry;
+        entry.binding = 0;
+        entry.visibility = wgpu::ShaderStage::Fragment;
+        entry.buffer.type = wgpu::BufferBindingType::Uniform;
+
+        wgpu::BindGroupLayoutDescriptor desc;
+        desc.entryCount = 1;
+        desc.entries = &entry;
+
+        // Success case, arraySize 1
+        entry.nextInChain = &arraySize1;
+        device.CreateBindGroupLayout(&desc);
+        // Error case, arraySize 2
+        entry.nextInChain = &arraySize2;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+    }
+
+    // Storage buffer
+    {
+        wgpu::BindGroupLayoutEntry entry;
+        entry.binding = 0;
+        entry.visibility = wgpu::ShaderStage::Fragment;
+        entry.buffer.type = wgpu::BufferBindingType::Uniform;
+
+        wgpu::BindGroupLayoutDescriptor desc;
+        desc.entryCount = 1;
+        desc.entries = &entry;
+
+        // Success case, arraySize 1
+        entry.nextInChain = &arraySize1;
+        device.CreateBindGroupLayout(&desc);
+        // Error case, arraySize 2
+        entry.nextInChain = &arraySize2;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+    }
+
+    // Storage texture
+    {
+        wgpu::BindGroupLayoutEntry entry;
+        entry.binding = 0;
+        entry.visibility = wgpu::ShaderStage::Fragment;
+        entry.storageTexture.format = wgpu::TextureFormat::R32Uint;
+        entry.storageTexture.access = wgpu::StorageTextureAccess::ReadOnly;
+
+        wgpu::BindGroupLayoutDescriptor desc;
+        desc.entryCount = 1;
+        desc.entries = &entry;
+
+        // Success case, arraySize 1
+        entry.nextInChain = &arraySize1;
+        device.CreateBindGroupLayout(&desc);
+        // Error case, arraySize 2
+        entry.nextInChain = &arraySize2;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+    }
+
+    // Sampler
+    {
+        wgpu::BindGroupLayoutEntry entry;
+        entry.binding = 0;
+        entry.visibility = wgpu::ShaderStage::Fragment;
+        entry.sampler.type = wgpu::SamplerBindingType::Filtering;
+
+        wgpu::BindGroupLayoutDescriptor desc;
+        desc.entryCount = 1;
+        desc.entries = &entry;
+
+        // Success case, arraySize 1
+        entry.nextInChain = &arraySize1;
+        device.CreateBindGroupLayout(&desc);
+        // Error case, arraySize 2
+        entry.nextInChain = &arraySize2;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+    }
+}
+
+// Check that arraySize = 0 is not allowed.
+TEST_F(BindGroupLayoutValidationTest, ArraySizeZero) {
+    wgpu::BindGroupLayoutEntryArraySize arraySize;
+
+    wgpu::BindGroupLayoutEntry entry;
+    entry.binding = 0;
+    entry.visibility = wgpu::ShaderStage::Fragment;
+    entry.texture.sampleType = wgpu::TextureSampleType::Float;
+    entry.nextInChain = &arraySize;
+
+    wgpu::BindGroupLayoutDescriptor desc;
+    desc.entryCount = 1;
+    desc.entries = &entry;
+
+    // Success case, arraySize is 1
+    arraySize.arraySize = 1;
+    device.CreateBindGroupLayout(&desc);
+
+    // Error case, arraySize is 0
+    arraySize.arraySize = 0;
+    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+}
+
+// Check that binding + arraySize must fit in maxBindingsPerBindGroup
+TEST_F(BindGroupLayoutValidationTest, ArrayEndPastMaxBindingsPerBindGroup) {
+    wgpu::BindGroupLayoutEntryArraySize arraySize;
+
+    wgpu::BindGroupLayoutEntry entry;
+    entry.binding = kMaxBindingsPerBindGroup - 1;
+    entry.visibility = wgpu::ShaderStage::Fragment;
+    entry.texture.sampleType = wgpu::TextureSampleType::Float;
+    entry.nextInChain = &arraySize;
+
+    wgpu::BindGroupLayoutDescriptor desc;
+    desc.entryCount = 1;
+    desc.entries = &entry;
+
+    // Success case, arraySize is 1 so the last used binding is maxBindingsPerBindGroup
+    arraySize.arraySize = 1;
+    device.CreateBindGroupLayout(&desc);
+
+    // Error case, arraySize is 2 so we go past maxBindingsPerBindGroup
+    arraySize.arraySize = 2;
+    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+}
+
+// Check that arraySize + binding overflowing is caught by some validation.
+TEST_F(BindGroupLayoutValidationTest, ArraySizePlusBindingOverflow) {
+    wgpu::BindGroupLayoutEntryArraySize arraySize;
+    arraySize.arraySize = std::numeric_limits<uint32_t>::max();
+
+    wgpu::BindGroupLayoutEntry entry;
+    entry.binding = 3;
+    entry.visibility = wgpu::ShaderStage::Fragment;
+    entry.texture.sampleType = wgpu::TextureSampleType::Float;
+    entry.nextInChain = &arraySize;
+
+    wgpu::BindGroupLayoutDescriptor desc;
+    desc.entryCount = 1;
+    desc.entries = &entry;
+    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+}
+
+// Check that arraySize is taken into account when looking for duplicate bindings.
+TEST_F(BindGroupLayoutValidationTest, ArraySizeDuplicateBindings) {
+    const uint32_t kPlaceholderBinding = 42;  // will be replaced before each check.
+
+    wgpu::BindGroupLayoutEntryArraySize arraySize;
+    arraySize.arraySize = 3;
+
+    // Check single entry, then an array that overlaps it.
+    {
+        wgpu::BindGroupLayoutEntry entries[2] = {
+            {
+                .binding = kPlaceholderBinding,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .texture = {.sampleType = wgpu::TextureSampleType::Float},
+            },
+            {
+                .nextInChain = &arraySize,
+                .binding = 1,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .texture = {.sampleType = wgpu::TextureSampleType::Float},
+            },
+        };
+        wgpu::BindGroupLayoutDescriptor desc;
+        desc.entryCount = 2;
+        desc.entries = entries;
+
+        // Success cases, 0 and 4 are not in [1, 4)
+        entries[0].binding = 0;
+        device.CreateBindGroupLayout(&desc);
+        entries[0].binding = 4;
+        device.CreateBindGroupLayout(&desc);
+
+        // Error cases, 1, 2, 3 are in [1, 4)
+        entries[0].binding = 1;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+        entries[0].binding = 2;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+        entries[0].binding = 3;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+    }
+
+    // Check an array, then a single entry that goes in it.
+    {
+        wgpu::BindGroupLayoutEntry entries[2] = {
+            {
+                .nextInChain = &arraySize,
+                .binding = 1,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .texture = {.sampleType = wgpu::TextureSampleType::Float},
+            },
+            {
+                .binding = kPlaceholderBinding,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .texture = {.sampleType = wgpu::TextureSampleType::Float},
+            },
+        };
+        wgpu::BindGroupLayoutDescriptor desc;
+        desc.entryCount = 2;
+        desc.entries = entries;
+
+        // Success cases, 0 and 4 are not in [1, 4)
+        entries[1].binding = 0;
+        device.CreateBindGroupLayout(&desc);
+        entries[1].binding = 4;
+        device.CreateBindGroupLayout(&desc);
+
+        // Error cases, 1, 2, 3 are in [1, 4)
+        entries[1].binding = 1;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+        entries[1].binding = 2;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+        entries[1].binding = 3;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+    }
+
+    // Check two arrays that overlap
+    {
+        wgpu::BindGroupLayoutEntry entries[2] = {
+            {
+                .nextInChain = &arraySize,
+                .binding = kPlaceholderBinding,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .texture = {.sampleType = wgpu::TextureSampleType::Float},
+            },
+            {
+                .nextInChain = &arraySize,
+                .binding = 3,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .texture = {.sampleType = wgpu::TextureSampleType::Float},
+            },
+        };
+        wgpu::BindGroupLayoutDescriptor desc;
+        desc.entryCount = 2;
+        desc.entries = entries;
+
+        // Success cases, 0 and 6 make the arrays not overlap
+        entries[0].binding = 0;
+        device.CreateBindGroupLayout(&desc);
+        entries[0].binding = 6;
+        device.CreateBindGroupLayout(&desc);
+
+        // Error cases, 1, 2, 3, 4, 5 make the arrays overlap
+        entries[0].binding = 1;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+        entries[0].binding = 2;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+        entries[0].binding = 3;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+        entries[0].binding = 4;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+        entries[0].binding = 5;
+        ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+    }
+}
+
+// Check that arraySize counts towards the binding limits.
+TEST_F(BindGroupLayoutValidationTest, ArraySizeCountsTowardsLimit) {
+    wgpu::BindGroupLayoutEntryArraySize arraySize;
+
+    wgpu::BindGroupLayoutEntry entries[2] = {
+        {
+            .nextInChain = &arraySize,
+            .binding = 1,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture = {.sampleType = wgpu::TextureSampleType::Float},
+        },
+        {
+            .binding = 0,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture = {.sampleType = wgpu::TextureSampleType::Float},
+        },
+    };
+    wgpu::BindGroupLayoutDescriptor desc;
+    desc.entryCount = 2;
+    desc.entries = entries;
+
+    wgpu::Limits limits = GetSupportedLimits();
+
+    // Success case: we are just at the limit with the arraySize.
+    arraySize.arraySize = limits.maxSampledTexturesPerShaderStage - 1;
+    device.CreateBindGroupLayout(&desc);
+
+    // Error case: we are just above the limit with the arraySize.
+    arraySize.arraySize = limits.maxSampledTexturesPerShaderStage;
+    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+}
+
+// Test that only arraySize = 1 is allowed for external textures
+TEST_F(BindGroupLayoutValidationTest, ExternalTextureWithArraySize) {
+    wgpu::BindGroupLayoutEntryArraySize arraySize;
+
+    wgpu::ExternalTextureBindingLayout externalTextureLayout = {};
+    externalTextureLayout.nextInChain = &arraySize;
+
+    wgpu::BindGroupLayoutEntry binding = {};
+    binding.binding = 0;
+    binding.nextInChain = &externalTextureLayout;
+
+    wgpu::BindGroupLayoutDescriptor desc = {};
+    desc.entryCount = 1;
+    desc.entries = &binding;
+
+    // Success case, arraySize is 1.
+    arraySize.arraySize = 1;
+    device.CreateBindGroupLayout(&desc);
+
+    // Error case, arraySize is not 1.
+    arraySize.arraySize = 2;
+    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
+}
+
 class BindGroupLayoutWithStaticSamplersValidationTest : public BindGroupLayoutValidationTest {
     std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
         return {wgpu::FeatureName::StaticSamplers};
@@ -1989,6 +2445,31 @@ TEST_F(BindGroupLayoutWithStaticSamplersValidationTest,
     samplerDesc.minFilter = wgpu::FilterMode::Linear;
     ASSERT_DEVICE_ERROR(
         utils::MakeBindGroup(device, layout, {{0, device.CreateSampler(&samplerDesc)}}));
+}
+
+// Test that only arraySize = 1 is allowed for static samplers
+TEST_F(BindGroupLayoutWithStaticSamplersValidationTest, StaticSamplerWithArraySize) {
+    wgpu::BindGroupLayoutEntryArraySize arraySize;
+
+    wgpu::StaticSamplerBindingLayout staticSamplerBinding = {};
+    staticSamplerBinding.sampler = device.CreateSampler();
+    staticSamplerBinding.nextInChain = &arraySize;
+
+    wgpu::BindGroupLayoutEntry binding = {};
+    binding.binding = 0;
+    binding.nextInChain = &staticSamplerBinding;
+
+    wgpu::BindGroupLayoutDescriptor desc = {};
+    desc.entryCount = 1;
+    desc.entries = &binding;
+
+    // Success case, arraySize is 1.
+    arraySize.arraySize = 1;
+    device.CreateBindGroupLayout(&desc);
+
+    // Error case, arraySize is not 1.
+    arraySize.arraySize = 2;
+    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
 }
 
 constexpr uint32_t kBindingSize = 8;
@@ -3111,6 +3592,82 @@ TEST_F(BindGroupLayoutCompatibilityTest, ExternalTextureBindGroupLayoutCompatibi
                 _ = myTexture;
             })",
                                                {bgl}));
+}
+
+// Test that a BGL is compatible with a pipeline if a binding's array size is at least as big as the
+// shader's binding_array's size.
+TEST_F(BindGroupLayoutCompatibilityTest, ArraySizeCompatibility) {
+    wgpu::BindGroupLayoutEntry entry;
+    entry.binding = 0;
+    entry.visibility = wgpu::ShaderStage::Fragment;
+    entry.texture.sampleType = wgpu::TextureSampleType::Float;
+
+    wgpu::BindGroupLayoutDescriptor bglDesc;
+    bglDesc.entryCount = 1;
+    bglDesc.entries = &entry;
+    wgpu::BindGroupLayout bglNoArray = device.CreateBindGroupLayout(&bglDesc);
+
+    wgpu::BindGroupLayoutEntryArraySize arraySize;
+    arraySize.arraySize = 1;
+    entry.nextInChain = &arraySize;
+    wgpu::BindGroupLayout bglArray1 = device.CreateBindGroupLayout(&bglDesc);
+
+    arraySize.arraySize = 2;
+    wgpu::BindGroupLayout bglArray2 = device.CreateBindGroupLayout(&bglDesc);
+
+    arraySize.arraySize = 3;
+    wgpu::BindGroupLayout bglArray3 = device.CreateBindGroupLayout(&bglDesc);
+
+    // Test that a BGL with arraySize 2 is valid for binding_array<T, 2>
+    CreateFSRenderPipeline(R"(
+            @group(0) @binding(0) var t : binding_array<texture_2d<f32>, 2>;
+            @fragment fn main() {
+                _ = t[0];
+            })",
+                           {bglArray2});
+    // Test that a BGL with a bigger arraySize is valid.
+    CreateFSRenderPipeline(R"(
+            @group(0) @binding(0) var t : binding_array<texture_2d<f32>, 2>;
+            @fragment fn main() {
+                _ = t[0];
+            })",
+                           {bglArray3});
+    // Test that a BGL with a smaller arraySize is an error.
+    ASSERT_DEVICE_ERROR(CreateFSRenderPipeline(R"(
+            @group(0) @binding(0) var t : binding_array<texture_2d<f32>, 2>;
+            @fragment fn main() {
+                _ = t[0];
+            })",
+                                               {bglArray1}));
+
+    // Test that an array of size 1 BGL is valid for a single binding.
+    CreateFSRenderPipeline(R"(
+            @group(0) @binding(0) var t : texture_2d<f32>;
+            @fragment fn main() {
+                _ = t;
+            })",
+                           {bglArray1});
+    // Test that an array of size 2 BGL is valid for a single binding at the start of the array.
+    CreateFSRenderPipeline(R"(
+            @group(0) @binding(0) var t : texture_2d<f32>;
+            @fragment fn main() {
+                _ = t;
+            })",
+                           {bglArray2});
+    // Test that the single binding cannot be an element from the arrayed BGL except the first
+    ASSERT_DEVICE_ERROR(CreateFSRenderPipeline(R"(
+            @group(0) @binding(1) var t : texture_2d<f32>;
+            @fragment fn main() {
+                _ = t;
+            })",
+                                               {bglArray2}));
+    // Test that a binding_array<T, 1> bindings can be fulfilled by a non-arrayed BGL.
+    CreateFSRenderPipeline(R"(
+            @group(0) @binding(0) var t : binding_array<texture_2d<f32>, 1>;
+            @fragment fn main() {
+                _ = t[0];
+            })",
+                           {bglNoArray});
 }
 
 class BindingsValidationTest : public BindGroupLayoutCompatibilityTest {

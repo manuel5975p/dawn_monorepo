@@ -1527,5 +1527,175 @@ TEST_F(SpirvParserTest, Transpose_3x2) {
 )");
 }
 
+TEST_F(SpirvParserTest, SelectScalar) {
+    EXPECT_IR(R"(
+             OpCapability Shader
+             OpMemoryModel Logical GLSL450
+             OpEntryPoint GLCompute %main "main"
+             OpExecutionMode %main LocalSize 1 1 1
+     %void = OpTypeVoid
+    %float = OpTypeFloat 32
+    %bool = OpTypeBool
+  %ep_type = OpTypeFunction %void
+ %float_50 = OpConstant %float 50
+ %float_60 = OpConstant %float 60
+   %true   = OpConstantTrue %bool
+     %main = OpFunction %void None %ep_type
+    %entry = OpLabel
+        %1 = OpSelect %float %true %float_50 %float_60
+             OpReturn
+             OpFunctionEnd)",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:f32 = spirv.select true, 50.0f, 60.0f
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, SelectVector) {
+    EXPECT_IR(R"(
+             OpCapability Shader
+             OpMemoryModel Logical GLSL450
+             OpEntryPoint GLCompute %main "main"
+             OpExecutionMode %main LocalSize 1 1 1
+     %void = OpTypeVoid
+    %float = OpTypeFloat 32
+    %bool = OpTypeBool
+  %v2float = OpTypeVector %float 2
+   %v2bool = OpTypeVector %bool 2
+  %ep_type = OpTypeFunction %void
+ %float_50 = OpConstant %float 50
+ %float_60 = OpConstant %float 60
+%v2float_50_60 = OpConstantComposite %v2float %float_50 %float_60
+%v2float_60_50 = OpConstantComposite %v2float %float_60 %float_50
+   %true   = OpConstantTrue %bool
+  %false   = OpConstantFalse %bool
+%true_false_vec2 = OpConstantComposite %v2bool %true %false
+     %main = OpFunction %void None %ep_type
+    %entry = OpLabel
+        %1 = OpSelect %v2float %true_false_vec2 %v2float_50_60 %v2float_60_50
+             OpReturn
+             OpFunctionEnd)",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:vec2<f32> = spirv.select vec2<bool>(true, false), vec2<f32>(50.0f, 60.0f), vec2<f32>(60.0f, 50.0f)
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, VectorExtractDynamic) {
+    EXPECT_IR(R"(
+       OpCapability Shader
+       OpMemoryModel Logical GLSL450
+       OpEntryPoint GLCompute %main "main"
+       OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%float = OpTypeFloat 32
+%uint = OpTypeInt 32 0
+%v4float = OpTypeVector %float 4
+%ep_type = OpTypeFunction %void
+%float_1 = OpConstant %float 1.0
+%float_2 = OpConstant %float 2.0
+%float_3 = OpConstant %float 3.0
+%float_4 = OpConstant %float 4.0
+%uint_2  = OpConstant %uint 2
+%vec = OpConstantComposite %v4float %float_1 %float_2 %float_3 %float_4
+%main = OpFunction %void None %ep_type
+%entry = OpLabel
+  %1 = OpVectorExtractDynamic %float %vec %uint_2
+       OpReturn
+       OpFunctionEnd)",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:f32 = access vec4<f32>(1.0f, 2.0f, 3.0f, 4.0f), 2u
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, OuterProductVec2Vec3) {
+    EXPECT_IR(R"(
+         OpCapability Shader
+         OpMemoryModel Logical GLSL450
+         OpEntryPoint GLCompute %main "main"
+         OpExecutionMode %main LocalSize 1 1 1
+
+ %void = OpTypeVoid
+%float = OpTypeFloat 32
+%v2float = OpTypeVector %float 2
+%v3float = OpTypeVector %float 3
+%mat2x3float = OpTypeMatrix %v3float 2
+%ep_type = OpTypeFunction %void
+
+%float_1 = OpConstant %float 1
+%float_2 = OpConstant %float 2
+%float_3 = OpConstant %float 3
+%float_4 = OpConstant %float 4
+%float_5 = OpConstant %float 5
+
+%vec2 = OpConstantComposite %v2float %float_1 %float_2
+%vec3 = OpConstantComposite %v3float %float_3 %float_4 %float_5
+
+ %main = OpFunction %void None %ep_type
+%entry = OpLabel
+    %1 = OpOuterProduct %mat2x3float %vec3 %vec2
+         OpReturn
+         OpFunctionEnd)",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:mat2x3<f32> = spirv.outer_product vec3<f32>(3.0f, 4.0f, 5.0f), vec2<f32>(1.0f, 2.0f)
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, OuterProductVec3Vec2) {
+    EXPECT_IR(R"(
+         OpCapability Shader
+         OpMemoryModel Logical GLSL450
+         OpEntryPoint GLCompute %main "main"
+         OpExecutionMode %main LocalSize 1 1 1
+
+ %void = OpTypeVoid
+%float = OpTypeFloat 32
+%v2float = OpTypeVector %float 2
+%v3float = OpTypeVector %float 3
+%mat3x2float = OpTypeMatrix %v2float 3
+%ep_type = OpTypeFunction %void
+
+%float_1 = OpConstant %float 1
+%float_2 = OpConstant %float 2
+%float_3 = OpConstant %float 3
+%float_4 = OpConstant %float 4
+%float_5 = OpConstant %float 5
+
+%vec2 = OpConstantComposite %v2float %float_1 %float_2
+%vec3 = OpConstantComposite %v3float %float_3 %float_4 %float_5
+
+ %main = OpFunction %void None %ep_type
+%entry = OpLabel
+    %1 = OpOuterProduct %mat3x2float %vec2 %vec3
+         OpReturn
+         OpFunctionEnd)",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:mat3x2<f32> = spirv.outer_product vec2<f32>(1.0f, 2.0f), vec3<f32>(3.0f, 4.0f, 5.0f)
+    ret
+  }
+}
+)");
+}
+
 }  // namespace
 }  // namespace tint::spirv::reader

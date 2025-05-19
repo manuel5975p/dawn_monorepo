@@ -495,33 +495,24 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Output_WithoutCapability) {
 }
 
 TEST_F(SpirvWriterTest, Function_ShaderIO_DualSourceBlend) {
-    auto* outputs =
-        ty.Struct(mod.symbols.New("Outputs"), {
-                                                  {
-                                                      mod.symbols.Register("a"),
-                                                      ty.f32(),
-                                                      core::IOAttributes{
-                                                          /* location */ 0u,
-                                                          /* index */ 0u,
-                                                          /* color */ std::nullopt,
-                                                          /* builtin */ std::nullopt,
-                                                          /* interpolation */ std::nullopt,
-                                                          /* invariant */ false,
-                                                      },
-                                                  },
-                                                  {
-                                                      mod.symbols.Register("b"),
-                                                      ty.f32(),
-                                                      core::IOAttributes{
-                                                          /* location */ 0u,
-                                                          /* index */ 1u,
-                                                          /* color */ std::nullopt,
-                                                          /* builtin */ std::nullopt,
-                                                          /* interpolation */ std::nullopt,
-                                                          /* invariant */ false,
-                                                      },
-                                                  },
-                                              });
+    auto* outputs = ty.Struct(mod.symbols.New("Outputs"), {
+                                                              {
+                                                                  mod.symbols.Register("a"),
+                                                                  ty.f32(),
+                                                                  core::IOAttributes{
+                                                                      .location = 0u,
+                                                                      .blend_src = 0u,
+                                                                  },
+                                                              },
+                                                              {
+                                                                  mod.symbols.Register("b"),
+                                                                  ty.f32(),
+                                                                  core::IOAttributes{
+                                                                      .location = 0u,
+                                                                      .blend_src = 1u,
+                                                                  },
+                                                              },
+                                                          });
 
     auto* func = b.Function("main", outputs, core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {  //
@@ -536,7 +527,7 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_DualSourceBlend) {
                OpDecorate %main_loc0_idx0_Output Index 0
                OpDecorate %main_loc0_idx1_Output Location 0
                OpDecorate %main_loc0_idx1_Output Index 1
-    )");
+)");
     EXPECT_INST(R"(
 %main_loc0_idx0_Output = OpVariable %_ptr_Output_float Output   ; Location 0, Index 0
 %main_loc0_idx1_Output = OpVariable %_ptr_Output_float Output   ; Location 0, Index 1

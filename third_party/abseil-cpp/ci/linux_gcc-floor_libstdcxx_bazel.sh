@@ -25,7 +25,7 @@ if [[ -z ${ABSEIL_ROOT:-} ]]; then
 fi
 
 if [[ -z ${STD:-} ]]; then
-  STD="c++14"
+  STD="c++17"
 fi
 
 if [[ -z ${COMPILATION_MODE:-} ]]; then
@@ -59,9 +59,6 @@ if [[ ${KOKORO_GFILE_DIR:-} ]] && [[ -d "${KOKORO_GFILE_DIR}/distdir" ]]; then
   BAZEL_EXTRA_ARGS="--distdir=/distdir ${BAZEL_EXTRA_ARGS:-}"
 fi
 
-# TODO(absl-team): This currently uses Bazel 5. When upgrading to a version
-# of Bazel that supports Bzlmod, add --enable_bzlmod=false to keep test
-# coverage for the old WORKSPACE dependency management.
 for std in ${STD}; do
   for compilation_mode in ${COMPILATION_MODE}; do
     for exceptions_mode in ${EXCEPTIONS_MODE}; do
@@ -81,7 +78,7 @@ for std in ${STD}; do
           --copt="-DGTEST_REMOVE_LEGACY_TEST_CASEAPI_=1" \
           --copt=-Werror \
           --define="absl=1" \
-          --distdir="/bazel-distdir" \
+          --enable_bzlmod=false \
           --features=external_include_paths \
           --keep_going \
           --show_timestamps \

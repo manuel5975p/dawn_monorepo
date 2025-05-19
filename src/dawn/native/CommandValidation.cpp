@@ -34,7 +34,6 @@
 #include <string>
 #include <utility>
 
-#include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Numeric.h"
 #include "dawn/native/BindGroup.h"
 #include "dawn/native/Buffer.h"
@@ -715,8 +714,8 @@ MaybeError ValidateColorAttachmentBytesPerSample(DeviceBase* device,
         "Total color attachment bytes per sample (%u) exceeds maximum (%u) with formats "
         "(%s).%s",
         totalByteSize, maxColorAttachmentBytesPerSample, TextureFormatsToString(formats),
-        DAWN_INCREASE_LIMIT_MESSAGE(device->GetAdapter(), maxColorAttachmentBytesPerSample,
-                                    totalByteSize));
+        DAWN_INCREASE_LIMIT_MESSAGE(device->GetAdapter()->GetLimits().v1,
+                                    maxColorAttachmentBytesPerSample, totalByteSize));
 
     return {};
 }

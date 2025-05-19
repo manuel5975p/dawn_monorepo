@@ -59,7 +59,7 @@ TEST_F(SpirvWriterTest, CanGenerate_SubgroupMatrixRequiresVulkanMemoryModel) {
     options.use_vulkan_memory_model = false;
     auto result = CanGenerate(mod, options);
     ASSERT_NE(result, Success);
-    EXPECT_THAT(result.Failure().reason.Str(),
+    EXPECT_THAT(result.Failure().reason,
                 testing::HasSubstr("using subgroup matrices requires the Vulkan Memory Model"));
 }
 
@@ -183,8 +183,6 @@ TEST_F(SpirvWriterTest, StripAllNames) {
 
                ; Annotations
                OpDecorate %gl_LocalInvocationIndex BuiltIn LocalInvocationIndex
-               OpMemberDecorate %_struct_11 0 Offset 0
-               OpMemberDecorate %_struct_11 1 Offset 16
 
                ; Types, variables and constants
        %uint = OpTypeInt 32 0

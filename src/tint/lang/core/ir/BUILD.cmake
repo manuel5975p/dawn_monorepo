@@ -134,6 +134,8 @@ tint_add_target(tint_lang_core_ir lib
   lang/core/ir/referenced_functions.h
   lang/core/ir/referenced_module_decls.h
   lang/core/ir/referenced_module_vars.h
+  lang/core/ir/reflection.cc
+  lang/core/ir/reflection.h
   lang/core/ir/return.cc
   lang/core/ir/return.h
   lang/core/ir/store.cc
@@ -179,7 +181,6 @@ tint_target_add_dependencies(tint_lang_core_ir lib
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
-  tint_utils_result
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text
@@ -231,6 +232,7 @@ tint_add_target(tint_lang_core_ir_test test
   lang/core/ir/referenced_functions_test.cc
   lang/core/ir/referenced_module_decls_test.cc
   lang/core/ir/referenced_module_vars_test.cc
+  lang/core/ir/reflection_test.cc
   lang/core/ir/return_test.cc
   lang/core/ir/store_test.cc
   lang/core/ir/store_vector_element_test.cc
@@ -268,7 +270,6 @@ tint_target_add_dependencies(tint_lang_core_ir_test test
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
-  tint_utils_result
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text
@@ -278,52 +279,3 @@ tint_target_add_external_dependencies(tint_lang_core_ir_test test
   "gtest"
   "src_utils"
 )
-
-if(TINT_BUILD_WGSL_READER)
-################################################################################
-# Target:    tint_lang_core_ir_bench
-# Kind:      bench
-# Condition: TINT_BUILD_WGSL_READER
-################################################################################
-tint_add_target(tint_lang_core_ir_bench bench
-  lang/core/ir/validator_bench.cc
-)
-
-tint_target_add_dependencies(tint_lang_core_ir_bench bench
-  tint_api_common
-  tint_lang_core
-  tint_lang_core_constant
-  tint_lang_core_ir
-  tint_lang_core_type
-  tint_lang_wgsl
-  tint_lang_wgsl_ast
-  tint_lang_wgsl_common
-  tint_lang_wgsl_features
-  tint_lang_wgsl_program
-  tint_lang_wgsl_sem
-  tint_utils
-  tint_utils_containers
-  tint_utils_diagnostic
-  tint_utils_ice
-  tint_utils_macros
-  tint_utils_math
-  tint_utils_memory
-  tint_utils_result
-  tint_utils_rtti
-  tint_utils_symbol
-  tint_utils_text
-)
-
-tint_target_add_external_dependencies(tint_lang_core_ir_bench bench
-  "google-benchmark"
-  "src_utils"
-)
-
-if(TINT_BUILD_WGSL_READER)
-  tint_target_add_dependencies(tint_lang_core_ir_bench bench
-    tint_cmd_bench_bench
-    tint_lang_wgsl_reader
-  )
-endif(TINT_BUILD_WGSL_READER)
-
-endif(TINT_BUILD_WGSL_READER)

@@ -528,11 +528,9 @@ $B1: {  # root
 
 TEST_F(IR_DemoteToHelperTest, TextureStore) {
     auto format = core::TexelFormat::kR32Float;
-    auto* texture =
-        b.Var("texture", ty.ptr(core::AddressSpace::kHandle,
-                                ty.Get<core::type::StorageTexture>(
-                                    core::type::TextureDimension::k2d, format, core::Access::kWrite,
-                                    core::type::StorageTexture::SubtypeFor(format, ty))));
+    auto* texture = b.Var("texture", ty.ptr(core::AddressSpace::kHandle,
+                                            ty.storage_texture(core::type::TextureDimension::k2d,
+                                                               format, core::Access::kWrite)));
     texture->SetBindingPoint(0, 0);
     mod.root_block->Append(texture);
 
@@ -540,9 +538,7 @@ TEST_F(IR_DemoteToHelperTest, TextureStore) {
     front_facing->SetBuiltin(BuiltinValue::kFrontFacing);
 
     auto* coord = b.FunctionParam("coord", ty.vec2<i32>());
-    IOAttributes coord_attr;
-    coord_attr.location = 0;
-    coord->SetAttributes(coord_attr);
+    coord->SetLocation(0);
     auto* ep = b.Function("ep", ty.f32(), Function::PipelineStage::kFragment);
     ep->SetParams({front_facing, coord});
     ep->SetReturnLocation(0_u);

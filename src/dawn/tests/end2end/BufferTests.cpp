@@ -453,43 +453,43 @@ TEST_P(BufferMappingTests, MapWrite_ManySimultaneous) {
         buffers[i] = device.CreateBuffer(&descriptor);
     }
 
-        std::array<wgpu::Future, kBuffers> futures;
-        for (uint32_t i = 0; i < kBuffers; ++i) {
-            futures[i] = buffers[i].MapAsync(
-                wgpu::MapMode::Write, 0, descriptor.size, GetParam().mFutureCallbackMode,
-                [&mapCompletedCount](wgpu::MapAsyncStatus status, wgpu::StringView) {
-                    ASSERT_EQ(wgpu::MapAsyncStatus::Success, status);
-                    mapCompletedCount++;
-                });
-        }
+    std::array<wgpu::Future, kBuffers> futures;
+    for (uint32_t i = 0; i < kBuffers; ++i) {
+        futures[i] = buffers[i].MapAsync(
+            wgpu::MapMode::Write, 0, descriptor.size, GetParam().mFutureCallbackMode,
+            [&mapCompletedCount](wgpu::MapAsyncStatus status, wgpu::StringView) {
+                ASSERT_EQ(wgpu::MapAsyncStatus::Success, status);
+                mapCompletedCount++;
+            });
+    }
 
-        switch (GetParam().mFutureCallbackMode) {
-            case wgpu::CallbackMode::WaitAnyOnly: {
-                std::array<wgpu::FutureWaitInfo, kBuffers> waitInfos;
-                for (uint32_t i = 0; i < kBuffers; ++i) {
-                    waitInfos[i] = {futures[i]};
-                }
-                size_t count = waitInfos.size();
-                wgpu::InstanceCapabilities instanceCapabilities;
-                wgpu::GetInstanceCapabilities(&instanceCapabilities);
-                do {
-                    size_t waitCount = std::min(count, instanceCapabilities.timedWaitAnyMaxCount);
-                    auto waitInfoStart = waitInfos.begin() + (count - waitCount);
-                    GetInstance().WaitAny(waitCount, &*waitInfoStart, UINT64_MAX);
-                    auto it = std::partition(waitInfoStart, waitInfoStart + waitCount,
-                                             [](const auto& info) { return !info.completed; });
-                    count = std::distance(waitInfos.begin(), it);
-                } while (count > 0);
-                break;
+    switch (GetParam().mFutureCallbackMode) {
+        case wgpu::CallbackMode::WaitAnyOnly: {
+            std::array<wgpu::FutureWaitInfo, kBuffers> waitInfos;
+            for (uint32_t i = 0; i < kBuffers; ++i) {
+                waitInfos[i] = {futures[i]};
             }
-            case wgpu::CallbackMode::AllowProcessEvents:
-            case wgpu::CallbackMode::AllowSpontaneous:
-                // Wait for all mappings to complete
-                while (mapCompletedCount != kBuffers) {
-                    WaitABit();
-                }
-                break;
+            size_t count = waitInfos.size();
+            wgpu::InstanceCapabilities instanceCapabilities;
+            wgpu::GetInstanceCapabilities(&instanceCapabilities);
+            do {
+                size_t waitCount = std::min(count, instanceCapabilities.timedWaitAnyMaxCount);
+                auto waitInfoStart = waitInfos.begin() + (count - waitCount);
+                GetInstance().WaitAny(waitCount, &*waitInfoStart, UINT64_MAX);
+                auto it = std::partition(waitInfoStart, waitInfoStart + waitCount,
+                                         [](const auto& info) { return !info.completed; });
+                count = std::distance(waitInfos.begin(), it);
+            } while (count > 0);
+            break;
         }
+        case wgpu::CallbackMode::AllowProcessEvents:
+        case wgpu::CallbackMode::AllowSpontaneous:
+            // Wait for all mappings to complete
+            while (mapCompletedCount != kBuffers) {
+                WaitABit();
+            }
+            break;
+    }
 
     // All buffers are mapped, write into them and unmap them all.
     for (uint32_t i = 0; i < kBuffers; ++i) {
@@ -1080,9 +1080,24 @@ TEST_P(BufferTests, CreateBufferOOM) {
     // UINT64_MAX may be special cased. Test a smaller, but really large buffer also fails
     descriptor.size = 1ull << 50;
     ASSERT_DEVICE_ERROR(device.CreateBuffer(&descriptor));
+}
 
-    // Validation errors should always be prior to OOM.
+// Test that in the creation of buffers validation errors should always be prior to OOM.
+TEST_P(BufferTests, CreateBufferOOMWithValidationError) {
+    // Fails on TSAN due to allowing too much memory. TSAN max is `0x10000000000` and the test
+    // allocates `0x4000000000000000`
+    DAWN_SUPPRESS_TEST_IF(IsTsan());
+
+    DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("skip_validation"));
+
+    wgpu::BufferDescriptor descriptor;
     descriptor.usage = wgpu::BufferUsage::MapRead | wgpu::BufferUsage::Uniform;
+
+    descriptor.size = std::numeric_limits<uint64_t>::max();
+    ASSERT_DEVICE_ERROR(device.CreateBuffer(&descriptor));
+
+    // UINT64_MAX may be special cased. Test a smaller, but really large buffer also fails
+    descriptor.size = 1ull << 50;
     ASSERT_DEVICE_ERROR(device.CreateBuffer(&descriptor));
 }
 
@@ -1097,37 +1112,120 @@ TEST_P(BufferTests, BufferMappedAtCreationOOM) {
     DAWN_TEST_UNSUPPORTED_IF(IsAsan());
     DAWN_TEST_UNSUPPORTED_IF(IsTsan());
 
+    auto Check = [&](bool nonNull, const wgpu::BufferDescriptor* desc) {
+        wgpu::Buffer buffer = device.CreateBuffer(desc);
+        if (nonNull) {
+            ASSERT_NE(nullptr, buffer.Get());
+            ASSERT_NE(nullptr, buffer.GetMappedRange());
+        } else {
+            ASSERT_EQ(nullptr, buffer.Get());
+        }
+    };
+
     for (wgpu::BufferUsage usage : {
              wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::None,
              wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::MapWrite,
              wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
          }) {
         wgpu::BufferDescriptor descriptor;
+        descriptor.usage = usage;
+        descriptor.mappedAtCreation = true;
+
+        // Control: test a small buffer works.
+        descriptor.size = 4;
+        Check(true, &descriptor);
+
+        // Test an enormous buffer fails
+        descriptor.size = std::numeric_limits<uint64_t>::max();
+        Check(false, &descriptor);
+
+        // UINT64_MAX may be special cased. Test a smaller, but really large buffer also fails
+        descriptor.size = 1ull << 50;
+        Check(false, &descriptor);
+    }
+}
+
+// Test OOM cases that can't be reliably triggered, but can be simulated.
+TEST_P(BufferTests, BufferMappedAtCreationOOM_Simulated) {
+    auto Check = [&](bool mapError, bool deviceError, const wgpu::BufferDescriptor* desc) {
+        wgpu::Buffer buffer;
+        if (deviceError) {
+            ASSERT_DEVICE_ERROR(buffer = device.CreateBuffer(desc));
+        } else {
+            buffer = device.CreateBuffer(desc);
+        }
+        if (mapError) {
+            ASSERT_EQ(nullptr, buffer.Get());
+        } else {
+            ASSERT_NE(nullptr, buffer.Get());
+            ASSERT_NE(nullptr, buffer.GetMappedRange());
+        }
+    };
+
+    for (wgpu::BufferUsage usage : {
+             wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::None,
+             wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::MapWrite,
+             wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
+         }) {
+        wgpu::DawnFakeBufferOOMForTesting oomForTesting;
+        wgpu::BufferDescriptor descriptor;
+        descriptor.nextInChain = &oomForTesting;
         descriptor.size = 4;
         descriptor.usage = usage;
         descriptor.mappedAtCreation = true;
 
         // Control: test a small buffer works.
-        device.CreateBuffer(&descriptor);
+        Check(false, false, &descriptor);
 
-        // Test an enormous buffer fails
-        descriptor.size = std::numeric_limits<uint64_t>::max();
+        // Test OOM in the wire client before ever sending a command.
         if (UsesWire()) {
-            wgpu::Buffer buffer = device.CreateBuffer(&descriptor);
-            ASSERT_EQ(nullptr, buffer.Get());
-        } else {
-            ASSERT_DEVICE_ERROR(device.CreateBuffer(&descriptor));
+            oomForTesting = {};
+            oomForTesting.fakeOOMAtWireClientMap = true;
+            Check(true, false, &descriptor);
         }
 
-        // UINT64_MAX may be special cased. Test a smaller, but really large buffer also fails
-        descriptor.size = 1ull << 50;
-        if (UsesWire()) {
-            wgpu::Buffer buffer = device.CreateBuffer(&descriptor);
-            ASSERT_EQ(nullptr, buffer.Get());
-        } else {
-            ASSERT_DEVICE_ERROR(device.CreateBuffer(&descriptor));
-        }
+        // Test OOM in Dawn Native. If using the wire, this could cause a
+        // non-null client buffer to point to a null server buffer.
+        oomForTesting = {};
+        oomForTesting.fakeOOMAtNativeMap = true;
+        Check(!UsesWire(), false, &descriptor);
+
+        // Test OOM in Dawn Native AND in the device allocation. Similar to previous case.
+        oomForTesting = {};
+        oomForTesting.fakeOOMAtNativeMap = true;
+        oomForTesting.fakeOOMAtDevice = true;
+        Check(!UsesWire(), false, &descriptor);
+
+        // Test OOM only in device allocation. There should be no nulls returned at either layer.
+        oomForTesting = {};
+        oomForTesting.fakeOOMAtDevice = true;
+        Check(false, true, &descriptor);
     }
+}
+
+TEST_P(BufferTests, CreateErrorBuffer) {
+    wgpu::BufferDescriptor desc{.usage = wgpu::BufferUsage::CopySrc, .size = 8};
+    wgpu::Buffer buffer;
+
+    desc.mappedAtCreation = false;
+    buffer = device.CreateErrorBuffer(&desc);
+    ASSERT_NE(buffer, nullptr);
+
+    desc.mappedAtCreation = true;
+    buffer = device.CreateErrorBuffer(&desc);
+    ASSERT_EQ(buffer, nullptr);
+
+    wgpu::DawnBufferDescriptorErrorInfoFromWireClient ext;
+    ext.outOfMemory = true;
+    desc.nextInChain = &ext;
+
+    desc.mappedAtCreation = false;
+    ASSERT_DEVICE_ERROR(buffer = device.CreateErrorBuffer(&desc));
+    ASSERT_NE(buffer, nullptr);
+
+    desc.mappedAtCreation = true;
+    buffer = device.CreateErrorBuffer(&desc);
+    ASSERT_EQ(buffer, nullptr);
 }
 
 // Test that mapping an OOM buffer fails gracefully

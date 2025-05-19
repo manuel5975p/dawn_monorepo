@@ -95,7 +95,7 @@ $B1: {  # root
   %3:i32 = add 1i, 2i
   %o:i32 = override %3 @id(1)
   %c:ptr<workgroup, u32, read_write> = var undef
-  %p:i32 = override undef @id(0)
+  %p:i32 = override undef
   %7:i32 = mul 2i, 4i
 }
 
@@ -137,7 +137,7 @@ $B1: {  # root
   %a:ptr<workgroup, u32, read_write> = var undef
   %b:ptr<workgroup, u32, read_write> = var undef
   %c:ptr<workgroup, u32, read_write> = var undef
-  %d:i32 = override undef @id(0)
+  %d:i32 = override undef
   %e:i32 = override undef @id(1)
 }
 
@@ -190,7 +190,7 @@ $B1: {  # root
   %a:ptr<workgroup, u32, read_write> = var undef
   %b:ptr<workgroup, u32, read_write> = var undef
   %c:ptr<workgroup, u32, read_write> = var undef
-  %d:i32 = override undef @id(0)
+  %d:i32 = override undef
 }
 
 %foo = func():void {
@@ -260,7 +260,7 @@ $B1: {  # root
   %a:ptr<workgroup, u32, read_write> = var undef
   %b:ptr<workgroup, u32, read_write> = var undef
   %c:ptr<workgroup, u32, read_write> = var undef
-  %c_1:i32 = override undef @id(0)  # %c_1: 'c'
+  %c_1:i32 = override undef  # %c_1: 'c'
 }
 
 %foo = func():void {
@@ -328,7 +328,7 @@ TEST_F(IR_ReferencedModuleDeclsTest, IndirectUse) {
     auto* src = R"(
 $B1: {  # root
   %a:ptr<workgroup, u32, read_write> = var undef
-  %b:i32 = override undef @id(0)
+  %b:i32 = override undef
   %c:ptr<workgroup, u32, read_write> = var undef
 }
 
@@ -416,7 +416,7 @@ TEST_F(IR_ReferencedModuleDeclsTest, WorkgroupSize) {
     over_a->As<core::ir::Override>()->SetOverrideId(OverrideId{1});
 
     auto* foo = b.ComputeFunction("foo");
-    foo->SetWorkgroupSize(over_a->Result(0), b.Constant(1_u), b.Constant(1_u));
+    foo->SetWorkgroupSize(over_a->Result(), b.Constant(1_u), b.Constant(1_u));
     b.Append(foo->Block(), [&] {  //
         b.Return(foo);
     });
@@ -442,7 +442,7 @@ TEST_F(IR_ReferencedModuleDeclsTest, ArrayTypeCount) {
     auto* over_a = mod.root_block->Append(b.Override("o", ty.u32()));
     over_a->As<core::ir::Override>()->SetOverrideId(OverrideId{1});
 
-    auto* c1 = ty.Get<core::ir::type::ValueArrayCount>(over_a->Result(0));
+    auto* c1 = ty.Get<core::ir::type::ValueArrayCount>(over_a->Result());
     auto* a1 = ty.Get<core::type::Array>(ty.i32(), c1, 4u, 4u, 4u, 4u);
 
     auto* var_a = mod.root_block->Append(b.Var("a", ty.ptr(workgroup, a1, read_write)));

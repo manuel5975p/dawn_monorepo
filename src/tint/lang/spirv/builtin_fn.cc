@@ -86,6 +86,10 @@ const char* str(BuiltinFn i) {
             return "image_query_size";
         case BuiltinFn::kImageQuerySizeLod:
             return "image_query_size_lod";
+        case BuiltinFn::kImageQueryLevels:
+            return "image_query_levels";
+        case BuiltinFn::kImageQuerySamples:
+            return "image_query_samples";
         case BuiltinFn::kImageRead:
             return "image_read";
         case BuiltinFn::kImageSampleImplicitLod:
@@ -98,14 +102,14 @@ const char* str(BuiltinFn i) {
             return "image_sample_dref_explicit_lod";
         case BuiltinFn::kImageWrite:
             return "image_write";
+        case BuiltinFn::kSampledImage:
+            return "sampled_image";
         case BuiltinFn::kMatrixTimesMatrix:
             return "matrix_times_matrix";
         case BuiltinFn::kMatrixTimesScalar:
             return "matrix_times_scalar";
         case BuiltinFn::kMatrixTimesVector:
             return "matrix_times_vector";
-        case BuiltinFn::kSampledImage:
-            return "sampled_image";
         case BuiltinFn::kSelect:
             return "select";
         case BuiltinFn::kVectorTimesMatrix:
@@ -212,6 +216,8 @@ const char* str(BuiltinFn i) {
             return "s_negate";
         case BuiltinFn::kFMod:
             return "f_mod";
+        case BuiltinFn::kOuterProduct:
+            return "outer_product";
         case BuiltinFn::kSDot:
             return "s_dot";
         case BuiltinFn::kUDot:
@@ -268,6 +274,8 @@ tint::core::ir::Instruction::Accesses GetSideEffects(BuiltinFn fn) {
         case BuiltinFn::kDot:
         case BuiltinFn::kImageQuerySize:
         case BuiltinFn::kImageQuerySizeLod:
+        case BuiltinFn::kImageQueryLevels:
+        case BuiltinFn::kImageQuerySamples:
         case BuiltinFn::kMatrixTimesMatrix:
         case BuiltinFn::kMatrixTimesScalar:
         case BuiltinFn::kMatrixTimesVector:
@@ -326,6 +334,7 @@ tint::core::ir::Instruction::Accesses GetSideEffects(BuiltinFn fn) {
         case BuiltinFn::kNot:
         case BuiltinFn::kSNegate:
         case BuiltinFn::kFMod:
+        case BuiltinFn::kOuterProduct:
             break;
     }
     return core::ir::Instruction::Accesses{};

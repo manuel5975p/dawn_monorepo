@@ -109,7 +109,6 @@
 #include "src/tint/utils/containers/scope_stack.h"
 #include "src/tint/utils/macros/defer.h"
 #include "src/tint/utils/macros/scoped_assignment.h"
-#include "src/tint/utils/result/result.h"
 #include "src/tint/utils/rtti/switch.h"
 
 using namespace tint::core::number_suffixes;  // NOLINT
@@ -118,7 +117,7 @@ using namespace tint::core::fluent_types;     // NOLINT
 namespace tint::wgsl::reader {
 namespace {
 
-using ResultType = tint::Result<core::ir::Module>;
+using ResultType = diag::Result<core::ir::Module>;
 
 /// Impl is the private-implementation of FromProgram().
 class Impl {
@@ -195,7 +194,9 @@ class Impl {
 
     diag::Diagnostic& AddError(const Source& source) { return diagnostics_.AddError(source); }
 
-    bool NeedTerminator() { return current_block_ && !current_block_->Terminator(); }
+    bool NeedTerminator() {
+        return (current_block_ != nullptr) && (current_block_->Terminator() == nullptr);
+    }
 
     void SetTerminator(core::ir::Terminator* terminator) {
         TINT_ASSERT(current_block_);
@@ -257,7 +258,7 @@ class Impl {
         }
 
         if (diagnostics_.ContainsErrors()) {
-            return Failure{std::move(diagnostics_)};
+            return diag::Failure{std::move(diagnostics_)};
         }
 
         return std::move(mod);
@@ -287,6 +288,8 @@ class Impl {
 
                     auto attr = ast::GetAttribute<ast::WorkgroupAttribute>(ast_func->attributes);
                     if (attr) {
+                        TINT_SCOPED_ASSIGNMENT(current_block_, mod.root_block);
+
                         // The x size is always required (y, z are optional).
                         auto value_x = EmitValueExpression(attr->x);
                         bool is_unsigned = value_x->Type()->IsUnsignedIntegerScalar();
@@ -410,9 +413,15 @@ class Impl {
             const auto* sem = program_.Sem().GetVal(stmt->rhs);
             switch (sem->Stage()) {
                 case core::EvaluationStage::kRuntime:
-                case core::EvaluationStage::kOverride:
-                    EmitValueExpression(stmt->rhs);
-                    break;
+                case core::EvaluationStage::kOverride: {
+                    auto* value = EmitValueExpression(stmt->rhs);
+                    auto* result = value->As<core::ir::InstructionResult>();
+                    // Overrides need to be referenced if they are to be retained in single entry
+                    // point in the case of phony assignment.
+                    if (!result || result->Instruction()->Block() == mod.root_block) {
+                        current_block_->Append(builder_.Let(value));
+                    }
+                } break;
                 case core::EvaluationStage::kNotEvaluated:
                 case core::EvaluationStage::kConstant:
                     // Don't emit.
@@ -462,13 +471,13 @@ class Impl {
         auto b = builder_.Append(current_block_);
         if (auto* v = std::get_if<core::ir::Value*>(&lhs)) {
             auto* load = b.Load(*v);
-            auto* ty = load->Result(0)->Type();
-            auto* inst = current_block_->Append(BinaryOp(ty, load->Result(0), rhs, op));
+            auto* ty = load->Result()->Type();
+            auto* inst = current_block_->Append(BinaryOp(ty, load->Result(), rhs, op));
             b.Store(*v, inst);
         } else if (auto ref = std::get_if<VectorRefElementAccess>(&lhs)) {
             auto* load = b.LoadVectorElement(ref->vector, ref->index);
-            auto* ty = load->Result(0)->Type();
-            auto* inst = b.Append(BinaryOp(ty, load->Result(0), rhs, op));
+            auto* ty = load->Result()->Type();
+            auto* inst = b.Append(BinaryOp(ty, load->Result(), rhs, op));
             b.StoreVectorElement(ref->vector, ref->index, inst);
         }
     }
@@ -772,7 +781,7 @@ class Impl {
                 if (impl.program_.Sem().Get<sem::Load>(expr)) {
                     auto* load = impl.builder_.Load(value);
                     impl.current_block_->Append(load);
-                    value = load->Result(0);
+                    value = load->Result();
                 }
                 bindings_.Add(expr, value);
             }
@@ -782,7 +791,7 @@ class Impl {
                 if (impl.program_.Sem().Get<sem::Load>(expr)) {
                     auto* load = impl.builder_.LoadVectorElement(access.vector, access.index);
                     impl.current_block_->Append(load);
-                    bindings_.Add(expr, load->Result(0));
+                    bindings_.Add(expr, load->Result());
                 } else {
                     bindings_.Add(expr, access);
                 }
@@ -869,7 +878,7 @@ class Impl {
                         }
                         auto* val = impl.builder_.Swizzle(ty, obj, std::move(indices));
                         impl.current_block_->Append(val);
-                        Bind(expr, val->Result(0));
+                        Bind(expr, val->Result());
                         return nullptr;
                     },  //
                     TINT_ICE_ON_NO_MATCH);
@@ -884,14 +893,14 @@ class Impl {
                     if (auto* inst_res = obj->As<core::ir::InstructionResult>()) {
                         if (auto* access = inst_res->Instruction()->As<core::ir::Access>()) {
                             access->AddIndex(index);
-                            access->Result(0)->SetType(ty);
+                            access->Result()->SetType(ty);
                             bindings_.Remove(expr->object);
                             // Move the access after the index expression.
                             if (impl.current_block_->Back() != access) {
                                 impl.current_block_->Remove(access);
                                 impl.current_block_->Append(access);
                             }
-                            Bind(expr, access->Result(0));
+                            Bind(expr, access->Result());
                             return;
                         }
                     }
@@ -900,7 +909,7 @@ class Impl {
                 // Create a new access
                 auto* access = impl.builder_.Access(ty, obj, index);
                 impl.current_block_->Append(access);
-                Bind(expr, access->Result(0));
+                Bind(expr, access->Result());
             }
 
             void EmitBinary(const ast::BinaryExpression* b) {
@@ -919,7 +928,7 @@ class Impl {
                     return;
                 }
                 impl.current_block_->Append(inst);
-                Bind(b, inst->Result(0));
+                Bind(b, inst->Result());
             }
 
             void EmitUnary(const ast::UnaryOpExpression* expr) {
@@ -953,7 +962,7 @@ class Impl {
                     }
                 }
                 impl.current_block_->Append(inst);
-                Bind(expr, inst->Result(0));
+                Bind(expr, inst->Result());
             }
 
             void EmitCall(const ast::CallExpression* expr) {
@@ -1031,7 +1040,7 @@ class Impl {
                     return;
                 }
                 impl.current_block_->Append(inst);
-                Bind(expr, inst->Result(0));
+                Bind(expr, inst->Result());
             }
 
             void EmitIdentifier(const ast::IdentifierExpression* i) {
@@ -1121,7 +1130,7 @@ class Impl {
                 impl.current_block_->Append(if_inst);
 
                 auto* result = b.InstructionResult(b.ir.Types().bool_());
-                if_inst->SetResults(result);
+                if_inst->SetResult(result);
 
                 if (expr->op == core::BinaryOp::kLogicalAnd) {
                     if_inst->False()->Append(b.ExitIf(if_inst, b.Constant(false)));
@@ -1270,7 +1279,7 @@ class Impl {
                 }
 
                 // Store the declaration so we can get the instruction to store too
-                scopes_.Set(v->name->symbol, val->Result(0));
+                scopes_.Set(v->name->symbol, val->Result());
 
                 // Record the original name and source of the var
                 builder_.ir.SetName(val, v->name->symbol.Name());
@@ -1285,7 +1294,7 @@ class Impl {
                 auto* let = current_block_->Append(builder_.Let(l->name->symbol.Name(), init));
 
                 // Store the results of the initialization
-                scopes_.Set(l->name->symbol, let->Result(0));
+                scopes_.Set(l->name->symbol, let->Result());
                 builder_.ir.SetSource(let, l->source);
             },
             [&](const ast::Override* o) {
@@ -1306,7 +1315,7 @@ class Impl {
                 override->SetOverrideId(o_sem->Attributes().override_id.value());
 
                 // Store the declaration so we can get the instruction to store too
-                scopes_.Set(o->name->symbol, override->Result(0));
+                scopes_.Set(o->name->symbol, override->Result());
 
                 // Record the original name and source of the var
                 builder_.ir.SetName(override, o->name->symbol.Name());
@@ -1367,9 +1376,9 @@ class Impl {
 
 }  // namespace
 
-tint::Result<core::ir::Module> ProgramToIR(const Program& program) {
+Result<core::ir::Module> ProgramToIR(const Program& program) {
     if (!program.IsValid()) {
-        return Failure{program.Diagnostics()};
+        return Failure{program.Diagnostics().Str()};
     }
 
     Impl b(program);
@@ -1377,7 +1386,7 @@ tint::Result<core::ir::Module> ProgramToIR(const Program& program) {
     if (r != Success) {
         diag::List err = std::move(r.Failure().reason);
         err.AddNote(Source{}) << "AST:\n" + Program::printer(program);
-        return Failure{err};
+        return Failure{err.Str()};
     }
 
     return r.Move();

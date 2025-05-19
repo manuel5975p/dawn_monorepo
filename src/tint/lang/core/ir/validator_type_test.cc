@@ -44,6 +44,7 @@
 #include "src/tint/lang/core/type/matrix.h"
 #include "src/tint/lang/core/type/memory_view.h"
 #include "src/tint/lang/core/type/reference.h"
+#include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 
 namespace tint::core::ir {
@@ -88,11 +89,11 @@ TEST_F(IR_ValidatorTest, AbstractFloat_Scalar) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:3:5 error: var: abstracts are not permitted
     %af:ptr<function, abstract-float, read_write> = var undef
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, AbstractInt_Scalar) {
@@ -104,11 +105,11 @@ TEST_F(IR_ValidatorTest, AbstractInt_Scalar) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:3:5 error: var: abstracts are not permitted
     %ai:ptr<function, abstract-int, read_write> = var undef
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, AbstractFloat_Vector) {
@@ -120,11 +121,11 @@ TEST_F(IR_ValidatorTest, AbstractFloat_Vector) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:3:5 error: var: abstracts are not permitted
     %af:ptr<function, vec2<abstract-float>, read_write> = var undef
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, AbstractInt_Vector) {
@@ -136,11 +137,11 @@ TEST_F(IR_ValidatorTest, AbstractInt_Vector) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(3:5 error: var: abstracts are not permitted
     %ai:ptr<function, vec3<abstract-int>, read_write> = var undef
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, AbstractFloat_Matrix) {
@@ -152,11 +153,11 @@ TEST_F(IR_ValidatorTest, AbstractFloat_Matrix) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:3:5 error: var: abstracts are not permitted
     %af:ptr<function, mat2x2<abstract-float>, read_write> = var undef
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, AbstractInt_Matrix) {
@@ -168,11 +169,11 @@ TEST_F(IR_ValidatorTest, AbstractInt_Matrix) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:3:5 error: var: abstracts are not permitted
     %ai:ptr<function, mat3x4<abstract-int>, read_write> = var undef
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, AbstractFloat_Struct) {
@@ -185,11 +186,11 @@ TEST_F(IR_ValidatorTest, AbstractFloat_Struct) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:6:3 error: var: abstracts are not permitted
   %1:ptr<private, MyStruct, read_write> = var undef
   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, AbstractInt_Struct) {
@@ -202,11 +203,11 @@ TEST_F(IR_ValidatorTest, AbstractInt_Struct) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:6:3 error: var: abstracts are not permitted
   %1:ptr<private, MyStruct, read_write> = var undef
   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, AbstractFloat_FunctionParam) {
@@ -217,11 +218,10 @@ TEST_F(IR_ValidatorTest, AbstractFloat_FunctionParam) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
-                testing::HasSubstr(R"(:1:17 error: abstracts are not permitted
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(R"(:1:17 error: abstracts are not permitted
 %my_func = func(%2:abstract-float):void {
                 ^^^^^^^^^^^^^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, AbstractInt_FunctionParam) {
@@ -232,11 +232,10 @@ TEST_F(IR_ValidatorTest, AbstractInt_FunctionParam) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
-                testing::HasSubstr(R"(:1:17 error: abstracts are not permitted
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(R"(:1:17 error: abstracts are not permitted
 %my_func = func(%2:abstract-int):void {
                 ^^^^^^^^^^^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 using TypeTest = IRTestParamHelper<std::tuple<
@@ -258,7 +257,7 @@ TEST_P(Type_VectorElements, Test) {
         });
 
         auto res = ir::Validate(mod);
-        ASSERT_EQ(res, Success) << res.Failure().reason.Str();
+        ASSERT_EQ(res, Success) << res.Failure();
     } else {
         auto* f = b.Function("my_func", ty.void_());
         b.Append(f->Block(), [&] {
@@ -267,11 +266,11 @@ TEST_P(Type_VectorElements, Test) {
         });
 
         auto res = ir::Validate(mod);
-        ASSERT_NE(res, Success) << res.Failure().reason.Str();
-        EXPECT_THAT(res.Failure().reason.Str(),
+        ASSERT_NE(res, Success) << res.Failure();
+        EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr(R"(:3:5 error: var: vector elements, ')" +
                                        ty.vec2(type)->FriendlyName() + R"(', must be scalars
- )")) << res.Failure().reason.Str();
+ )")) << res.Failure();
     }
 }
 
@@ -305,7 +304,7 @@ TEST_P(Type_MatrixElements, Test) {
         });
 
         auto res = ir::Validate(mod);
-        ASSERT_EQ(res, Success) << res.Failure().reason.Str();
+        ASSERT_EQ(res, Success) << res.Failure();
     } else {
         auto* f = b.Function("my_func", ty.void_());
         b.Append(f->Block(), [&] {
@@ -314,11 +313,11 @@ TEST_P(Type_MatrixElements, Test) {
         });
 
         auto res = ir::Validate(mod);
-        ASSERT_NE(res, Success) << res.Failure().reason.Str();
-        EXPECT_THAT(res.Failure().reason.Str(),
+        ASSERT_NE(res, Success) << res.Failure();
+        EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr(R"(:3:5 error: var: matrix elements, ')" +
                                        ty.mat3x3(type)->FriendlyName() + R"(', must be float scalars
- )")) << res.Failure().reason.Str();
+ )")) << res.Failure();
     }
 }
 
@@ -330,6 +329,136 @@ INSTANTIATE_TEST_SUITE_P(IR_ValidatorTest,
                                          std::make_tuple(true, TypeBuilder<f16>),
                                          std::make_tuple(false, TypeBuilder<core::type::Bool>),
                                          std::make_tuple(false, TypeBuilder<core::type::Void>)));
+
+using Type_SubgroupMatrixComponentType = TypeTest;
+
+TEST_P(Type_SubgroupMatrixComponentType, Test) {
+    bool allowed = std::get<0>(GetParam());
+    auto* type = std::get<1>(GetParam())(ty);
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Var("m", AddressSpace::kFunction, ty.subgroup_matrix_result(type, 8u, 8u));
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    if (allowed) {
+        ASSERT_EQ(res, Success) << res.Failure();
+    } else {
+        ASSERT_NE(res, Success);
+        EXPECT_THAT(
+            res.Failure().reason,
+            testing::HasSubstr(":3:5 error: var: invalid subgroup matrix component type: '" +
+                               type->FriendlyName()))
+            << res.Failure();
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(IR_ValidatorTest,
+                         Type_SubgroupMatrixComponentType,
+                         testing::Values(std::make_tuple(true, TypeBuilder<f32>),
+                                         std::make_tuple(true, TypeBuilder<f16>),
+                                         std::make_tuple(true, TypeBuilder<i8>),
+                                         std::make_tuple(true, TypeBuilder<i32>),
+                                         std::make_tuple(true, TypeBuilder<u8>),
+                                         std::make_tuple(true, TypeBuilder<u32>),
+                                         std::make_tuple(false, TypeBuilder<core::type::Bool>),
+                                         std::make_tuple(false, TypeBuilder<core::type::Void>)));
+
+using Type_SampledTextureSampledType = TypeTest;
+
+TEST_P(Type_SampledTextureSampledType, Test) {
+    bool allowed = std::get<0>(GetParam());
+    auto* type = std::get<1>(GetParam())(ty);
+    b.Append(mod.root_block, [&] {
+        auto* var = b.Var("m", AddressSpace::kHandle,
+                          ty.sampled_texture(core::type::TextureDimension::k2d, type));
+        var->SetBindingPoint(0, 0);
+    });
+
+    auto res = ir::Validate(mod);
+    if (allowed) {
+        ASSERT_EQ(res, Success) << res.Failure();
+    } else {
+        ASSERT_NE(res, Success);
+        EXPECT_THAT(res.Failure().reason,
+                    testing::HasSubstr(":2:3 error: var: invalid sampled texture sample type: '" +
+                                       type->FriendlyName()))
+            << res.Failure();
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(IR_ValidatorTest,
+                         Type_SampledTextureSampledType,
+                         testing::Values(std::make_tuple(true, TypeBuilder<f32>),
+                                         std::make_tuple(true, TypeBuilder<i32>),
+                                         std::make_tuple(true, TypeBuilder<u32>),
+                                         std::make_tuple(false, TypeBuilder<f16>),
+                                         std::make_tuple(false, TypeBuilder<core::type::Bool>),
+                                         std::make_tuple(false, TypeBuilder<core::type::Void>)));
+
+using Type_MultisampledTextureTypeAndDimension =
+    IRTestParamHelper<std::tuple<std::tuple<
+                                     /* type_allowed */ bool,
+                                     /* type_builder */ TypeBuilderFn>,
+                                 std::tuple<
+                                     /* dim_allowed */ bool,
+                                     /* dim */ core::type::TextureDimension>>>;
+
+TEST_P(Type_MultisampledTextureTypeAndDimension, Test) {
+    auto type_params = std::get<0>(GetParam());
+    bool type_allowed = std::get<0>(type_params);
+    auto* type = std::get<1>(type_params)(ty);
+
+    auto dim_params = std::get<1>(GetParam());
+    bool dim_allowed = std::get<0>(dim_params);
+    auto dim = std::get<1>(dim_params);
+
+    bool allowed = type_allowed && dim_allowed;
+
+    b.Append(mod.root_block, [&] {
+        auto* var = b.Var("ms", AddressSpace::kHandle, ty.multisampled_texture(dim, type));
+        var->SetBindingPoint(0, 0);
+    });
+
+    auto res = ir::Validate(mod);
+    if (allowed) {
+        ASSERT_EQ(res, Success) << res.Failure();
+    } else {
+        ASSERT_NE(res, Success);
+        if (!type_allowed) {
+            EXPECT_THAT(
+                res.Failure().reason,
+                testing::HasSubstr(":2:3 error: var: invalid multisampled texture sample type: '" +
+                                   type->FriendlyName()))
+                << res.Failure();
+        } else {
+            EXPECT_THAT(
+                res.Failure().reason,
+                testing::HasSubstr(":2:3 error: var: invalid multisampled texture dimension: '" +
+                                   std::string(ToString(dim))))
+                << res.Failure();
+        }
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    IR_ValidatorTest,
+    Type_MultisampledTextureTypeAndDimension,
+    testing::Combine(testing::Values(std::make_tuple(true, TypeBuilder<f32>),
+                                     std::make_tuple(true, TypeBuilder<i32>),
+                                     std::make_tuple(true, TypeBuilder<u32>),
+                                     std::make_tuple(false, TypeBuilder<f16>),
+                                     std::make_tuple(false, TypeBuilder<core::type::Bool>),
+                                     std::make_tuple(false, TypeBuilder<core::type::Void>)),
+                     testing::Values(std::make_tuple(false, core::type::TextureDimension::k1d),
+                                     std::make_tuple(true, core::type::TextureDimension::k2d),
+                                     std::make_tuple(true, core::type::TextureDimension::k2dArray),
+                                     std::make_tuple(false, core::type::TextureDimension::k3d),
+                                     std::make_tuple(false, core::type::TextureDimension::kCube),
+                                     std::make_tuple(false,
+                                                     core::type::TextureDimension::kCubeArray),
+                                     std::make_tuple(false, core::type::TextureDimension::kNone))));
 
 using Type_StorageTextureDimension = IRTestParamHelper<std::tuple<
     /* allowed */ bool,
@@ -348,17 +477,17 @@ TEST_P(Type_StorageTextureDimension, Test) {
 
     if (allowed) {
         auto res = ir::Validate(mod);
-        ASSERT_EQ(res, Success) << res.Failure().reason.Str();
+        ASSERT_EQ(res, Success) << res.Failure();
     } else {
         auto res = ir::Validate(mod);
-        ASSERT_NE(res, Success) << res.Failure().reason.Str();
-        EXPECT_THAT(res.Failure().reason.Str(),
+        ASSERT_NE(res, Success) << res.Failure();
+        EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr(
                         dim != type::TextureDimension::kNone
                             ? R"(:2:3 error: var: dimension ')" + std::string(ToString(dim)) +
                                   R"(' for storage textures does not in WGSL yet)"
                             : R"(:2:3 error: var: invalid texture dimension 'none')"))
-            << res.Failure().reason.Str();
+            << res.Failure();
     }
 }
 
@@ -399,9 +528,9 @@ TEST_P(IR_ValidatorRefTypeTest, Var) {
         ASSERT_EQ(res, Success) << res.Failure();
     } else {
         ASSERT_NE(res, Success);
-        EXPECT_THAT(res.Failure().reason.Str(),
+        EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr("3:5 error: var: reference types are not permitted"))
-            << res.Failure().reason.Str();
+            << res.Failure();
     }
 }
 
@@ -423,9 +552,8 @@ TEST_P(IR_ValidatorRefTypeTest, FnParam) {
         ASSERT_EQ(res, Success) << res.Failure();
     } else {
         ASSERT_NE(res, Success);
-        EXPECT_THAT(res.Failure().reason.Str(),
-                    testing::HasSubstr("reference types are not permitted"))
-            << res.Failure().reason.Str();
+        EXPECT_THAT(res.Failure().reason, testing::HasSubstr("reference types are not permitted"))
+            << res.Failure();
     }
 }
 
@@ -446,9 +574,8 @@ TEST_P(IR_ValidatorRefTypeTest, FnRet) {
         ASSERT_EQ(res, Success) << res.Failure();
     } else {
         ASSERT_NE(res, Success);
-        EXPECT_THAT(res.Failure().reason.Str(),
-                    testing::HasSubstr("reference types are not permitted"))
-            << res.Failure().reason.Str();
+        EXPECT_THAT(res.Failure().reason, testing::HasSubstr("reference types are not permitted"))
+            << res.Failure();
     }
 }
 
@@ -479,9 +606,8 @@ TEST_P(IR_ValidatorRefTypeTest, BlockParam) {
         ASSERT_EQ(res, Success) << res.Failure();
     } else {
         ASSERT_NE(res, Success);
-        EXPECT_THAT(res.Failure().reason.Str(),
-                    testing::HasSubstr("reference types are not permitted"))
-            << res.Failure().reason.Str();
+        EXPECT_THAT(res.Failure().reason, testing::HasSubstr("reference types are not permitted"))
+            << res.Failure();
     }
 }
 
@@ -514,9 +640,8 @@ TEST_F(IR_ValidatorTest, PointerToPointer) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
-                testing::HasSubstr("nested pointer types are not permitted"))
-        << res.Failure().reason.Str();
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr("nested pointer types are not permitted"))
+        << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, PointerToVoid) {
@@ -529,9 +654,8 @@ TEST_F(IR_ValidatorTest, PointerToVoid) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
-                testing::HasSubstr("pointers to void are not permitted"))
-        << res.Failure().reason.Str();
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr("pointers to void are not permitted"))
+        << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, ReferenceToReference) {
@@ -547,9 +671,9 @@ TEST_F(IR_ValidatorTest, ReferenceToReference) {
 
     auto res = ir::Validate(mod, caps);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr("nested reference types are not permitted"))
-        << res.Failure().reason.Str();
+        << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, ReferenceToVoid) {
@@ -565,9 +689,8 @@ TEST_F(IR_ValidatorTest, ReferenceToVoid) {
 
     auto res = ir::Validate(mod, caps);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
-                testing::HasSubstr("references to void are not permitted"))
-        << res.Failure().reason.Str();
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr("references to void are not permitted"))
+        << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, PointerInStructure_WithoutCapability) {
@@ -582,9 +705,8 @@ TEST_F(IR_ValidatorTest, PointerInStructure_WithoutCapability) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
-                testing::HasSubstr("nested pointer types are not permitted"))
-        << res.Failure().reason.Str();
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr("nested pointer types are not permitted"))
+        << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, PointerInStructure_WithCapability) {
@@ -625,9 +747,9 @@ TEST_P(IR_Validator8BitIntTypeTest, Var) {
         ASSERT_EQ(res, Success) << res.Failure();
     } else {
         ASSERT_NE(res, Success);
-        EXPECT_THAT(res.Failure().reason.Str(),
+        EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr("3:5 error: var: 8-bit integer types are not permitted"))
-            << res.Failure().reason.Str();
+            << res.Failure();
     }
 }
 
@@ -648,9 +770,9 @@ TEST_P(IR_Validator8BitIntTypeTest, FnParam) {
         ASSERT_EQ(res, Success) << res.Failure();
     } else {
         ASSERT_NE(res, Success);
-        EXPECT_THAT(res.Failure().reason.Str(),
+        EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr("8-bit integer types are not permitted"))
-            << res.Failure().reason.Str();
+            << res.Failure();
     }
 }
 
@@ -670,9 +792,9 @@ TEST_P(IR_Validator8BitIntTypeTest, FnRet) {
         ASSERT_EQ(res, Success) << res.Failure();
     } else {
         ASSERT_NE(res, Success);
-        EXPECT_THAT(res.Failure().reason.Str(),
+        EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr("8-bit integer types are not permitted"))
-            << res.Failure().reason.Str();
+            << res.Failure();
     }
 }
 
@@ -702,9 +824,9 @@ TEST_P(IR_Validator8BitIntTypeTest, BlockParam) {
         ASSERT_EQ(res, Success) << res.Failure();
     } else {
         ASSERT_NE(res, Success);
-        EXPECT_THAT(res.Failure().reason.Str(),
+        EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr("8-bit integer types are not permitted"))
-            << res.Failure().reason.Str();
+            << res.Failure();
     }
 }
 
@@ -727,11 +849,11 @@ TEST_F(IR_ValidatorTest, Int8Type_InstructionOperand_NotAllowed) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:3:5 error: let: 8-bit integer types are not permitted
     %l:u8 = let 1u8
     ^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, Int8Type_InstructionOperand_Allowed) {
@@ -768,9 +890,9 @@ TEST_P(IR_Validator64BitIntTypeTest, Var) {
         ASSERT_EQ(res, Success) << res.Failure();
     } else {
         ASSERT_NE(res, Success);
-        EXPECT_THAT(res.Failure().reason.Str(),
+        EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr("3:5 error: var: 64-bit integer types are not permitted"))
-            << res.Failure().reason.Str();
+            << res.Failure();
     }
 }
 
@@ -791,9 +913,9 @@ TEST_P(IR_Validator64BitIntTypeTest, FnParam) {
         ASSERT_EQ(res, Success) << res.Failure();
     } else {
         ASSERT_NE(res, Success);
-        EXPECT_THAT(res.Failure().reason.Str(),
+        EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr("64-bit integer types are not permitted"))
-            << res.Failure().reason.Str();
+            << res.Failure();
     }
 }
 
@@ -813,9 +935,9 @@ TEST_P(IR_Validator64BitIntTypeTest, FnRet) {
         ASSERT_EQ(res, Success) << res.Failure();
     } else {
         ASSERT_NE(res, Success);
-        EXPECT_THAT(res.Failure().reason.Str(),
+        EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr("64-bit integer types are not permitted"))
-            << res.Failure().reason.Str();
+            << res.Failure();
     }
 }
 
@@ -845,9 +967,9 @@ TEST_P(IR_Validator64BitIntTypeTest, BlockParam) {
         ASSERT_EQ(res, Success) << res.Failure();
     } else {
         ASSERT_NE(res, Success);
-        EXPECT_THAT(res.Failure().reason.Str(),
+        EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr("64-bit integer types are not permitted"))
-            << res.Failure().reason.Str();
+            << res.Failure();
     }
 }
 
@@ -869,11 +991,11 @@ TEST_F(IR_ValidatorTest, Int64Type_InstructionOperand_NotAllowed) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason.Str(),
+    EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:3:5 error: let: 64-bit integer types are not permitted
     %l:u64 = let 1u64
     ^^^^^^
-)")) << res.Failure().reason.Str();
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, Int64Type_InstructionOperand_Allowed) {

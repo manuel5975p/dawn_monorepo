@@ -35,9 +35,9 @@
 
 #include "src/tint/lang/core/evaluation_stage.h"
 #include "src/tint/lang/core/type/input_attachment.h"
+#include "src/tint/lang/wgsl/allowed_features.h"
 #include "src/tint/lang/wgsl/ast/input_attachment_index_attribute.h"
 #include "src/tint/lang/wgsl/ast/pipeline_stage.h"
-#include "src/tint/lang/wgsl/common/allowed_features.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/sem_helper.h"
 #include "src/tint/utils/containers/hashmap.h"
@@ -163,16 +163,8 @@ class Validator {
     bool IsPlain(const core::type::Type* type) const;
 
     /// @param type the given type
-    /// @returns true if the given type is a fixed-footprint type
-    bool IsFixedFootprint(const core::type::Type* type) const;
-
-    /// @param type the given type
     /// @returns true if the given type is storable
     bool IsStorable(const core::type::Type* type) const;
-
-    /// @param type the given type
-    /// @returns true if the given type is host-shareable
-    bool IsHostShareable(const core::type::Type* type) const;
 
     /// Validates the enabled extensions
     /// @param enables the extension enables
@@ -467,6 +459,12 @@ class Validator {
                                        const core::type::Type* type,
                                        const Source& source) const;
 
+    /// Validates a binding array type
+    /// @param t the binding array to validate
+    /// @param source the source of the binding array type
+    /// @returns true on success, false otherwise
+    bool BindingArray(const core::type::BindingArray* t, const Source& source) const;
+
     /// Validates a subgroup matrix type
     /// @param t the subgroup matrix type to validate
     /// @param source the source of the subgroup matrix type
@@ -551,11 +549,6 @@ class Validator {
     /// @param call the builtin call to validate
     /// @returns true on success, false otherwise
     bool TextureBuiltinFn(const sem::Call* call) const;
-
-    /// Validates a workgroupUniformLoad builtin function
-    /// @param call the builtin call to validate
-    /// @returns true on success, false otherwise
-    bool WorkgroupUniformLoad(const sem::Call* call) const;
 
     /// Validates a subgroupBroadcast builtin function
     /// @param call the builtin call to validate
@@ -657,7 +650,6 @@ class Validator {
     bool CheckTypeAccessAddressSpace(const core::type::Type* store_ty,
                                      core::Access access,
                                      core::AddressSpace address_space,
-                                     VectorRef<const tint::ast::Attribute*> attributes,
                                      const Source& source) const;
 
     /// Raises an error if the entry_point @p entry_point uses two or more module-scope 'var's with

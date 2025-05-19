@@ -236,7 +236,7 @@ TEST_P(SharedBufferMemoryTests, CallEndAccessOnMappedBuffer) {
 // Ensure no queue usage can occur before calling BeginAccess.
 TEST_P(SharedBufferMemoryTests, EnsureNoQueueUsageBeforeBeginAccess) {
     // We can't test this invalid scenario without validation.
-    DAWN_SUPPRESS_TEST_IF(HasToggleEnabled("skip_validation"));
+    DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("skip_validation"));
 
     wgpu::SharedBufferMemory memory =
         GetParam().mBackend->CreateSharedBufferMemory(device, kMapWriteUsages, kBufferSize);
@@ -335,6 +335,8 @@ TEST_P(SharedBufferMemoryTests, EnsureNoDuplicateBeginAccessCalls) {
 // Ensure the BeginAccessDescriptor initialized parameter preserves or clears the buffer as
 // necessary.
 TEST_P(SharedBufferMemoryTests, BeginAccessInitialization) {
+    DAWN_SUPPRESS_TEST_IF(IsWARP());  // TODO(crbug.com/407748576): Remove once bug is fixed
+
     // Create a buffer with initialized data.
     wgpu::SharedBufferMemory memory =
         GetParam().mBackend->CreateSharedBufferMemory(device, kMapWriteUsages, kBufferSize);
@@ -355,7 +357,6 @@ TEST_P(SharedBufferMemoryTests, BeginAccessInitialization) {
     memory.EndAccess(buffer, &endState);
 
     EXPECT_EQ(endState.initialized, true);
-    EXPECT_GE(endState.fenceCount, 1u);
 
     // Pass fences from the previous operation to the next BeginAccessDescriptor to ensure
     // operations are complete.
@@ -571,6 +572,71 @@ TEST_P(SharedBufferMemoryTests, ImportExportSharedFences) {
 
         memory.EndAccess(buffer, &endState);
     }
+}
+
+// Test to ensure that using a shared buffer in a bind group will trigger a wait for the fence
+// provided to BeginAccess.
+TEST_P(SharedBufferMemoryTests, UseInPassEnsureSynchronization) {
+    wgpu::SharedBufferMemory memory =
+        GetParam().mBackend->CreateSharedBufferMemory(device, kStorageUsages, kBufferSize);
+    wgpu::Buffer buffer = memory.CreateBuffer();
+
+    wgpu::SharedBufferMemoryBeginAccessDescriptor beginAccessDesc;
+    beginAccessDesc.initialized = true;
+    memory.BeginAccess(buffer, &beginAccessDesc);
+
+    wgpu::Buffer srcBuffer =
+        utils::CreateBufferFromData(device, &kBufferData, kBufferSize, wgpu::BufferUsage::CopySrc);
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    encoder.CopyBufferToBuffer(srcBuffer, 0, buffer, 0, kBufferSize);
+    wgpu::CommandBuffer commandBuffer = encoder.Finish();
+    queue.Submit(1, &commandBuffer);
+
+    wgpu::SharedBufferMemoryEndAccessState endState;
+    memory.EndAccess(buffer, &endState);
+
+    // Pass fences from the previous operation to the next BeginAccessDescriptor to ensure
+    // operations are complete.
+    std::vector<wgpu::SharedFence> sharedFences(endState.fenceCount);
+    for (size_t j = 0; j < endState.fenceCount; ++j) {
+        sharedFences[j] = GetParam().mBackend->ImportFenceTo(device, endState.fences[j]);
+    }
+    beginAccessDesc.fenceCount = sharedFences.size();
+    beginAccessDesc.fences = sharedFences.data();
+    beginAccessDesc.signaledValues = endState.signaledValues;
+    beginAccessDesc.initialized = true;
+    wgpu::Buffer buffer2 = memory.CreateBuffer();
+    memory.BeginAccess(buffer2, &beginAccessDesc);
+
+    wgpu::ComputePipelineDescriptor pipelineDescriptor;
+
+    // This compute shader reads from the shared storage buffer and increments it by one.
+    pipelineDescriptor.compute.module = utils::CreateShaderModule(device, R"(
+    struct OutputBuffer {
+        value : u32
+    }
+
+    @group(0) @binding(0) var<storage, read_write> outputBuffer : OutputBuffer;
+
+    @compute @workgroup_size(1) fn main() {
+        outputBuffer.value = outputBuffer.value + 1u;
+    })");
+
+    wgpu::ComputePipeline pipeline = device.CreateComputePipeline(&pipelineDescriptor);
+    wgpu::BindGroup bindGroup =
+        utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0), {{0, buffer2}});
+    encoder = device.CreateCommandEncoder();
+    wgpu::CommandBuffer commands;
+    wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
+    pass.SetPipeline(pipeline);
+    pass.SetBindGroup(0, bindGroup);
+    pass.DispatchWorkgroups(1);
+    pass.End();
+    commands = encoder.Finish();
+    queue.Submit(1, &commands);
+
+    // The storage buffer should have been incremented by one in the compute shader.
+    EXPECT_BUFFER_U32_EQ(kBufferData + 1, buffer2, 0);
 }
 
 // Test to ensure WriteBuffer waits on a fence provided to BeginAccess.

@@ -31,7 +31,6 @@
 #include <sstream>
 
 #include "dawn/common/Assert.h"
-#include "dawn/common/BitSetIterator.h"
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/BindGroupLayoutD3D12.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
@@ -64,6 +63,7 @@ D3D12_ROOT_PARAMETER_TYPE RootParameterType(wgpu::BufferBindingType type) {
         case kInternalStorageBufferBinding:
             return D3D12_ROOT_PARAMETER_TYPE_UAV;
         case wgpu::BufferBindingType::ReadOnlyStorage:
+        case kInternalReadOnlyStorageBufferBinding:
             return D3D12_ROOT_PARAMETER_TYPE_SRV;
         case wgpu::BufferBindingType::BindingNotUsed:
         case wgpu::BufferBindingType::Undefined:
@@ -158,7 +158,7 @@ MaybeError PipelineLayout::Initialize() {
 
     size_t rangesCount = 0;
     size_t staticSamplerCount = 0;
-    for (BindGroupIndex group : IterateBitSet(GetBindGroupLayoutsMask())) {
+    for (BindGroupIndex group : GetBindGroupLayoutsMask()) {
         const BindGroupLayout* bindGroupLayout = ToBackend(GetBindGroupLayout(group));
         rangesCount += bindGroupLayout->GetCbvUavSrvDescriptorRanges().size() +
                        bindGroupLayout->GetSamplerDescriptorRanges().size();
@@ -171,7 +171,7 @@ MaybeError PipelineLayout::Initialize() {
 
     uint32_t rangeIndex = 0;
 
-    for (BindGroupIndex group : IterateBitSet(GetBindGroupLayoutsMask())) {
+    for (BindGroupIndex group : GetBindGroupLayoutsMask()) {
         const BindGroupLayout* bindGroupLayout = ToBackend(GetBindGroupLayout(group));
 
         // Set the root descriptor table parameter and copy ranges. Ranges are offset by the
@@ -289,13 +289,13 @@ MaybeError PipelineLayout::Initialize() {
     // so the loop also computes the first register offset for each group where the
     // data should start.
     uint32_t dynamicStorageBufferLengthsShaderRegisterOffset = 0;
-    for (BindGroupIndex group : IterateBitSet(GetBindGroupLayoutsMask())) {
+    for (BindGroupIndex group : GetBindGroupLayoutsMask()) {
         const BindGroupLayoutInternalBase* bgl = GetBindGroupLayout(group);
 
         mDynamicStorageBufferLengthInfo[group].firstRegisterOffset =
             dynamicStorageBufferLengthsShaderRegisterOffset;
         mDynamicStorageBufferLengthInfo[group].bindingAndRegisterOffsets.reserve(
-            bgl->GetBindingCountInfo().dynamicStorageBufferCount);
+            bgl->GetDynamicStorageBufferCount());
 
         for (BindingIndex bindingIndex(0); bindingIndex < bgl->GetDynamicBufferCount();
              ++bindingIndex) {
@@ -307,7 +307,7 @@ MaybeError PipelineLayout::Initialize() {
         }
 
         DAWN_ASSERT(mDynamicStorageBufferLengthInfo[group].bindingAndRegisterOffsets.size() ==
-                    bgl->GetBindingCountInfo().dynamicStorageBufferCount);
+                    bgl->GetDynamicStorageBufferCount());
     }
 
     if (dynamicStorageBufferLengthsShaderRegisterOffset > 0) {

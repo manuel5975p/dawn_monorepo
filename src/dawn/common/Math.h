@@ -28,6 +28,7 @@
 #ifndef SRC_DAWN_COMMON_MATH_H_
 #define SRC_DAWN_COMMON_MATH_H_
 
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -37,12 +38,16 @@
 #include <type_traits>
 
 #include "dawn/common/Assert.h"
+#include "dawn/common/Platform.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+
+#if DAWN_COMPILER_IS(MSVC)
+#include <intrin.h>
+#endif
 
 namespace dawn {
 
 // The following are not valid for 0
-uint32_t ScanForward(uint32_t bits);
 uint32_t Log2(uint32_t value);
 uint32_t Log2(uint64_t value);
 bool IsPowerOfTwo(uint64_t n);

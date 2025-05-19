@@ -50,11 +50,6 @@ class DepthBiasTests : public DawnTest {
                           int32_t bias,
                           float biasSlopeScale,
                           float biasClamp) {
-        // Skip formats other than Depth24PlusStencil8 if we're specifically testing with the packed
-        // depth24_unorm_stencil8 toggle.
-        DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("use_packed_depth24_unorm_stencil8_format") &&
-                                 depthFormat != wgpu::TextureFormat::Depth24PlusStencil8);
-
         const char* vertexSource = nullptr;
         switch (quadAngle) {
             case QuadAngle::Flat:
@@ -239,44 +234,6 @@ TEST_P(DepthBiasTests, NegativeBiasOnFloatWithClamp) {
                       wgpu::TextureAspect::DepthOnly);
 }
 
-// Test adding positive infinite slope bias to output
-TEST_P(DepthBiasTests, PositiveInfinitySlopeBiasOnFloat) {
-    // NVIDIA GPUs do not clamp values to 1 when using Inf slope bias.
-    DAWN_SUPPRESS_TEST_IF(IsVulkan() && IsNvidia());
-
-    // Draw quad with z from 0 to 0.5 with inf slope bias
-    RunDepthBiasTest(wgpu::TextureFormat::Depth32Float, 0.125, QuadAngle::TiltedX, 0,
-                     std::numeric_limits<float>::infinity(), 0);
-
-    // Value at the center of the pixel + (0.25 slope * Inf slope bias) = 1 (clamped)
-    std::vector<float> expected = {
-        1.0, 1.0,  //
-        1.0, 1.0,  //
-    };
-
-    EXPECT_TEXTURE_EQ(expected.data(), mDepthTexture, {0, 0}, {kRTSize, kRTSize}, 0,
-                      wgpu::TextureAspect::DepthOnly);
-}
-
-// Test adding positive infinite slope bias to output
-TEST_P(DepthBiasTests, NegativeInfinityBiasOnFloat) {
-    // NVIDIA GPUs do not clamp values to 0 when using -Inf slope bias.
-    DAWN_SUPPRESS_TEST_IF(IsVulkan() && IsNvidia());
-
-    // Draw quad with z from 0 to 0.5 with -inf slope bias
-    RunDepthBiasTest(wgpu::TextureFormat::Depth32Float, 0.125, QuadAngle::TiltedX, 0,
-                     -std::numeric_limits<float>::infinity(), 0);
-
-    // Value at the center of the pixel + (0.25 slope * -Inf slope bias) = 0 (clamped)
-    std::vector<float> expected = {
-        0.0, 0.0,  //
-        0.0, 0.0,  //
-    };
-
-    EXPECT_TEXTURE_EQ(expected.data(), mDepthTexture, {0, 0}, {kRTSize, kRTSize}, 0,
-                      wgpu::TextureAspect::DepthOnly);
-}
-
 // Test tiledX quad with no bias
 TEST_P(DepthBiasTests, NoBiasTiltedXOnFloat) {
     // Draw quad with z from 0 to 0.5 with no bias
@@ -376,7 +333,9 @@ TEST_P(DepthBiasTests, PositiveSlopeBiasOn24bit) {
 
 DAWN_INSTANTIATE_TEST(DepthBiasTests,
                       D3D11Backend(),
+                      D3D11Backend({"use_packed_depth24_unorm_stencil8_format"}),
                       D3D12Backend(),
+                      D3D12Backend({"use_packed_depth24_unorm_stencil8_format"}),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),

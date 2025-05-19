@@ -539,8 +539,6 @@ MaybeError PhysicalDevice::InitializeImpl() {
 }
 
 void PhysicalDevice::InitializeSupportedFeaturesImpl() {
-    EnableFeature(Feature::CoreFeaturesAndLimits);
-
 #if (defined(__MAC_11_0) && __MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_11_0) || \
     (defined(__IPHONE_14_0) && __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_14_0)
     if ([*mDevice supports32BitFloatFiltering]) {
@@ -552,13 +550,12 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     }
 #endif
 
-#if (defined(__MAC_11_0) && __MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_11_0) || \
+#if DAWN_PLATFORM_IS(MACOS) || \
     (defined(__IPHONE_16_4) && __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_16_4)
     if ([*mDevice supportsBCTextureCompression]) {
         EnableFeature(Feature::TextureCompressionBC);
+        EnableFeature(Feature::TextureCompressionBCSliced3D);
     }
-#elif DAWN_PLATFORM_IS(MACOS)
-    EnableFeature(Feature::TextureCompressionBC);
 #endif
 
 #if DAWN_PLATFORM_IS(IOS) && !DAWN_PLATFORM_IS(TVOS) && \
@@ -578,6 +575,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     }
     if ([*mDevice supportsFamily:MTLGPUFamilyApple3]) {
         EnableFeature(Feature::TextureCompressionASTC);
+        EnableFeature(Feature::TextureCompressionASTCSliced3D);
     }
 
     auto ShouldLeakCounterSets = [this] {
@@ -678,8 +676,6 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     if (!kForceDisableSubgroups && ([*mDevice supportsFamily:MTLGPUFamilyApple6] ||
                                     [*mDevice supportsFamily:MTLGPUFamilyMac2])) {
         EnableFeature(Feature::Subgroups);
-        // TODO(crbug.com/380244620) remove SubgroupsF16
-        EnableFeature(Feature::SubgroupsF16);
     }
 
     if ([*mDevice supportsFamily:MTLGPUFamilyApple7]) {
@@ -793,7 +789,7 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
         mtlLimits.*limitsForFamily.limit = limitsForFamily.values[mtlGPUFamily];
     }
 
-    GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
+    GetDefaultLimitsForSupportedFeatureLevel(limits);
 
     limits->v1.maxTextureDimension1D = mtlLimits.max1DTextureSize;
     limits->v1.maxTextureDimension2D = mtlLimits.max2DTextureSize;
@@ -850,13 +846,11 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // See https://github.com/gpuweb/gpuweb/issues/1962 for more details.
     uint32_t vendorId = GetVendorId();
     if (gpu_info::IsApple(vendorId)) {
-        limits->v1.maxInterStageShaderComponents = mtlLimits.maxFragmentInputComponents;
         limits->v1.maxInterStageShaderVariables =
             std::min(mtlLimits.maxFragmentInputs, mtlLimits.maxFragmentInputComponents / 4);
     } else {
         // On non-Apple macOS each built-in consumes one individual inter-stage shader variable.
         limits->v1.maxInterStageShaderVariables = mtlLimits.maxFragmentInputs - 4;
-        limits->v1.maxInterStageShaderComponents = limits->v1.maxInterStageShaderVariables * 4;
     }
 
     limits->v1.maxComputeWorkgroupStorageSize = mtlLimits.maxTotalThreadgroupMemory;
@@ -881,15 +875,13 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // - maxBindGroups
     // - maxVertexBufferArrayStride
 
-    // Experimental limits for subgroups
-    // TODO(354751907): Move to AdapterInfo
-    limits->experimentalSubgroupLimits.minSubgroupSize = 4;
-    limits->experimentalSubgroupLimits.maxSubgroupSize = 64;
-
     limits->v1.maxStorageBuffersInFragmentStage = limits->v1.maxStorageBuffersPerShaderStage;
     limits->v1.maxStorageTexturesInFragmentStage = limits->v1.maxStorageTexturesPerShaderStage;
     limits->v1.maxStorageBuffersInVertexStage = limits->v1.maxStorageBuffersPerShaderStage;
     limits->v1.maxStorageTexturesInVertexStage = limits->v1.maxStorageTexturesPerShaderStage;
+
+    // The memory allocation must be in a single virtual memory (VM) region.
+    limits->hostMappedPointerLimits.hostMappedPointerAlignment = 4096;
 
     return {};
 }

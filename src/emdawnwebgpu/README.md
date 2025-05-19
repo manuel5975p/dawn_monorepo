@@ -1,66 +1,89 @@
-# Dawn Emscripten Fork
+# "emdawnwebgpu" (Dawn's fork of Emscripten's WebGPU bindings)
 
-Dawn temporarily maintains a fork of the Emscripten WebGPU bindings
+"emdawnwebgpu" is Dawn's fork of the Emscripten WebGPU bindings
 (`library_webgpu.js` and friends). The forked files live in
 [`//third_party/emdawnwebgpu`](../third_party/emdawnwebgpu/)
 and the build targets in this directory produce the other files needed to build
 an Emscripten-based project using these bindings.
 
-This allows the the webgpu.h interface to be kept roughly in sync\* between the
-two implementations in a single place (the Dawn repository) instead of two,
-while also avoiding constantly breaking the version of webgpu.h that is
-currently in Emscripten. (\* Note we don't guarantee it will always be in sync,
-though - we don't have any automated testing for this, so we'll periodically fix
-it up as needed for import into other projects that use these bindings.)
+We keep the `webgpu.h` interface roughly in sync between Dawn and emdawnwebgpu,
+however we don't guarantee it will always be in sync - we don't have any
+automated testing for this, so we'll periodically fix
+it up as needed for import into other projects that use these bindings.
 
-Changes to this code in the Dawn repository will be synced back out to the
-upstream Emscripten repository after webgpu.h becomes stable, in what should
-theoretically be one big final breaking update. Between then and now, projects
-can use Dawn's fork of the bindings.
+Projects should use this fork (by compiling Dawn as instructed below) if they
+want the latest version, which is mostly compatible with the same version of Dawn
+Native. For the future of this fork, please see <https://crbug.com/371024051>.
 
-## Setting up Emscripten
+## Using emdawnwebgpu pre-built releases
 
-- Get an emsdk toolchain:
+Pre-built releases are published at <https://github.com/google/dawn/releases>.
+See the [included README](./pkg/README.md) on how to use them.
+
+TODO(crbug.com/371024051): Link to a sample project in that README.
+
+Instructions are provided below on how to build the package yourself, as well as
+samples that exercise the bindings.
+
+If for any reason you don't want to use the package, it's also possible to
+build emdawnwebgpu as a subproject of a CMake or gn project.
+
+## Building emdawnwebgpu and emdawnwebgpu_pkg
+
+First, get the Dawn code and its dependencies.
+See [building.md](../../docs/building.md).
+
+To build the package, you'll build Dawn's `emdawnwebgpu_pkg` target using
+Emscripten. `out/yourbuild/emdawnwebgpu_pkg` combines files from:
+- `src/emdawnwebgpu`
+- `third_party/emdawnwebgpu`
+- `out/yourbuild/gen`
+
+### Set up Emscripten
+
+Get an emsdk toolchain (at least Emscripten 4.0.3, which includes the necessary
+tools in the package release). There are two options to do this:
+
+- Set the `dawn_wasm` gclient variable (use
+  [`standalone-with-wasm.gclient`](../../scripts/standalone-with-wasm.gclient)
+  as your `.gclient`), and `gclient sync`.
+  This installs emsdk in `//third_party/emsdk`.
+- Install it manually following the official
   [instructions](https://emscripten.org/docs/getting_started/downloads.html#installation-instructions-using-the-emsdk-recommended).
 
-- Get a separate source checkout of [Emscripten](https://github.com/emscripten-core/emscripten)
-  and set it up to point at the toolchain from emsdk by creating a file at `emscripten/.emscripten`:
+### Standalone with CMake
 
-  ```
-  LLVM_ROOT = '/path/to/emsdk/upstream/bin'
-  BINARYEN_ROOT = '/path/to/emsdk/upstream'
-  NODE_JS = '/path/to/emsdk/node/18.20.3_64bit/bin/node'
-  ```
+Set up the build directory using emcmake:
 
-  Note this must be a source checkout of Emscripten,
-  not emsdk's `upstream/emscripten` release, which excludes necessary tools.
-
-
-- Make sure you run the `./bootstrap` in the `emscripten` folder to make sure node is setup.
-
-## Building Dawn Emscripten bindings with GN
-
-- Set up a Dawn GN build, with `dawn_emscripten_dir` in the GN args set to point to
-  your Emscripten source checkout.
-
-- Build the `emdawnwebgpu` GN build target.
-
-- Configure the Emscripten build with all of the linker flags listed in `emdawnwebgpu_config`
-  (and without `-sUSE_WEBGPU`, because we don't want the built-in bindings).
-
-## Building Dawn Emscripten bindings and samples with CMake
-
-Set up the build directory using emcmake
-
-```
+```sh
 mkdir out/cmake-wasm
 cd out/cmake-wasm
 
-# Make sure the path is to the source checkout of Emscripten, not emsdk's release.
-emcmake cmake -GNinja -DDAWN_EMSCRIPTEN_TOOLCHAIN="path/to/emscripten" ../..
+path/to/emsdk/upstream/emscripten/emcmake cmake ../..
 
-ninja
-
-# The resulting html files can then be served and viewed in a compatible Browser.
-
+# Package
+make -j8 emdawnwebgpu_pkg
 ```
+
+Samples and tests:
+
+```sh
+# Samples (for a list of samples, see ENABLE_EMSCRIPTEN targets in src/dawn/samples/CMakeLists.txt)
+make -j8 HelloTriangle
+
+# Tests
+make -j8 emdawnwebgpu_tests_asyncify emdawnwebgpu_tests_jspi
+```
+
+(To use Ninja instead of Make, for better parallelism, add `-GNinja` to the
+`cmake` invocation, and build using `ninja`.)
+
+Samples and tests produce HTML files which can be served and viewed in a compatible browser.
+
+### Standalone with GN
+
+- Set up Emscripten as per instructions above using `dawn_wasm`.
+
+- Build the `emdawnwebgpu` and `samples` GN build targets.
+
+Samples and tests produce HTML files in `out/<dir>/wasm` which can be served and viewed in a compatible browser.

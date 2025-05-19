@@ -69,6 +69,8 @@ tint::core::ir::Instruction::Accesses GetSideEffects(BuiltinFn fn) {
         case BuiltinFn::kDot:
         case BuiltinFn::kImageQuerySize:
         case BuiltinFn::kImageQuerySizeLod:
+        case BuiltinFn::kImageQueryLevels:
+        case BuiltinFn::kImageQuerySamples:
         case BuiltinFn::kMatrixTimesMatrix:
         case BuiltinFn::kMatrixTimesScalar:
         case BuiltinFn::kMatrixTimesVector:
@@ -127,6 +129,7 @@ tint::core::ir::Instruction::Accesses GetSideEffects(BuiltinFn fn) {
         case BuiltinFn::kNot:
         case BuiltinFn::kSNegate:
         case BuiltinFn::kFMod:
+        case BuiltinFn::kOuterProduct:
             break;
     }
     return core::ir::Instruction::Accesses{};

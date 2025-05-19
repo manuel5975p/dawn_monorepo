@@ -28,10 +28,8 @@
 #ifndef SRC_TINT_LANG_CORE_IR_TRANSFORM_BUILTIN_POLYFILL_H_
 #define SRC_TINT_LANG_CORE_IR_TRANSFORM_BUILTIN_POLYFILL_H_
 
-#include <string>
-
 #include "src/tint/utils/reflection.h"
-#include "src/tint/utils/result/result.h"
+#include "src/tint/utils/result.h"
 
 // Forward declarations.
 namespace tint::core::ir {
@@ -94,15 +92,20 @@ struct BuiltinPolyfillConfig {
                  clamp_int,
                  count_leading_zeros,
                  count_trailing_zeros,
+                 degrees,
                  extract_bits,
                  first_leading_bit,
                  first_trailing_bit,
+                 fwidth_fine,
                  insert_bits,
+                 radians,
+                 reflect_vec2_f32,
                  saturate,
                  texture_sample_base_clamp_to_edge_2d_f32,
                  dot_4x8_packed,
                  pack_unpack_4x8,
-                 pack_4xu8_clamp);
+                 pack_4xu8_clamp,
+                 pack_unpack_4x8_norm);
 };
 
 /// BuiltinPolyfill is a transform that replaces calls to builtin functions and uses of other core

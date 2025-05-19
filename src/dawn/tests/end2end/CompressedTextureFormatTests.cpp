@@ -1444,11 +1444,19 @@ TEST_P(CompressedTextureWriteTextureTest, WriteMultiple2DArrayLayers) {
 // its virtual size.
 TEST_P(CompressedTextureWriteTextureTest,
        WriteIntoSubresourceWithPhysicalSizeNotEqualToVirtualSize) {
+    DAWN_SUPPRESS_TEST_IF(IsWARP());
+
     // TODO(crbug.com/dawn/976): Failing on Linux Intel OpenGL drivers.
     DAWN_SUPPRESS_TEST_IF(IsIntel() && IsOpenGL() && IsLinux());
 
     // TODO(crbug.com/dawn/0000): diagnose this failure on QualComm OpenGL ES.
     DAWN_SUPPRESS_TEST_IF(IsAndroid() && IsOpenGLES() && IsQualcomm());
+
+    // TODO(https://issues.chromium.org/issues/41479545): Triggers some VVL sync error on the
+    // textures used as an attachment when verifying the contents of the compressed texture.
+    // It complains that the CmdPipelineBarrier to attachment doesn't include the previous call
+    // to CmdCopyBufferToTexture in its source, but that texture is never used in such a call!
+    DAWN_SUPPRESS_TEST_IF(IsVulkan() && IsBackendValidationEnabled());
 
     CopyConfig config = GetDefaultFullConfig();
 

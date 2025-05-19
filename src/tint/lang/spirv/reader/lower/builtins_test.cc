@@ -8501,6 +8501,53 @@ TEST_F(SpirvReader_BuiltinsTest, ShiftRightArithmetic_Vector_SignedSigned_Signed
     EXPECT_EQ(expect, str());
 }
 
+TEST_F(SpirvReader_BuiltinsTest, SpecConstantOp_Not) {
+    auto* ep = b.ComputeFunction("foo");
+
+    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
+
+    b.Append(b.ir.root_block, [&] {
+        b.CallExplicit<spirv::ir::BuiltinCall>(ty.i32(), spirv::BuiltinFn::kNot, Vector{ty.i32()},
+                                               1_i);
+    });
+
+    b.Append(ep->Block(), [&] {  //
+        b.CallExplicit<spirv::ir::BuiltinCall>(ty.i32(), spirv::BuiltinFn::kNot, Vector{ty.i32()},
+                                               1_i);
+        b.Return(ep);
+    });
+
+    auto src = R"(
+$B1: {  # root
+  %1:i32 = spirv.not<i32> 1i
+}
+
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %3:i32 = spirv.not<i32> 1i
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    Run(Builtins);
+
+    auto expect = R"(
+$B1: {  # root
+  %1:i32 = complement 1i
+}
+
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %3:i32 = complement 1i
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(expect, str());
+}
+
 TEST_F(SpirvReader_BuiltinsTest, Not_Scalar_Signed_Signed) {
     auto* ep = b.ComputeFunction("foo");
 
@@ -9059,6 +9106,121 @@ TEST_F(SpirvReader_BuiltinsTest, FMod_Vector) {
 }
 )";
 
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(SpirvReader_BuiltinsTest, Select_Scalar) {
+    auto* ep = b.ComputeFunction("foo");
+
+    b.Append(ep->Block(), [&] {  //
+        b.Call<spirv::ir::BuiltinCall>(ty.f32(), spirv::BuiltinFn::kSelect, true, 1_f, 2_f);
+        b.Return(ep);
+    });
+    auto src = R"(
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:f32 = spirv.select true, 1.0f, 2.0f
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    Run(Builtins);
+
+    auto expect = R"(
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:f32 = select 2.0f, 1.0f, true
+    ret
+  }
+}
+)";
+    EXPECT_EQ(expect, str());
+}
+TEST_F(SpirvReader_BuiltinsTest, Select_Vector) {
+    auto* ep = b.ComputeFunction("foo");
+
+    b.Append(ep->Block(), [&] {  //
+        b.Call<spirv::ir::BuiltinCall>(ty.vec2<f32>(), spirv::BuiltinFn::kSelect,
+                                       b.Splat<vec2<bool>>(false), b.Splat<vec2<f32>>(1_f),
+                                       b.Splat<vec2<f32>>(2_f));
+        b.Return(ep);
+    });
+    auto src = R"(
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:vec2<f32> = spirv.select vec2<bool>(false), vec2<f32>(1.0f), vec2<f32>(2.0f)
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    Run(Builtins);
+
+    auto expect = R"(
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:vec2<f32> = select vec2<f32>(2.0f), vec2<f32>(1.0f), vec2<bool>(false)
+    ret
+  }
+}
+)";
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(SpirvReader_BuiltinsTest, OuterProduct_Vector) {
+    auto* ep = b.ComputeFunction("foo");
+
+    b.Append(ep->Block(), [&] {  //
+        // Call the OuterProduct builtin function
+        b.Call<spirv::ir::BuiltinCall>(ty.mat2x4<f32>(), spirv::BuiltinFn::kOuterProduct,
+                                       b.Splat<vec4<f32>>(1_f), b.Splat<vec2<f32>>(2_f));
+        b.Return(ep);
+    });
+
+    // Expected SPIR-V source code
+    auto src = R"(
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:mat2x4<f32> = spirv.outer_product vec4<f32>(1.0f), vec2<f32>(2.0f)
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    // Run the test
+    Run(Builtins);
+
+    // Updated expected expanded SPIR-V code after lowering
+    auto expect = R"(
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:f32 = access vec2<f32>(2.0f), 0u
+    %3:f32 = access vec4<f32>(1.0f), 0u
+    %4:f32 = mul %3, %2
+    %5:f32 = access vec4<f32>(1.0f), 1u
+    %6:f32 = mul %5, %2
+    %7:f32 = access vec4<f32>(1.0f), 2u
+    %8:f32 = mul %7, %2
+    %9:f32 = access vec4<f32>(1.0f), 3u
+    %10:f32 = mul %9, %2
+    %11:vec4<f32> = construct %4, %6, %8, %10
+    %12:f32 = access vec2<f32>(2.0f), 1u
+    %13:f32 = access vec4<f32>(1.0f), 0u
+    %14:f32 = mul %13, %12
+    %15:f32 = access vec4<f32>(1.0f), 1u
+    %16:f32 = mul %15, %12
+    %17:f32 = access vec4<f32>(1.0f), 2u
+    %18:f32 = mul %17, %12
+    %19:f32 = access vec4<f32>(1.0f), 3u
+    %20:f32 = mul %19, %12
+    %21:vec4<f32> = construct %14, %16, %18, %20
+    %22:mat2x4<f32> = construct %11, %21
+    ret
+  }
+}
+)";
     EXPECT_EQ(expect, str());
 }
 

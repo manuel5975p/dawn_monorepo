@@ -30,14 +30,8 @@
 
 enum GPUFeatureName {
     "multi-draw-indirect",
-    "chromium-experimental-immediate-data",
     "chromium-experimental-subgroup-matrix",
     "core-features-and-limits",
-};
-
-interface GPUAdapter {
-    readonly attribute boolean isCompatibilityMode;
-    readonly attribute DOMString featureLevel;
 };
 
 enum GPUSubgroupMatrixComponentType {

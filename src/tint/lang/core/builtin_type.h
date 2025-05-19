@@ -74,6 +74,7 @@ enum class BuiltinType : uint8_t {
     kModfResultVec4F32,
     kArray,
     kAtomic,
+    kBindingArray,
     kBool,
     kF16,
     kF32,
@@ -154,7 +155,8 @@ std::string_view ToString(BuiltinType value);
 /// @param out the stream to write to
 /// @param value the BuiltinType
 /// @returns @p out so calls can be chained
-template <typename STREAM, typename = traits::EnableIfIsOStream<STREAM>>
+template <typename STREAM>
+    requires(traits::IsOStream<STREAM>)
 auto& operator<<(STREAM& out, BuiltinType value) {
     return out << ToString(value);
 }
@@ -193,6 +195,7 @@ constexpr std::string_view kBuiltinTypeStrings[] = {
     "__modf_result_vec4_f32",
     "array",
     "atomic",
+    "binding_array",
     "bool",
     "f16",
     "f32",

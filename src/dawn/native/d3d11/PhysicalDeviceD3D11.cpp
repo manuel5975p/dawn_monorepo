@@ -44,7 +44,7 @@
 namespace dawn::native::d3d11 {
 
 PhysicalDevice::PhysicalDevice(Backend* backend,
-                               ComPtr<IDXGIAdapter4> hardwareAdapter,
+                               ComPtr<IDXGIAdapter3> hardwareAdapter,
                                ComPtr<ID3D11Device> d3d11Device)
     : Base(backend, std::move(hardwareAdapter), wgpu::BackendType::D3D11),
       mIsSharedD3D11Device(!!d3d11Device),
@@ -132,10 +132,6 @@ MaybeError PhysicalDevice::InitializeImpl() {
     mFeatureLevel = mD3D11Device->GetFeatureLevel();
     DAWN_TRY_ASSIGN(mDeviceInfo, GatherDeviceInfo(GetHardwareAdapter(), mD3D11Device));
 
-    // TODO(chromium:390441217): Handle the case when neither fence type is supported.
-    DAWN_INVALID_IF(!mDeviceInfo.supportsMonitoredFence && !mDeviceInfo.supportsNonMonitoredFence,
-                    "Either Monitored Fences or Non-monitored Fences must be supported.");
-
     // Base::InitializeImpl() cannot distinguish between discrete and integrated GPUs, so we need to
     // overwrite it.
     if (mAdapterType == wgpu::AdapterType::DiscreteGPU && mDeviceInfo.isUMA) {
@@ -146,12 +142,10 @@ MaybeError PhysicalDevice::InitializeImpl() {
 }
 
 void PhysicalDevice::InitializeSupportedFeaturesImpl() {
-    if (SupportsFeatureLevel(wgpu::FeatureLevel::Core, nullptr)) {
-        EnableFeature(Feature::CoreFeaturesAndLimits);
-    }
     EnableFeature(Feature::Depth32FloatStencil8);
     EnableFeature(Feature::DepthClipControl);
     EnableFeature(Feature::TextureCompressionBC);
+    EnableFeature(Feature::TextureCompressionBCSliced3D);
     EnableFeature(Feature::D3D11MultithreadProtected);
     EnableFeature(Feature::Float32Filterable);
     EnableFeature(Feature::Float32Blendable);
@@ -183,9 +177,8 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     }
 
     EnableFeature(Feature::SharedTextureMemoryD3D11Texture2D);
-    if (mDeviceInfo.supportsSharedResourceCapabilityTier2) {
-        EnableFeature(Feature::SharedTextureMemoryDXGISharedHandle);
-    }
+    EnableFeature(Feature::SharedTextureMemoryDXGISharedHandle);
+
     if (mDeviceInfo.supportsMonitoredFence || mDeviceInfo.supportsNonMonitoredFence) {
         EnableFeature(Feature::SharedFenceDXGISharedHandle);
     }
@@ -202,7 +195,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
-    GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
+    GetDefaultLimitsForSupportedFeatureLevel(limits);
 
     // // https://docs.microsoft.com/en-us/windows/win32/direct3d12/hardware-feature-levels
 
@@ -219,14 +212,12 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
 
     uint32_t maxUAVsAllStages;
     uint32_t maxUAVsPerStage;
-    uint32_t maxUAVsPerVertexStage;
 
     if (mFeatureLevel >= D3D_FEATURE_LEVEL_11_1) {
         // In D3D 11.1, max UAV slots are shared between fragment & vertex stage so divide it by 2
         // to get per stage limit.
         maxUAVsAllStages = D3D11_1_UAV_SLOT_COUNT;
         maxUAVsPerStage = maxUAVsAllStages / 2;
-        maxUAVsPerVertexStage = maxUAVsPerStage;
     } else {
         // We don't support feature level < 11.0
         DAWN_INVALID_IF(mFeatureLevel < D3D_FEATURE_LEVEL_11_0, "Unsupported D3D feature level %u",
@@ -235,7 +226,6 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
         // need to divide the slot count between fragment & vertex.
         maxUAVsAllStages = D3D11_PS_CS_UAV_REGISTER_COUNT;
         maxUAVsPerStage = maxUAVsAllStages;
-        maxUAVsPerVertexStage = 0;
     }
     mUAVSlotCount = maxUAVsAllStages;
 
@@ -249,8 +239,13 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     limits->v1.maxStorageBuffersPerShaderStage = maxUAVsPerStage / 2;
     limits->v1.maxStorageTexturesInFragmentStage = limits->v1.maxStorageTexturesPerShaderStage;
     limits->v1.maxStorageBuffersInFragmentStage = limits->v1.maxStorageBuffersPerShaderStage;
-    limits->v1.maxStorageTexturesInVertexStage = maxUAVsPerVertexStage / 2;
-    limits->v1.maxStorageBuffersInVertexStage = maxUAVsPerVertexStage / 2;
+    // If the device only has feature level 11.0, technically, vertex stage doesn't have any UAV
+    // slot (writable storage buffers). However, since Dawn spec requires that storage buffers must
+    // be readonly in VS, it's safe to advertise that we have storage buffers in VS. Readonly
+    // storage buffers will use SRV slots which are available in all stages.
+    // The same for read-only storage textures in VS.
+    limits->v1.maxStorageTexturesInVertexStage = limits->v1.maxStorageTexturesPerShaderStage;
+    limits->v1.maxStorageBuffersInVertexStage = limits->v1.maxStorageBuffersPerShaderStage;
     limits->v1.maxSampledTexturesPerShaderStage = D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT;
     limits->v1.maxSamplersPerShaderStage = D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT;
     limits->v1.maxColorAttachments = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
@@ -296,8 +291,6 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // 1 for SV_Position and 1 for (SV_IsFrontFace OR SV_SampleIndex).
     // See the discussions in https://github.com/gpuweb/gpuweb/issues/1962 for more details.
     limits->v1.maxInterStageShaderVariables = D3D11_PS_INPUT_REGISTER_COUNT - 2;
-    limits->v1.maxInterStageShaderComponents =
-        limits->v1.maxInterStageShaderVariables * D3D11_PS_INPUT_REGISTER_COMPONENTS;
 
     // The BlitTextureToBuffer helper requires the alignment to be 4.
     limits->texelCopyBufferRowAlignmentLimits.minTexelCopyBufferRowAlignment = 4;
@@ -322,8 +315,13 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     // D3D11 can only clear RTV with float values.
     deviceToggles->Default(Toggle::ApplyClearBigIntegerColorValueWithDraw, true);
     deviceToggles->Default(Toggle::UseBlitForBufferToStencilTextureCopy, true);
-    deviceToggles->Default(Toggle::D3D11UseUnmonitoredFence, !mDeviceInfo.supportsMonitoredFence);
+    if (!mDeviceInfo.supportsMonitoredFence) {
+        deviceToggles->Default(Toggle::D3D11UseUnmonitoredFence,
+                               mDeviceInfo.supportsNonMonitoredFence);
+        deviceToggles->ForceSet(Toggle::D3D11DisableFence, !mDeviceInfo.supportsNonMonitoredFence);
+    }
     deviceToggles->Default(Toggle::UseBlitForT2B, true);
+    deviceToggles->Default(Toggle::UseBlitForB2T, true);
 
     auto deviceId = GetDeviceId();
     auto vendorId = GetVendorId();

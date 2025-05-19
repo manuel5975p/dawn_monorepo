@@ -41,7 +41,7 @@ jobs:
             matrix:
                 compiler: [ {cc: gcc, cxx: g++}, {cc: clang, cxx: clang++} ]
                 config: [ Debug, Release ]
-                os: [ ubuntu-20.04, ubuntu-22.04 ]
+                os: [ ubuntu-22.04, ubuntu-24.04 ]
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-python@v5
@@ -53,7 +53,7 @@ jobs:
               # practice to try and support them so they don't have to install
               # the CMake tarball. Ideally the minimum we use matches what the default
               # package provided by Ubuntu via APT.
-              if: ${{ matrix.os == 'ubuntu-20.04' }}
+              if: ${{ matrix.os == 'ubuntu-22.04' }}
               uses: lukka/get-cmake@latest
               with:
                 cmakeVersion: 3.22.1
@@ -72,7 +72,7 @@ jobs:
                 -D CMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }} \
                 -D CMAKE_C_COMPILER=${{ matrix.compiler.cc }}
             - run: cmake --build build
-            - run: ctest --output-on-failure --test-dir build/
+            - run: ctest --parallel --output-on-failure --test-dir build/
             - run: cmake --install build --prefix /tmp
 
     codegen:
@@ -84,7 +84,7 @@ jobs:
 
     linux-no-asm:
         needs: codegen
-        runs-on: ubuntu-22.04
+        runs-on: ubuntu-24.04
         steps:
             - uses: actions/checkout@v4
             - run: sudo apt update
@@ -100,11 +100,11 @@ jobs:
                 -D CMAKE_CXX_COMPILER=clang++
             - run: cmake --build build
             - run: cmake --install build --prefix /tmp
-            - run: ctest --output-on-failure -E UnknownFunction --test-dir build/
+            - run: ctest --parallel --output-on-failure -E UnknownFunction --test-dir build/
 
     linux-32:
         needs: codegen
-        runs-on: ubuntu-22.04
+        runs-on: ubuntu-24.04
         strategy:
             matrix:
                 config: [ Debug, Release ]
@@ -130,21 +130,19 @@ jobs:
                 -D UPDATE_DEPS=ON \
                 -D BUILD_WERROR=ON \
                 -D SYSCONFDIR=/etc/not_vulkan \
-                -D PKG_CONFIG_EXECUTABLE=/usr/bin/i686-linux-gnu-pkg-config \
+                -D CMAKE_CXX_FLAGS=-m32 \
+                -D CMAKE_C_FLAGS=-m32 \
                 -G Ninja
               env:
-                CFLAGS: -m32
-                CXXFLAGS: -m32
-                LDFLAGS: -m32
-                ASFLAGS: --32
+                # https://gitlab.kitware.com/cmake/cmake/-/issues/25317
+                PKG_CONFIG_PATH: /usr/lib/i386-linux-gnu/pkgconfig
             - run: cmake --build build
             - run: cmake --install build --prefix /tmp
-            - run: ctest --output-on-failure
-              working-directory: build/
+            - run: ctest --parallel --output-on-failure --test-dir build/
 
     linux-32-no-asm:
         needs: codegen
-        runs-on: ubuntu-22.04
+        runs-on: ubuntu-24.04
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-python@v5
@@ -167,16 +165,14 @@ jobs:
                 -D UPDATE_DEPS=ON \
                 -D BUILD_WERROR=ON \
                 -D USE_GAS=OFF \
-                -D PKG_CONFIG_EXECUTABLE=/usr/bin/i686-linux-gnu-pkg-config \
+                -D CMAKE_CXX_FLAGS=-m32 \
+                -D CMAKE_C_FLAGS=-m32 \
                 -G Ninja
               env:
-                CFLAGS: -m32
-                CXXFLAGS: -m32
-                LDFLAGS: -m32
-                ASFLAGS: --32
+                # https://gitlab.kitware.com/cmake/cmake/-/issues/25317
+                PKG_CONFIG_PATH: /usr/lib/i386-linux-gnu/pkgconfig
             - run: cmake --build build
-            - run: ctest --output-on-failure -E UnknownFunction
-              working-directory: build/
+            - run: ctest --parallel --output-on-failure -E UnknownFunction --test-dir build/
 
     windows_vs:
         # windows is 2x expensive to run on GitHub machines, so only run if we know something else simple passed as well
@@ -197,7 +193,7 @@ jobs:
                 -D BUILD_WERROR=ON
             - run: cmake --build build/ --config ${{matrix.config}}
             - run: cmake --install build --prefix build/install --config ${{matrix.config}}
-            - run: ctest --output-on-failure -C ${{matrix.config}} --test-dir build/
+            - run: ctest --parallel --output-on-failure -C ${{matrix.config}} --test-dir build/
 
     windows_vs-no-asm:
         # windows is 2x expensive to run on GitHub machines, so only run if we know something else simple passed as well
@@ -217,7 +213,7 @@ jobs:
                 -A ${{ matrix.arch }} `
                 -D BUILD_WERROR=ON
             - run: cmake --build build/ --config Release
-            - run: ctest --output-on-failure -C Release -E UnknownFunction --test-dir build/
+            - run: ctest --parallel --output-on-failure -C Release -E UnknownFunction --test-dir build/
 
     # Test both clang and clang-cl (Chromium project uses clang-cl)
     windows_clang:
@@ -241,7 +237,7 @@ jobs:
               -D BUILD_TESTS=ON `
               -G Ninja
           - run: cmake --build build/
-          - run: ctest --output-on-failure --test-dir build/
+          - run: ctest --parallel --output-on-failure --test-dir build/
           - run: cmake --install build --prefix build/install
 
     mac:
@@ -257,7 +253,6 @@ jobs:
             - uses: actions/setup-python@v5
               with:
                 python-version: '3.11'
-            - uses: lukka/get-cmake@latest
             - run: |
                 cmake -S. -B build \
                 -D CMAKE_BUILD_TYPE=${{matrix.config}} \
@@ -272,7 +267,7 @@ jobs:
                 LDFLAGS: -Wl,-fatal_warnings
             - run: cmake --build build
             - run: cmake --install build --prefix /tmp
-            - run: ctest --output-on-failure --test-dir build/
+            - run: ctest --parallel --output-on-failure --test-dir build/
 
     apple-cross-compile:
       # Mac is 10x expensive to run on GitHub machines, so only run if we know something else passed as well
@@ -287,7 +282,6 @@ jobs:
           - uses: actions/setup-python@v5
             with:
               python-version: '3.11'
-          - uses: lukka/get-cmake@latest
           - run: |
               cmake -S . -B build \
               -D CMAKE_SYSTEM_NAME=${{ matrix.CMAKE_SYSTEM_NAME }} \
@@ -321,7 +315,6 @@ jobs:
             - uses: actions/setup-python@v5
               with:
                 python-version: '3.11'
-            - uses: lukka/get-cmake@latest
             - run: |
                 cmake -S. -B build \
                 -D CMAKE_BUILD_TYPE=Release \
@@ -334,7 +327,7 @@ jobs:
               env:
                 LDFLAGS: -Wl,-fatal_warnings
             - run: cmake --build build --config Release
-            - run: ctest --output-on-failure --build-config Release -E UnknownFunction --test-dir build/
+            - run: ctest --parallel --output-on-failure --build-config Release -E UnknownFunction --test-dir build/
             - run: cmake --install build --config Release --prefix /tmp
             - name: Verify Universal Binary
               if: ${{ matrix.static == 'OFF' }}
@@ -351,6 +344,7 @@ jobs:
 
     mingw:
       # windows is 2x expensive to run on GitHub machines, so only run if we know something else simple passed as well
+      if: false # Disabled due to issues with msys2 making CMake unable to find a working compiler
       needs: linux-no-asm
       runs-on: windows-2022
       defaults:
@@ -361,7 +355,6 @@ jobs:
         - uses: actions/setup-python@v5
           with:
             python-version: '3.11'
-        - uses: lukka/get-cmake@latest
         - name: Setup uasm
           run: |
             C:/msys64/usr/bin/pacman -Sy --noconfirm --needed mingw-w64-x86_64-uasm
@@ -389,7 +382,6 @@ jobs:
         - uses: actions/setup-python@v5
           with:
             python-version: '3.11'
-        - uses: lukka/get-cmake@latest
         - run: |
             cmake -S. -B build \
             -D UPDATE_DEPS=ON \
@@ -412,7 +404,6 @@ jobs:
         - uses: actions/setup-python@v5
           with:
             python-version: '3.11'
-        - uses: lukka/get-cmake@latest
         # Make sure this doesn't fail even without explicitly setting '-D USE_MASM=OFF' and without uasm
         - run: |
             cmake -S. -B build \
@@ -432,7 +423,6 @@ jobs:
           shell: bash
       steps:
         - uses: actions/checkout@v4
-        - uses: lukka/get-cmake@latest
         - run: |
             cmake -S. -B build \
             -D UPDATE_DEPS=ON \

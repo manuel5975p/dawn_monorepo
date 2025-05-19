@@ -27,6 +27,7 @@
 
 #include "src/tint/lang/core/ir/binary/encode.h"
 
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -104,7 +105,7 @@ struct Encoder {
     Hashmap<const core::ir::Value*, uint32_t, 32> values_{};
     Hashmap<const core::constant::Value*, uint32_t, 32> constant_values_{};
 
-    diag::List diags_{};
+    std::stringstream err_{};
 
     Result<SuccessType> Encode() {
         // Encode all user-declared structures first. This is to ensure that the IR disassembly
@@ -125,14 +126,12 @@ struct Encoder {
         }
         mod_out_.set_root_block(Block(mod_in_.root_block));
 
-        if (diags_.ContainsErrors()) {
-            return Failure{std::move(diags_)};
+        auto err = err_.str();
+        if (!err.empty()) {
+            return Failure{err};
         }
         return Success;
     }
-
-    /// Adds a new error to the diagnostics and returns a reference to it
-    diag::Diagnostic& Error() { return diags_.AddError(Source{}); }
 
     ////////////////////////////////////////////////////////////////////////////
     // Functions
@@ -278,6 +277,9 @@ struct Encoder {
     void InstructionBuiltinCall(pb::InstructionBuiltinCall& call_out,
                                 const ir::CoreBuiltinCall* call_in) {
         call_out.set_builtin(BuiltinFn(call_in->Func()));
+        for (auto* param : call_in->ExplicitTemplateParams()) {
+            call_out.add_explicit_template_params(Type(param));
+        }
     }
 
     void InstructionConstruct(pb::InstructionConstruct&, const ir::Construct*) {}
@@ -411,23 +413,19 @@ struct Encoder {
                     TypeInputAttachment(*type_out.mutable_input_attachment(), i);
                 },
                 [&]([[maybe_unused]] const core::type::SubgroupMatrix* s) {
-                    // TODO(crbug.com/348702031): Re-enable encoding SubgroupMatrix once it is fully
-                    // implemented
-                    Error() << "SubgroupMatrix is currently not implemented";
-                    //                    switch (s->Kind()) {
-                    //                        case core::SubgroupMatrixKind::kLeft:
-                    //                            TypeSubgroupMatrix(*type_out.mutable_subgroup_matrix_left(),
-                    //                            s); break;
-                    //                        case core::SubgroupMatrixKind::kRight:
-                    //                            TypeSubgroupMatrix(*type_out.mutable_subgroup_matrix_right(),
-                    //                            s); break;
-                    //                        case core::SubgroupMatrixKind::kResult:
-                    //                            TypeSubgroupMatrix(*type_out.mutable_subgroup_matrix_result(),
-                    //                            s); break;
-                    //                        default:
-                    //                            TINT_ICE() << "invalid subgroup matrix kind: " <<
-                    //                            ToString(s->Kind());
-                    //                    }
+                    switch (s->Kind()) {
+                        case core::SubgroupMatrixKind::kLeft:
+                            TypeSubgroupMatrix(*type_out.mutable_subgroup_matrix_left(), s);
+                            break;
+                        case core::SubgroupMatrixKind::kRight:
+                            TypeSubgroupMatrix(*type_out.mutable_subgroup_matrix_right(), s);
+                            break;
+                        case core::SubgroupMatrixKind::kResult:
+                            TypeSubgroupMatrix(*type_out.mutable_subgroup_matrix_result(), s);
+                            break;
+                        default:
+                            TINT_ICE() << "invalid subgroup matrix kind: " << ToString(s->Kind());
+                    }
                 },
                 TINT_ICE_ON_NO_MATCH);
 
@@ -497,8 +495,8 @@ struct Encoder {
             [&](const core::type::ConstantArrayCount* c) {
                 array_out.set_count(c->value);
                 if (c->value >= internal_limits::kMaxArrayElementCount) {
-                    Error() << "array count (" << c->value << ") must be less than "
-                            << internal_limits::kMaxArrayElementCount;
+                    err_ << "array count (" << c->value << ") must be less than "
+                         << internal_limits::kMaxArrayElementCount << "\n";
                 }
             },
             [&](const core::type::RuntimeArrayCount*) { array_out.set_count(0); },
@@ -544,13 +542,12 @@ struct Encoder {
         sampler_out.set_kind(SamplerKind(sampler_in->Kind()));
     }
 
-    // TODO(crbug.com/348702031): Re-enable encoding SubgroupMatrix once it is fully implemented
-    //    void TypeSubgroupMatrix(pb::TypeSubgroupMatrix& subgroup_matrix_out,
-    //                            const core::type::SubgroupMatrix* subgroup_matrix_in) {
-    //        subgroup_matrix_out.set_sub_type(Type(subgroup_matrix_in->Type()));
-    //        subgroup_matrix_out.set_columns(subgroup_matrix_in->Columns());
-    //        subgroup_matrix_out.set_rows(subgroup_matrix_in->Rows());
-    //    }
+    void TypeSubgroupMatrix(pb::TypeSubgroupMatrix& subgroup_matrix_out,
+                            const core::type::SubgroupMatrix* subgroup_matrix_in) {
+        subgroup_matrix_out.set_sub_type(Type(subgroup_matrix_in->Type()));
+        subgroup_matrix_out.set_columns(subgroup_matrix_in->Columns());
+        subgroup_matrix_out.set_rows(subgroup_matrix_in->Rows());
+    }
 
     [[maybe_unused]] void TypeBuitinStruct(pb::Type& builtin_struct_out,
                                            const core::type::Struct* builtin_struct_in) {
@@ -738,8 +735,8 @@ struct Encoder {
                             const core::constant::Splat* splat_in) {
         splat_out.set_type(Type(splat_in->type));
         if (DAWN_UNLIKELY(splat_in->count > internal_limits::kMaxArrayConstructorElements)) {
-            Error() << "array constructor has excessive number of elements (>"
-                    << internal_limits::kMaxArrayConstructorElements << ")";
+            err_ << "array constructor has excessive number of elements (>"
+                 << internal_limits::kMaxArrayConstructorElements << ")\n";
         }
         splat_out.set_elements(ConstantValue(splat_in->el));
         splat_out.set_count(static_cast<uint32_t>(splat_in->count));
@@ -774,8 +771,8 @@ struct Encoder {
                 return pb::AddressSpace::pixel_local;
             case core::AddressSpace::kPrivate:
                 return pb::AddressSpace::private_;
-            case core::AddressSpace::kPushConstant:
-                return pb::AddressSpace::push_constant;
+            case core::AddressSpace::kImmediate:
+                return pb::AddressSpace::immediate;
             case core::AddressSpace::kStorage:
                 return pb::AddressSpace::storage;
             case core::AddressSpace::kUniform:
@@ -999,6 +996,8 @@ struct Encoder {
                 return pb::BuiltinValue::sample_index;
             case core::BuiltinValue::kSampleMask:
                 return pb::BuiltinValue::sample_mask;
+            case core::BuiltinValue::kSubgroupId:
+                return pb::BuiltinValue::subgroup_id;
             case core::BuiltinValue::kSubgroupInvocationId:
                 return pb::BuiltinValue::subgroup_invocation_id;
             case core::BuiltinValue::kSubgroupSize:

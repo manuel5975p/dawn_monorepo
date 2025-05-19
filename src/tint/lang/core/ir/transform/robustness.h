@@ -28,12 +28,11 @@
 #ifndef SRC_TINT_LANG_CORE_IR_TRANSFORM_ROBUSTNESS_H_
 #define SRC_TINT_LANG_CORE_IR_TRANSFORM_ROBUSTNESS_H_
 
-#include <string>
 #include <unordered_set>
 
 #include "src/tint/api/common/binding_point.h"
 #include "src/tint/utils/reflection.h"
-#include "src/tint/utils/result/result.h"
+#include "src/tint/utils/result.h"
 
 // Forward declarations.
 namespace tint::core::ir {
@@ -54,14 +53,18 @@ struct RobustnessConfig {
     bool clamp_function = true;
     /// Should accesses to pointers with the 'private' address space be clamped?
     bool clamp_private = true;
-    /// Should accesses to pointers with the 'push_constant' address space be clamped?
-    bool clamp_push_constant = true;
+    /// Should accesses to pointers with the 'immediate' address space be clamped?
+    bool clamp_immediate_data = true;
     /// Should accesses to pointers with the 'storage' address space be clamped?
     bool clamp_storage = true;
     /// Should accesses to pointers with the 'uniform' address space be clamped?
     bool clamp_uniform = true;
     /// Should accesses to pointers with the 'workgroup' address space be clamped?
     bool clamp_workgroup = true;
+
+    /// Should subgroup matrix builtins be predicated?
+    /// Note that the stride parameter will still be clamped if predication is disabled.
+    bool predicate_subgroup_matrix = true;
 
     /// Bindings that should always be ignored.
     std::unordered_set<tint::BindingPoint> bindings_ignored;
@@ -75,7 +78,7 @@ struct RobustnessConfig {
                  clamp_texture,
                  clamp_function,
                  clamp_private,
-                 clamp_push_constant,
+                 clamp_immediate_data,
                  clamp_storage,
                  clamp_uniform,
                  clamp_workgroup,

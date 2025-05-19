@@ -65,8 +65,6 @@ tint_target_add_dependencies(tint_lang_wgsl_resolver lib
   tint_lang_core_type
   tint_lang_wgsl
   tint_lang_wgsl_ast
-  tint_lang_wgsl_common
-  tint_lang_wgsl_features
   tint_lang_wgsl_intrinsic
   tint_lang_wgsl_program
   tint_lang_wgsl_sem
@@ -77,7 +75,6 @@ tint_target_add_dependencies(tint_lang_wgsl_resolver lib
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
-  tint_utils_result
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text
@@ -100,6 +97,7 @@ tint_add_target(tint_lang_wgsl_resolver_test test
   lang/wgsl/resolver/atomics_test.cc
   lang/wgsl/resolver/atomics_validation_test.cc
   lang/wgsl/resolver/attribute_validation_test.cc
+  lang/wgsl/resolver/binding_array_test.cc
   lang/wgsl/resolver/bitcast_validation_test.cc
   lang/wgsl/resolver/builtin_enum_test.cc
   lang/wgsl/resolver/builtin_structs_test.cc
@@ -117,6 +115,15 @@ tint_add_target(tint_lang_wgsl_resolver_test test
   lang/wgsl/resolver/diagnostic_control_test.cc
   lang/wgsl/resolver/dual_source_blending_extension_test.cc
   lang/wgsl/resolver/entry_point_validation_test.cc
+  lang/wgsl/resolver/eval_binary_op_test.cc
+  lang/wgsl/resolver/eval_bitcast_test.cc
+  lang/wgsl/resolver/eval_builtin_test.cc
+  lang/wgsl/resolver/eval_construction_test.cc
+  lang/wgsl/resolver/eval_conversion_test.cc
+  lang/wgsl/resolver/eval_indexing_test.cc
+  lang/wgsl/resolver/eval_member_access_test.cc
+  lang/wgsl/resolver/eval_test.h
+  lang/wgsl/resolver/eval_unary_op_test.cc
   lang/wgsl/resolver/evaluation_stage_test.cc
   lang/wgsl/resolver/expression_kind_test.cc
   lang/wgsl/resolver/f16_extension_test.cc
@@ -127,7 +134,6 @@ tint_add_target(tint_lang_wgsl_resolver_test test
   lang/wgsl/resolver/increment_decrement_validation_test.cc
   lang/wgsl/resolver/inferred_type_test.cc
   lang/wgsl/resolver/input_attachments_extension_test.cc
-  lang/wgsl/resolver/is_host_shareable_test.cc
   lang/wgsl/resolver/is_storeable_test.cc
   lang/wgsl/resolver/language_features_test.cc
   lang/wgsl/resolver/load_test.cc
@@ -167,8 +173,6 @@ tint_target_add_dependencies(tint_lang_wgsl_resolver_test test
   tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_ast_test
-  tint_lang_wgsl_common
-  tint_lang_wgsl_features
   tint_lang_wgsl_intrinsic
   tint_lang_wgsl_program
   tint_lang_wgsl_resolver
@@ -181,7 +185,6 @@ tint_target_add_dependencies(tint_lang_wgsl_resolver_test test
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
-  tint_utils_result
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text

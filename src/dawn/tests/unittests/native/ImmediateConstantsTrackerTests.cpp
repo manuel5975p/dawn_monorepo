@@ -88,9 +88,9 @@ TEST_F(ImmediateConstantsTrackerTest, OnPipelineChange) {
 
 // Test immediate setting update dirty bits and contents correctly.
 TEST_F(ImmediateConstantsTrackerTest, SetImmediateData) {
-    static constexpr uint32_t rangeOffset = 1u;
+    static constexpr uint32_t rangeOffset = 1u * kImmediateConstantElementByteSize;
     static constexpr uint32_t dataOffset = 2u;
-    static constexpr uint32_t userImmediateDataCount = 2u;
+    static constexpr uint32_t userImmediateDataSize = 2u * kImmediateConstantElementByteSize;
     ImmediateConstantMask expected =
         GetImmediateConstantBlockBits(0u, sizeof(UserImmediateConstants));
 
@@ -100,15 +100,13 @@ TEST_F(ImmediateConstantsTrackerTest, SetImmediateData) {
         RenderImmediateConstantsTrackerBase tracker;
         int32_t userImmediateData[] = {2, 4, -6, 8};
         tracker.SetImmediateData(rangeOffset,
-                                 reinterpret_cast<uint32_t*>(&userImmediateData[dataOffset]),
-                                 userImmediateDataCount);
+                                 reinterpret_cast<uint8_t*>(&userImmediateData[dataOffset]),
+                                 userImmediateDataSize);
         EXPECT_TRUE(tracker.GetDirtyBits() == expected);
 
-        uint32_t userImmediateDataRangeOffset =
-            userImmediateDataStartByteOffset + rangeOffset * kImmediateConstantElementByteSize;
+        uint32_t userImmediateDataRangeOffset = userImmediateDataStartByteOffset + rangeOffset;
         EXPECT_TRUE(memcmp(tracker.GetContent().Get<int32_t>(userImmediateDataRangeOffset),
-                           &userImmediateData[dataOffset],
-                           sizeof(int32_t) * userImmediateDataCount) == 0);
+                           &userImmediateData[dataOffset], userImmediateDataSize) == 0);
     }
 
     // ComputeImmediateConstantsTracker
@@ -116,15 +114,13 @@ TEST_F(ImmediateConstantsTrackerTest, SetImmediateData) {
         ComputeImmediateConstantsTrackerBase tracker;
         int32_t userImmediateData[] = {2, 4, -6, 8};
         tracker.SetImmediateData(rangeOffset,
-                                 reinterpret_cast<uint32_t*>(&userImmediateData[dataOffset]),
-                                 userImmediateDataCount);
+                                 reinterpret_cast<uint8_t*>(&userImmediateData[dataOffset]),
+                                 userImmediateDataSize);
         EXPECT_TRUE(tracker.GetDirtyBits() == expected);
 
-        uint32_t userImmediateDataRangeOffset =
-            userImmediateDataStartByteOffset + rangeOffset * kImmediateConstantElementByteSize;
+        uint32_t userImmediateDataRangeOffset = userImmediateDataStartByteOffset + rangeOffset;
         EXPECT_TRUE(memcmp(tracker.GetContent().Get<int32_t>(userImmediateDataRangeOffset),
-                           &userImmediateData[dataOffset],
-                           sizeof(int32_t) * userImmediateDataCount) == 0);
+                           &userImmediateData[dataOffset], userImmediateDataSize) == 0);
     }
 
     device.Destroy();
@@ -139,8 +135,11 @@ TEST_F(RenderImmediateConstantsTrackerTest, SetClampFragDepth) {
 
     ImmediateConstantMask expected;
     // Hard coded to verify dirty bit.
-    expected |= 1u << 4u;
-    expected |= 1u << 5u;
+    expected |= 1u << (offsetof(RenderImmediateConstants, clampFragDepth) /
+                       kImmediateConstantElementByteSize);
+    expected |= 1u << (offsetof(RenderImmediateConstants, clampFragDepth) /
+                           kImmediateConstantElementByteSize +
+                       1u);
     EXPECT_TRUE(tracker.GetDirtyBits() == expected);
 
     // Compare bits instead of values here to ensure bits level equality.
@@ -170,8 +169,10 @@ TEST_F(RenderImmediateConstantsTrackerTest, SetFirstIndexOffset) {
 
         ImmediateConstantMask expected;
         // Hard coded to verify dirty bit.
-        expected |= 1u << 6u;
-        expected |= 1u << 7u;
+        expected |= 1u << offsetof(RenderImmediateConstants, firstVertex) /
+                              kImmediateConstantElementByteSize;
+        expected |= 1u << offsetof(RenderImmediateConstants, firstInstance) /
+                              kImmediateConstantElementByteSize;
         EXPECT_TRUE(tracker.GetDirtyBits() == expected);
 
         EXPECT_TRUE(memcmp(tracker.GetContent().Get<uint32_t>(firstVertexByteOffset), &firstVertex,
@@ -188,7 +189,8 @@ TEST_F(RenderImmediateConstantsTrackerTest, SetFirstIndexOffset) {
 
         ImmediateConstantMask expected;
         // Hard coded to verify dirty bit.
-        expected |= 1u << 6u;
+        expected |= 1u << offsetof(RenderImmediateConstants, firstVertex) /
+                              kImmediateConstantElementByteSize;
         EXPECT_TRUE(tracker.GetDirtyBits() == expected);
 
         EXPECT_TRUE(memcmp(tracker.GetContent().Get<uint32_t>(firstVertexByteOffset), &firstVertex,
@@ -203,7 +205,8 @@ TEST_F(RenderImmediateConstantsTrackerTest, SetFirstIndexOffset) {
 
         ImmediateConstantMask expected;
         // Hard coded to verify dirty bit.
-        expected |= 1u << 7u;
+        expected |= 1u << offsetof(RenderImmediateConstants, firstInstance) /
+                              kImmediateConstantElementByteSize;
         EXPECT_TRUE(tracker.GetDirtyBits() == expected);
 
         EXPECT_TRUE(memcmp(tracker.GetContent().Get<uint32_t>(firstInstanceByteOffset),
@@ -223,9 +226,14 @@ TEST_F(ComputeImmediateConstantsTrackerTest, SetNumWorkgroupDimensions) {
 
     ImmediateConstantMask expected;
     // Hard coded to verify dirty bit.
-    expected |= 1u << 4u;
-    expected |= 1u << 5u;
-    expected |= 1u << 6u;
+    expected |= 1u << offsetof(ComputeImmediateConstants, numWorkgroups) /
+                          kImmediateConstantElementByteSize;
+    expected |= 1u << (offsetof(ComputeImmediateConstants, numWorkgroups) /
+                           kImmediateConstantElementByteSize +
+                       1u);
+    expected |= 1u << (offsetof(ComputeImmediateConstants, numWorkgroups) /
+                           kImmediateConstantElementByteSize +
+                       2u);
     EXPECT_TRUE(tracker.GetDirtyBits() == expected);
 
     size_t numWorkgroupsStartByteOffset = offsetof(ComputeImmediateConstants, numWorkgroups);
