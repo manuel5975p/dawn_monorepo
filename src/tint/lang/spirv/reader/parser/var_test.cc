@@ -304,6 +304,171 @@ $B1: {  # root
 )");
 }
 
+TEST_F(SpirvParserTest, UniformVar_BufferBlock) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %1 "main"
+               OpExecutionMode %1 LocalSize 1 1 1
+               OpMemberDecorate %str 0 Offset 0
+               OpDecorate %6 DescriptorSet 1
+               OpDecorate %6 Binding 2
+               OpDecorate %str BufferBlock
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+        %str = OpTypeStruct %uint
+%_ptr_Uniform_str = OpTypePointer Uniform %str
+          %5 = OpTypeFunction %void
+          %6 = OpVariable %_ptr_Uniform_str Uniform
+          %1 = OpFunction %void None %5
+          %7 = OpLabel
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+tint_symbol_1 = struct @align(4) {
+  tint_symbol:u32 @offset(0)
+}
+
+$B1: {  # root
+  %1:ptr<storage, tint_symbol_1, read_write> = var undef @binding_point(1, 2)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, UniformVar_BufferBlock_NonReadable) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %1 "main"
+               OpExecutionMode %1 LocalSize 1 1 1
+               OpMemberDecorate %str 0 Offset 0
+               OpDecorate %6 NonReadable
+               OpDecorate %6 DescriptorSet 1
+               OpDecorate %6 Binding 2
+               OpDecorate %str BufferBlock
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+        %str = OpTypeStruct %uint
+%_ptr_Uniform_str = OpTypePointer Uniform %str
+          %5 = OpTypeFunction %void
+          %6 = OpVariable %_ptr_Uniform_str Uniform
+          %1 = OpFunction %void None %5
+          %7 = OpLabel
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+tint_symbol_1 = struct @align(4) {
+  tint_symbol:u32 @offset(0)
+}
+
+$B1: {  # root
+  %1:ptr<storage, tint_symbol_1, write> = var undef @binding_point(1, 2)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, UniformVar_BufferBlock_Propagate) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %1 "main"
+               OpExecutionMode %1 LocalSize 1 1 1
+               OpMemberDecorate %str 0 Offset 0
+               OpDecorate %6 NonReadable
+               OpDecorate %6 DescriptorSet 1
+               OpDecorate %6 Binding 2
+               OpDecorate %str BufferBlock
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+     %uint_0 = OpConstant %uint 0
+        %str = OpTypeStruct %uint
+%_ptr_Uniform_str = OpTypePointer Uniform %str
+%_ptr_Uniform_uint = OpTypePointer Uniform %uint
+          %5 = OpTypeFunction %void
+          %6 = OpVariable %_ptr_Uniform_str Uniform
+          %1 = OpFunction %void None %5
+          %7 = OpLabel
+          %8 = OpCopyObject %_ptr_Uniform_str %6
+          %9 = OpAccessChain %_ptr_Uniform_uint %8 %uint_0
+         %10 = OpCopyObject %_ptr_Uniform_uint %9
+               OpStore %10 %uint_0
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+tint_symbol_1 = struct @align(4) {
+  tint_symbol:u32 @offset(0)
+}
+
+$B1: {  # root
+  %1:ptr<storage, tint_symbol_1, write> = var undef @binding_point(1, 2)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %3:ptr<storage, tint_symbol_1, write> = let %1
+    %4:ptr<storage, u32, write> = access %3, 0u
+    %5:ptr<storage, u32, write> = let %4
+    store %5, 0u
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, UniformVar_BufferBlock_NonWritable) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %1 "main"
+               OpExecutionMode %1 LocalSize 1 1 1
+               OpMemberDecorate %str 0 Offset 0
+               OpDecorate %6 NonWritable
+               OpDecorate %6 DescriptorSet 1
+               OpDecorate %6 Binding 2
+               OpDecorate %str BufferBlock
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+        %str = OpTypeStruct %uint
+%_ptr_Uniform_str = OpTypePointer Uniform %str
+          %5 = OpTypeFunction %void
+          %6 = OpVariable %_ptr_Uniform_str Uniform
+          %1 = OpFunction %void None %5
+          %7 = OpLabel
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+tint_symbol_1 = struct @align(4) {
+  tint_symbol:u32 @offset(0)
+}
+
+$B1: {  # root
+  %1:ptr<storage, tint_symbol_1, read> = var undef @binding_point(1, 2)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    ret
+  }
+}
+)");
+}
+
 TEST_F(SpirvParserTest, UniformConstantVar) {
     EXPECT_IR(R"(
                OpCapability Shader
@@ -584,12 +749,12 @@ INSTANTIATE_TEST_SUITE_P(SpirvParser,
                              LocationCase{
                                  "OpDecorate %var Location 2 "
                                  "OpDecorate %var NoPerspective ",
-                                 "var undef @location(2) @interpolate(linear, center)",
+                                 "var undef @location(2) @interpolate(linear)",
                              },
                              LocationCase{
                                  "OpDecorate %var Location 3 "
                                  "OpDecorate %var Flat ",
-                                 "var undef @location(3) @interpolate(flat, center)",
+                                 "var undef @location(3) @interpolate(flat)",
                              },
                              LocationCase{
                                  "OpDecorate %var Location 4 "
@@ -1063,6 +1228,335 @@ $B1: {  # root
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %4:i32 = spirv.not<i32> %myconst
+    ret
+  }
+}
+)");
+}
+
+// In the case of all literals, SPIR-V opt treats the `OpSpecConstantComposite` as an
+// `OpConstantComposite` so it appears in the constant manager already. This then needs no handling
+// on our side.
+TEST_F(SpirvParserTest, Var_OpSpecConstantComposite_vec2_literals) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %1 "myconst"
+       %void = OpTypeVoid
+        %i32 = OpTypeInt 32 1
+        %v2i = OpTypeVector %i32 2
+        %one = OpConstant %i32 1
+        %two = OpConstant %i32 2
+          %1 = OpSpecConstantComposite %v2i %one %two
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %2 = OpIAdd %v2i %1 %1
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:vec2<i32> = spirv.add<i32> vec2<i32>(1i, 2i), vec2<i32>(1i, 2i)
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantComposite_vec2_SpecConstants) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %1 "myconst"
+               OpDecorate %one SpecId 1
+               OpDecorate %two SpecId 2
+       %void = OpTypeVoid
+        %i32 = OpTypeInt 32 1
+        %v2i = OpTypeVector %i32 2
+        %one = OpSpecConstant %i32 1
+        %two = OpSpecConstant %i32 2
+          %1 = OpSpecConstantComposite %v2i %one %two
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %2 = OpIAdd %v2i %1 %1
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %1:i32 = override 1i @id(1)
+  %2:i32 = override 2i @id(2)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %4:vec2<i32> = construct %1, %2
+    %5:vec2<i32> = spirv.add<i32> %4, %4
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantComposite_vec4_Mixed) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %1 "myconst"
+               OpDecorate %one SpecId 1
+               OpDecorate %three SpecId 3
+       %void = OpTypeVoid
+        %i32 = OpTypeInt 32 1
+        %v4i = OpTypeVector %i32 4
+        %one = OpSpecConstant %i32 1
+        %two = OpConstant %i32 2
+      %three = OpSpecConstant %i32 3
+       %four = OpConstant %i32 4
+          %1 = OpSpecConstantComposite %v4i %one %two %three %four
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %2 = OpIAdd %v4i %1 %1
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %1:i32 = override 1i @id(1)
+  %2:i32 = override 3i @id(3)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %4:vec4<i32> = construct %1, 2i, %2, 4i
+    %5:vec4<i32> = spirv.add<i32> %4, %4
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantComposite_mat3x4_Mixed) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %1 "myconst"
+               OpDecorate %one SpecId 1
+               OpDecorate %three SpecId 3
+       %void = OpTypeVoid
+        %f32 = OpTypeFloat 32
+        %v3f = OpTypeVector %f32 3
+     %mat4x3 = OpTypeMatrix %v3f 4
+        %one = OpSpecConstant %f32 1
+        %two = OpConstant %f32 2
+      %three = OpSpecConstant %f32 3
+       %four = OpConstant %f32 4
+          %1 = OpSpecConstantComposite %v3f %one %two %three
+          %2 = OpSpecConstantComposite %mat4x3 %1 %1 %1 %1
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+          %3 = OpMatrixTimesScalar %mat4x3 %2 %four
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %1:f32 = override 1.0f @id(1)
+  %2:f32 = override 3.0f @id(3)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %4:vec3<f32> = construct %1, 2.0f, %2
+    %5:mat4x3<f32> = construct %4, %4, %4, %4
+    %6:mat4x3<f32> = mul %5, 4.0f
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantComposite_array_Mixed) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpName %1 "myconst"
+               OpDecorate %one SpecId 1
+               OpDecorate %three SpecId 3
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+     %uint_2 = OpConstant %uint 2
+     %uint_3 = OpConstant %uint 3
+        %f32 = OpTypeFloat 32
+        %ary = OpTypeArray %f32 %uint_3
+        %ptr = OpTypePointer Function %f32
+     %fn_ptr = OpTypePointer Function %ary
+        %one = OpSpecConstant %f32 1
+        %two = OpConstant %f32 2
+      %three = OpSpecConstant %f32 3
+          %1 = OpSpecConstantComposite %ary %one %two %three
+     %voidfn = OpTypeFunction %void
+       %main = OpFunction %void None %voidfn
+ %main_entry = OpLabel
+  %indexable = OpVariable %fn_ptr Function
+               OpStore %indexable %1
+         %20 = OpAccessChain %ptr %indexable %uint_2
+         %21 = OpLoad %f32 %20
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %1:f32 = override 1.0f @id(1)
+  %2:f32 = override 3.0f @id(3)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %4:ptr<function, array<f32, 3>, read_write> = var undef
+    %5:array<f32, 3> = construct %1, 2.0f, %2
+    store %4, %5
+    %6:ptr<function, f32, read_write> = access %4, 2u
+    %7:f32 = load %6
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, Var_OpSpecConstantComposite_struct_Mixed) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpExtension "SPV_KHR_storage_buffer_storage_class"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %1 "main"
+               OpExecutionMode %1 LocalSize 1 1 1
+               OpDecorate %str Block
+               OpMemberDecorate %str 0 Offset 0
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+        %int = OpTypeInt 32 1
+        %f32 = OpTypeFloat 32
+        %str = OpTypeStruct %uint %f32
+    %ptr_str = OpTypePointer Function %str
+    %ptr_f32 = OpTypePointer Function %f32
+      %int_1 = OpConstant %int 1
+        %one = OpSpecConstant %uint 1
+        %two = OpConstant %f32 2
+          %5 = OpTypeFunction %void
+          %2 = OpSpecConstantComposite %str %one %two
+          %1 = OpFunction %void None %5
+         %11 = OpLabel
+          %b = OpVariable %ptr_str Function
+               OpStore %b %2
+         %24 = OpAccessChain %ptr_f32 %b %int_1
+         %17 = OpLoad %f32 %24
+         %25 = OpFAdd %f32 %17 %17
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+tint_symbol_2 = struct @align(4) {
+  tint_symbol:u32 @offset(0)
+  tint_symbol_1:f32 @offset(4)
+}
+
+$B1: {  # root
+  %1:u32 = override 1u
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %3:ptr<function, tint_symbol_2, read_write> = var undef
+    %4:tint_symbol_2 = construct %1, 2.0f
+    store %3, %4
+    %5:ptr<function, f32, read_write> = access %3, 1i
+    %6:f32 = load %5
+    %7:f32 = add %6, %6
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, InterpolationFlatNoLocation) {
+    EXPECT_IR(R"(
+             OpCapability Shader
+             OpCapability SampleRateShading
+             OpMemoryModel Logical Simple
+             OpEntryPoint Fragment %3 "main" %gl_SampleID
+             OpExecutionMode %3 OriginUpperLeft
+             OpDecorate %gl_SampleID BuiltIn SampleId
+             OpDecorate %gl_SampleID Flat
+     %void = OpTypeVoid
+        %5 = OpTypeFunction %void
+    %float = OpTypeFloat 32
+     %uint = OpTypeInt 32 0
+      %int = OpTypeInt 32 1
+%_ptr_Input_uint = OpTypePointer Input %uint
+%gl_SampleID = OpVariable %_ptr_Input_uint Input
+        %3 = OpFunction %void None %5
+       %10 = OpLabel
+        %2 = OpLoad %uint %gl_SampleID
+             OpReturn
+             OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %1:ptr<__in, u32, read> = var undef @builtin(sample_index)
+}
+
+%main = @fragment func():void {
+  $B2: {
+    undef = phony %1
+    %3:u32 = load %1
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, VarMarkedFragDepth) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpCapability SampleRateShading
+               OpMemoryModel Logical Simple
+               OpEntryPoint Fragment %2 "main" %gl_FragDepth
+               OpExecutionMode %2 OriginUpperLeft
+               OpDecorate %gl_FragDepth BuiltIn FragDepth
+       %void = OpTypeVoid
+          %4 = OpTypeFunction %void
+      %float = OpTypeFloat 32
+    %float_0 = OpConstant %float 0
+%_ptr_Output_float = OpTypePointer Output %float
+%gl_FragDepth = OpVariable %_ptr_Output_float Output %float_0
+          %2 = OpFunction %void None %4
+         %29 = OpLabel
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+$B1: {  # root
+  %1:ptr<__out, f32, read_write> = var 0.0f @builtin(frag_depth)
+}
+
+%main = @fragment func():void {
+  $B2: {
+    undef = phony %1
     ret
   }
 }

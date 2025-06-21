@@ -53,6 +53,7 @@
 #include "dawn/native/Format.h"
 #include "dawn/native/Forward.h"
 #include "dawn/native/Limits.h"
+#include "dawn/native/LogEmitter.h"
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/ObjectType_autogen.h"
 #include "dawn/native/Toggles.h"
@@ -83,19 +84,17 @@ struct ShaderModuleParseResult;
 
 class DeviceBase : public ErrorSink,
                    public RefCountedWithExternalCount<RefCounted>,
-                   public WeakRefSupport<DeviceBase> {
+                   public WeakRefSupport<DeviceBase>,
+                   public LogEmitter {
   public:
     struct DeviceLostEvent final : public EventManager::TrackedEvent {
         static Ref<DeviceLostEvent> Create(const DeviceDescriptor* descriptor);
 
-        // Event result fields need to be public so that they can easily be updated prior to
-        // completing the event.
-        wgpu::DeviceLostReason mReason;
-        std::string mMessage;
+        // Sets the device lost event's fields and sets the event to be ready.
+        void SetLost(EventManager* eventManager,
+                     wgpu::DeviceLostReason reason,
+                     std::string_view message);
 
-        WGPUDeviceLostCallback mCallback = nullptr;
-        raw_ptr<void> mUserdata1;
-        raw_ptr<void> mUserdata2;
         // Note that the device is set when the event is passed to construct a device.
         Ref<DeviceBase> mDevice = nullptr;
 
@@ -104,6 +103,13 @@ class DeviceBase : public ErrorSink,
         ~DeviceLostEvent() override;
 
         void Complete(EventCompletionType completionType) override;
+
+        wgpu::DeviceLostReason mReason;
+        std::string mMessage;
+
+        WGPUDeviceLostCallback mCallback = nullptr;
+        raw_ptr<void> mUserdata1;
+        raw_ptr<void> mUserdata2;
     };
 
     DeviceBase(AdapterBase* adapter,
@@ -216,7 +222,7 @@ class DeviceBase : public ErrorSink,
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModule(
         const ShaderModuleDescriptor* descriptor,
         const std::vector<tint::wgsl::Extension>& internalExtensions = {},
-        std::unique_ptr<OwnedCompilationMessages>* compilationMessages = nullptr);
+        ShaderModuleParseResult* outputParseResult = nullptr);
     ResultOrError<Ref<SwapChainBase>> CreateSwapChain(Surface* surface,
                                                       SwapChainBase* previousSwapChain,
                                                       const SurfaceConfiguration* config);
@@ -286,11 +292,11 @@ class DeviceBase : public ErrorSink,
     Blob LoadCachedBlob(const CacheKey& key);
     void StoreCachedBlob(const CacheKey& key, const Blob& blob);
 
-    MaybeError CopyFromStagingToBuffer(BufferBase* source,
-                                       uint64_t sourceOffset,
-                                       BufferBase* destination,
-                                       uint64_t destinationOffset,
-                                       uint64_t size);
+    virtual MaybeError CopyFromStagingToBuffer(BufferBase* source,
+                                               uint64_t sourceOffset,
+                                               BufferBase* destination,
+                                               uint64_t destinationOffset,
+                                               uint64_t size) = 0;
     MaybeError CopyFromStagingToTexture(BufferBase* source,
                                         const TexelCopyBufferLayout& src,
                                         const TextureCopy& dst,
@@ -327,6 +333,7 @@ class DeviceBase : public ErrorSink,
     const tint::wgsl::AllowedFeatures& GetWGSLAllowedFeatures() const;
     bool IsToggleEnabled(Toggle toggle) const;
     const TogglesState& GetTogglesState() const;
+    const FeaturesSet& GetEnabledFeatures() const;
     bool IsValidationEnabled() const;
     bool IsRobustnessEnabled() const;
     bool IsCompatibilityMode() const;
@@ -335,9 +342,9 @@ class DeviceBase : public ErrorSink,
     size_t GetLazyClearCountForTesting();
     void IncrementLazyClearCountForTesting();
     void EmitWarningOnce(std::string_view message);
-    void EmitLog(std::string_view message);
-    void EmitLog(WGPULoggingType loggingType, std::string_view message);
     void EmitCompilationLog(const ShaderModuleBase* module);
+    void EmitLog(std::string_view message) override;
+    void EmitLog(wgpu::LoggingType type, std::string_view message) override;
     void APIForceLoss(wgpu::DeviceLostReason reason, StringView message);
     QueueBase* GetQueue() const;
 
@@ -442,7 +449,8 @@ class DeviceBase : public ErrorSink,
 
     void ForceEnableFeatureForTesting(Feature feature);
 
-    MaybeError Initialize(Ref<QueueBase> defaultQueue);
+    MaybeError Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor,
+                          Ref<QueueBase> defaultQueue);
     void DestroyObjects();
     void Destroy();
 
@@ -482,8 +490,7 @@ class DeviceBase : public ErrorSink,
     virtual ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
         const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
         const std::vector<tint::wgsl::Extension>& internalExtensions,
-        ShaderModuleParseResult* parseResult,
-        std::unique_ptr<OwnedCompilationMessages>* compilationMessages) = 0;
+        ShaderModuleParseResult* parseResult) = 0;
     // Note that previousSwapChain may be nullptr, or come from a different backend.
     virtual ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
@@ -540,11 +547,6 @@ class DeviceBase : public ErrorSink,
     // GPU or check errors.
     virtual void DestroyImpl() = 0;
 
-    virtual MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
-                                                   uint64_t sourceOffset,
-                                                   BufferBase* destination,
-                                                   uint64_t destinationOffset,
-                                                   uint64_t size) = 0;
     virtual MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
                                                     const TexelCopyBufferLayout& src,
                                                     const TextureCopy& dst,

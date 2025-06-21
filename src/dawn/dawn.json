@@ -89,6 +89,13 @@
             {"name": "xr compatible", "type": "bool"}
         ]
     },
+    "request adapter WebGPU backend options": {
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["request adapter options"],
+        "tags": ["dawn", "native"],
+        "members": []
+    },
     "request adapter callback": {
         "category": "callback function",
         "args": [
@@ -155,7 +162,7 @@
                 "name": "request device",
                 "returns": "future",
                 "args": [
-                    {"name": "options", "type": "device descriptor", "annotation": "const*", "optional": true, "no_default": true},
+                    {"name": "descriptor", "type": "device descriptor", "annotation": "const*", "optional": true, "no_default": true},
                     {"name": "callback info", "type": "request device callback info"}
                 ]
             },
@@ -433,13 +440,6 @@
             {"name": "present modes", "type": "present mode", "annotation": "const*", "length": "present mode count"},
             {"name": "alpha mode count", "type": "size_t"},
             {"name": "alpha modes", "type": "composite alpha mode", "annotation": "const*", "length": "alpha mode count"}
-        ],
-        "methods": [
-            {
-                "name": "free members",
-                "returns": "void",
-                "args": []
-            }
         ]
     },
     "surface configuration": {
@@ -495,21 +495,13 @@
         ]
     },
 
-    "bind group layout entry array size": {
-        "category": "structure",
-        "chained": "in",
-        "chain roots": ["bind group layout entry"],
-        "members": [
-            {"name": "array size", "type": "uint32_t", "default": 0}
-        ]
-    },
-
     "bind group layout entry": {
         "category": "structure",
         "extensible": "in",
         "members": [
             {"name": "binding", "type": "uint32_t"},
             {"name": "visibility", "type": "shader stage"},
+            {"name": "binding array size", "type": "uint32_t", "default": 0},
             {"name": "buffer", "type": "buffer binding layout", "default": "zero"},
             {"name": "sampler", "type": "sampler binding layout", "default": "zero"},
             {"name": "texture", "type": "texture binding layout", "default": "zero"},
@@ -1592,20 +1584,19 @@
             {"name": "max compute workgroup size y", "type": "uint32_t", "default": "limit u32 undefined"},
             {"name": "max compute workgroup size z", "type": "uint32_t", "default": "limit u32 undefined"},
             {"name": "max compute workgroups per dimension", "type": "uint32_t", "default": "limit u32 undefined"},
-            {"name": "max immediate size", "type": "uint32_t", "default": "limit u32 undefined"},
+            {"name": "max immediate size", "type": "uint32_t", "default": "limit u32 undefined"}
+        ]
+    },
+    "compatibility mode limits": {
+        "category": "structure",
+        "chained": "out",
+        "chain roots": ["limits"],
+        "tags": ["compat"],
+        "members": [
             {"name": "max storage buffers in vertex stage", "type": "uint32_t", "default": "limit u32 undefined"},
             {"name": "max storage textures in vertex stage", "type": "uint32_t", "default": "limit u32 undefined"},
             {"name": "max storage buffers in fragment stage", "type": "uint32_t", "default": "limit u32 undefined"},
             {"name": "max storage textures in fragment stage", "type": "uint32_t", "default": "limit u32 undefined"}
-        ]
-    },
-    "adapter properties subgroups": {
-        "category": "structure",
-        "chained": "out",
-        "chain roots": ["adapter info"],
-        "members": [
-            {"name": "subgroup min size", "type": "uint32_t", "default": "limit u32 undefined"},
-            {"name": "subgroup max size", "type": "uint32_t", "default": "limit u32 undefined"}
         ]
     },
     "dawn texel copy buffer row alignment limits": {
@@ -2168,6 +2159,13 @@
             {"name": "fake OOM at device", "type": "bool"}
         ]
     },
+    "dawn fake device initialize error for testing": {
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["device descriptor"],
+        "tags": ["dawn"],
+        "members": []
+    },
     "shared fence type": {
         "category": "enum",
         "tags": ["dawn", "native"],
@@ -2331,7 +2329,8 @@
             {"value": 54, "name": "flexible texture views", "tags": ["dawn"]},
             {"value": 55, "name": "chromium experimental subgroup matrix", "tags": ["dawn"]},
             {"value": 56, "name": "shared fence EGL sync", "tags": ["dawn", "native"]},
-            {"value": 57, "name": "dawn device allocator control", "tags": ["dawn"]}
+            {"value": 57, "name": "dawn device allocator control", "tags": ["dawn"]},
+            {"value": 58, "name": "texture formats tier1", "tags": ["dawn"]}
         ]
     },
     "filter mode": {
@@ -2825,7 +2824,8 @@
     "queue work done callback": {
         "category": "callback function",
         "args": [
-            {"name": "status", "type": "queue work done status"}
+            {"name": "status", "type": "queue work done status"},
+            {"name": "message", "type": "string view"}
         ]
     },
     "queue work done callback info": {
@@ -3374,8 +3374,8 @@
             {"name": "stencil read mask", "type": "uint32_t", "default": "0xFFFFFFFF"},
             {"name": "stencil write mask", "type": "uint32_t", "default": "0xFFFFFFFF"},
             {"name": "depth bias", "type": "int32_t", "default": "0"},
-            {"name": "depth bias slope scale", "type": "float", "default": "0.0f"},
-            {"name": "depth bias clamp", "type": "float", "default": "0.0f"}
+            {"name": "depth bias slope scale", "type": "float", "default": "0.f"},
+            {"name": "depth bias clamp", "type": "float", "default": "0.f"}
         ]
     },
 
@@ -3465,8 +3465,8 @@
             {"name": "mag filter", "type": "filter mode", "default": "nearest"},
             {"name": "min filter", "type": "filter mode", "default": "nearest"},
             {"name": "mipmap filter", "type": "mipmap filter mode", "default": "nearest"},
-            {"name": "lod min clamp", "type": "float", "default": "0.0f"},
-            {"name": "lod max clamp", "type": "float", "default": "32.0f"},
+            {"name": "lod min clamp", "type": "float", "default": "0.f"},
+            {"name": "lod max clamp", "type": "float", "default": "32.f"},
             {"name": "compare", "type": "compare function"},
             {"name": "max anisotropy", "type": "uint16_t", "default": "1"}
         ]
@@ -3798,10 +3798,9 @@
             {"value": 9, "name": "surface source XCB window"},
             {"value": 10, "name": "surface color management", "tags": ["upstream", "emscripten"]},
             {"value": 11, "name": "request adapter WebXR options", "tags": ["upstream", "emscripten"]},
-            {"value": 12, "name": "adapter properties subgroups"},
-            {"value": 13, "name": "bind group layout entry array size"},
 
-            {"value": 0, "name": "texture binding view dimension descriptor", "tags": ["compat"]},
+            {"value": 0, "name": "compatibility mode limits", "tags": ["compat"]},
+            {"value": 1, "name": "texture binding view dimension descriptor", "tags": ["compat"]},
 
             {"value": 0, "name": "emscripten surface source canvas HTML selector", "tags": ["emscripten"]},
 
@@ -3873,7 +3872,9 @@
             {"value": 65, "name": "surface descriptor from windows WinUI swap chain panel", "tags": ["dawn"]},
             {"value": 66, "name": "dawn device allocator control", "tags": ["dawn"]},
             {"value": 67, "name": "dawn host mapped pointer limits", "tags": ["dawn"]},
-            {"value": 68, "name": "render pass descriptor resolve rect", "tags": ["dawn"]}
+            {"value": 68, "name": "render pass descriptor resolve rect", "tags": ["dawn"]},
+            {"value": 69, "name": "request adapter WebGPU backend options", "tags": ["dawn", "native"]},
+            {"value": 70, "name": "dawn fake device initialize error for testing", "tags": ["dawn"]}
         ]
     },
     "texture": {
@@ -4245,6 +4246,8 @@
             {"value": 3, "name": "unrestricted pointer parameters", "jsrepr": "'unrestricted_pointer_parameters'"},
             {"value": 4, "name": "pointer composite access", "jsrepr": "'pointer_composite_access'"},
             {"value": 5, "name": "sized binding array", "jsrepr": "'sized_binding_array'"},
+            {"value": 6, "name": "texel buffers", "jsrepr": "'texel_buffers'"},
+            {"value": 7, "name": "texture sample level 1d",  "jsrepr": "'texture_sample_level_1d'", "tags": ["dawn"]},
 
             {"value": 0, "name": "chromium testing unimplemented", "jsrepr": "'chromium_testing_unimplemented'", "tags": ["dawn"]},
             {"value": 1, "name": "chromium testing unsafe experimental", "jsrepr": "'chromium_testing_unsafe_experimental'", "tags": ["dawn"]},

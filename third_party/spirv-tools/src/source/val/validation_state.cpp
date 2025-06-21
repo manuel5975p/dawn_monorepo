@@ -74,6 +74,7 @@ ModuleLayoutSection InstructionLayoutSection(
     case spv::Op::OpMemberDecorateStringGOOGLE:
       return kLayoutAnnotations;
     case spv::Op::OpTypeForwardPointer:
+    case spv::Op::OpTypeTaskSequenceINTEL:
       return kLayoutTypes;
     case spv::Op::OpVariable:
     case spv::Op::OpUntypedVariableKHR:
@@ -397,6 +398,9 @@ void ValidationState_t::RegisterCapability(spv::Capability cap) {
     case spv::Capability::Float16:
     case spv::Capability::Float16Buffer:
       features_.declare_float16_type = true;
+      break;
+    case spv::Capability::Float8EXT:
+      features_.declare_float8_type = true;
       break;
     case spv::Capability::StorageUniformBufferBlock16:
     case spv::Capability::StorageUniform16:
@@ -978,6 +982,37 @@ bool ValidationState_t::IsBfloat16VectorType(uint32_t id) const {
   }
 
   return false;
+}
+
+bool ValidationState_t::IsFP8ScalarType(uint32_t id) const {
+  const Instruction* inst = FindDef(id);
+  if (inst && inst->opcode() == spv::Op::OpTypeFloat) {
+    if (inst->words().size() > 3) {
+      auto encoding = inst->GetOperandAs<spv::FPEncoding>(2);
+      if ((encoding == spv::FPEncoding::Float8E4M3EXT) ||
+          (encoding == spv::FPEncoding::Float8E5M2EXT)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool ValidationState_t::IsFP8VectorType(uint32_t id) const {
+  const Instruction* inst = FindDef(id);
+  if (!inst) {
+    return false;
+  }
+
+  if (inst->opcode() == spv::Op::OpTypeVector) {
+    return IsFP8ScalarType(GetComponentType(id));
+  }
+
+  return false;
+}
+
+bool ValidationState_t::IsFP8ScalarOrVectorType(uint32_t id) const {
+  return IsFP8ScalarType(id) || IsFP8VectorType(id);
 }
 
 bool ValidationState_t::IsFloatScalarType(uint32_t id) const {
@@ -1904,6 +1939,7 @@ bool ValidationState_t::IsValidStorageClass(
       case spv::StorageClass::HitObjectAttributeNV:
       case spv::StorageClass::TileImageEXT:
       case spv::StorageClass::NodePayloadAMDX:
+      case spv::StorageClass::TileAttachmentQCOM:
         return true;
       default:
         return false;
@@ -1911,6 +1947,14 @@ bool ValidationState_t::IsValidStorageClass(
   }
 
   return true;
+}
+
+std::string ValidationState_t::MissingFeature(const std::string& feature,
+                                              const std::string& cmdline,
+                                              bool hint) const {
+  return "\nThis is " + (hint ? std::string("may be ") : "") +
+         "allowed if you enable the " + feature + " (or use the " + cmdline +
+         " command line flag)";
 }
 
 #define VUID_WRAP(vuid) "[" #vuid "] "
@@ -2449,8 +2493,6 @@ std::string ValidationState_t::VkErrorID(uint32_t id,
       return VUID_WRAP(VUID-StandaloneSpirv-OpImage-04777);
     case 4780:
       return VUID_WRAP(VUID-StandaloneSpirv-Result-04780);
-    case 4781:
-      return VUID_WRAP(VUID-StandaloneSpirv-Base-04781);
     case 4915:
       return VUID_WRAP(VUID-StandaloneSpirv-Location-04915);
     case 4916:
@@ -2592,8 +2634,37 @@ std::string ValidationState_t::VkErrorID(uint32_t id,
       return VUID_WRAP(VUID-StandaloneSpirv-OpTypeFloat-10370);
     case 10583:
       return VUID_WRAP(VUID-StandaloneSpirv-Component-10583);
+    case 10589:
+      return VUID_WRAP(VUID-CullPrimitiveEXT-CullPrimitiveEXT-10589);
+    case 10590:
+      return VUID_WRAP(VUID-CullPrimitiveEXT-CullPrimitiveEXT-10590);
+    case 10591:
+      return VUID_WRAP(VUID-CullPrimitiveEXT-CullPrimitiveEXT-10591);
+    case 10592:
+      return VUID_WRAP(VUID-Layer-Layer-10592);
+    case 10593:
+      return VUID_WRAP(VUID-Layer-Layer-10593);
+    case 10594:
+      return VUID_WRAP(VUID-Layer-Layer-10594);
+    case 10598:
+      return VUID_WRAP(VUID-PrimitiveShadingRateKHR-PrimitiveShadingRateKHR-10598);
+    case 10599:
+      return VUID_WRAP(VUID-PrimitiveShadingRateKHR-PrimitiveShadingRateKHR-10599);
+    case 10600:
+      return VUID_WRAP(VUID-PrimitiveShadingRateKHR-PrimitiveShadingRateKHR-10600);
+    case 10601:
+      return VUID_WRAP(VUID-ViewportIndex-ViewportIndex-10601);
+    case 10602:
+      return VUID_WRAP(VUID-ViewportIndex-ViewportIndex-10602);
+    case 10603:
+      return VUID_WRAP(VUID-ViewportIndex-ViewportIndex-10603);
     case 10684:
       return VUID_WRAP(VUID-StandaloneSpirv-None-10684);
+    case 10685:
+      return VUID_WRAP(VUID-StandaloneSpirv-None-10685);
+    case 10824:
+      // This use to be a standalone, but maintenance9 will set allow_vulkan_32_bit_bitwise now
+      return VUID_WRAP(VUID-RuntimeSpirv-None-10824);
     default:
       return "";  // unknown id
   }

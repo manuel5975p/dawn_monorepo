@@ -359,7 +359,7 @@ TEST_F(TextureValidationTest, MipLevelCount) {
 // Test the validation of array layer count
 TEST_F(TextureValidationTest, ArrayLayerCount) {
     wgpu::TextureDescriptor defaultDescriptor = CreateDefaultTextureDescriptor();
-    wgpu::Limits supportedLimits = GetSupportedLimits();
+    const auto& supportedLimits = GetSupportedLimits();
 
     // Array layer count exceeding maxTextureArrayLayers is not allowed for 2D texture
     {
@@ -386,7 +386,7 @@ TEST_F(TextureValidationTest, ArrayLayerCount) {
 
 // Test the validation of 1D texture size
 TEST_F(TextureValidationTest, 1DTextureSize) {
-    wgpu::Limits supportedLimits = GetSupportedLimits();
+    const auto& supportedLimits = GetSupportedLimits();
 
     wgpu::TextureDescriptor defaultDescriptor;
     defaultDescriptor.size = {4, 1, 1};
@@ -432,7 +432,7 @@ TEST_F(TextureValidationTest, 1DTextureSize) {
 // Test the validation of 2D texture size
 TEST_F(TextureValidationTest, 2DTextureSize) {
     wgpu::TextureDescriptor defaultDescriptor = CreateDefaultTextureDescriptor();
-    wgpu::Limits supportedLimits = GetSupportedLimits();
+    const auto& supportedLimits = GetSupportedLimits();
 
     // Out-of-bound texture dimension is not allowed
     {
@@ -482,7 +482,7 @@ TEST_F(TextureValidationTest, 3DTextureSize) {
     wgpu::TextureDescriptor defaultDescriptor = CreateDefaultTextureDescriptor();
     defaultDescriptor.dimension = wgpu::TextureDimension::e3D;
     defaultDescriptor.usage = wgpu::TextureUsage::TextureBinding;
-    wgpu::Limits supportedLimits = GetSupportedLimits();
+    const auto& supportedLimits = GetSupportedLimits();
 
     // Out-of-bound texture dimension is not allowed
     {
@@ -1197,6 +1197,28 @@ TEST_F(TransientAttachmentValidationTest, FlagsBeyondRenderAttachment) {
                  wgpu::TextureUsage::CopySrc;
 
     ASSERT_DEVICE_ERROR(device.CreateTexture(&desc));
+}
+
+class TextureFormatsTier1TextureTest : public TextureValidationTest {
+  protected:
+    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
+        return {wgpu::FeatureName::TextureFormatsTier1};
+    }
+};
+
+// Test that r8snorm, rg8snorm and rgba8snrom formats are valid as renderable texture if
+// 'texture-formats-tier1' is enabled.
+TEST_F(TextureFormatsTier1TextureTest, SNORMFormatsAreRenderableWithFeatureEnabled) {
+    const std::array kTestFormats = {wgpu::TextureFormat::R8Snorm, wgpu::TextureFormat::RG8Snorm,
+                                     wgpu::TextureFormat::RGBA8Snorm};
+    for (auto format : kTestFormats) {
+        wgpu::TextureDescriptor descriptor;
+        descriptor.size = {1, 1, 1};
+        descriptor.usage = wgpu::TextureUsage::RenderAttachment;
+        descriptor.format = format;
+
+        wgpu::Texture texture = device.CreateTexture(&descriptor);
+    }
 }
 
 }  // anonymous namespace

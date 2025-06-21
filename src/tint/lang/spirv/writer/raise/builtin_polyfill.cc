@@ -231,12 +231,6 @@ struct State {
                             worklist.Push(builtin);
                         }
                         break;
-                    case core::BuiltinFn::kClamp:
-                        if (config.scalarize_clamp_builtin &&
-                            builtin->Result()->Type()->Is<core::type::Vector>()) {
-                            worklist.Push(builtin);
-                        }
-                        break;
                     default:
                         break;
                 }
@@ -274,9 +268,6 @@ struct State {
                     break;
                 case core::BuiltinFn::kSelect:
                     Select(builtin);
-                    break;
-                case core::BuiltinFn::kClamp:
-                    Clamp(builtin);
                     break;
                 case core::BuiltinFn::kSubgroupBroadcast:
                     SubgroupBroadcast(builtin);
@@ -536,51 +527,25 @@ struct State {
             builtin->Args()[0],
         };
 
-        // If the condition is scalar and the objects are vectors, we need to splat the condition
-        // into a vector of the same size.
-        // TODO(jrprice): We don't need to do this if we're targeting SPIR-V 1.4 or newer.
-        auto* vec = builtin->Result()->Type()->As<core::type::Vector>();
-        if (vec && args[0]->Type()->Is<core::type::Scalar>()) {
-            Vector<core::ir::Value*, 4> elements;
-            elements.Resize(vec->Width(), args[0]);
+        if (config.version < SpvVersion::kSpv14) {
+            // If the condition is scalar and the objects are vectors, we need to splat the
+            // condition into a vector of the same size.
+            auto* vec = builtin->Result()->Type()->As<core::type::Vector>();
+            if (vec && args[0]->Type()->Is<core::type::Scalar>()) {
+                Vector<core::ir::Value*, 4> elements;
+                elements.Resize(vec->Width(), args[0]);
 
-            auto* construct = b.Construct(ty.vec(ty.bool_(), vec->Width()), std::move(elements));
-            construct->InsertBefore(builtin);
-            args[0] = construct->Result();
+                auto* construct =
+                    b.Construct(ty.vec(ty.bool_(), vec->Width()), std::move(elements));
+                construct->InsertBefore(builtin);
+                args[0] = construct->Result();
+            }
         }
 
         // Replace the builtin call with a call to the spirv.select intrinsic.
         auto* call = b.CallWithResult<spirv::ir::BuiltinCall>(
             builtin->DetachResult(), spirv::BuiltinFn::kSelect, std::move(args));
         call->InsertBefore(builtin);
-        builtin->Destroy();
-    }
-
-    /// Handle a `clamp()` builtin when scalarization is required.
-    /// @param builtin the builtin call instruction
-    void Clamp(core::ir::CoreBuiltinCall* builtin) {
-        auto* e = builtin->Args()[0];
-        auto* vec = e->Type()->As<core::type::Vector>();
-        if (!vec) {
-            // Already is a scalar. No change required.
-            return;
-        }
-
-        b.InsertBefore(builtin, [&] {
-            auto* low = builtin->Args()[1];
-            auto* high = builtin->Args()[2];
-            auto* type = vec->DeepestElement();
-            Vector<core::ir::Value*, 4> args;
-            for (uint32_t i = 0; i < vec->Width(); i++) {
-                auto* access_e = b.Access(type, e, u32(i));
-                auto* access_low = b.Access(type, low, u32(i));
-                auto* access_high = b.Access(type, high, u32(i));
-                auto* scalar_call =
-                    b.Call(type, core::BuiltinFn::kClamp, access_e, access_low, access_high);
-                args.Push(scalar_call->Result());
-            }
-            b.ConstructWithResult(builtin->DetachResult(), std::move(args));
-        });
         builtin->Destroy();
     }
 

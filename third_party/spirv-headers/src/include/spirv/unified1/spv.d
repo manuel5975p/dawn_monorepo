@@ -1,27 +1,11 @@
 /+
- + Copyright (c) 2014-2024 The Khronos Group Inc.
+ + Copyright: 2014-2024 The Khronos Group Inc.
+ + License: MIT
  + 
- + Permission is hereby granted, free of charge, to any person obtaining a copy
- + of this software and/or associated documentation files (the "Materials"),
- + to deal in the Materials without restriction, including without limitation
- + the rights to use, copy, modify, merge, publish, distribute, sublicense,
- + and/or sell copies of the Materials, and to permit persons to whom the
- + Materials are furnished to do so, subject to the following conditions:
- + 
- + The above copyright notice and this permission notice shall be included in
- + all copies or substantial portions of the Materials.
- + 
- + MODIFICATIONS TO THIS FILE MAY MEAN IT NO LONGER ACCURATELY REFLECTS KHRONOS
- + STANDARDS. THE UNMODIFIED, NORMATIVE VERSIONS OF KHRONOS SPECIFICATIONS AND
- + HEADER INFORMATION ARE LOCATED AT https://www.khronos.org/registry/
- + 
- + THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- + OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- + FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- + THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- + LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- + FROM,OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE USE OR OTHER DEALINGS
- + IN THE MATERIALS.
+ + MODIFICATIONS TO THIS FILE MAY MEAN IT NO LONGER ACCURATELY REFLECTS
+ + KHRONOS STANDARDS. THE UNMODIFIED, NORMATIVE VERSIONS OF KHRONOS
+ + SPECIFICATIONS AND HEADER INFORMATION ARE LOCATED AT
+ + https://www.khronos.org/registry/
  +/
 
 /+
@@ -572,6 +556,7 @@ enum Decoration : uint
     MaxByteOffset = 45,
     AlignmentId = 46,
     MaxByteOffsetId = 47,
+    SaturatedToLargestFloat8NormalConversionEXT = 4216,
     NoSignedWrap = 4469,
     NoUnsignedWrap = 4470,
     WeightTextureQCOM = 4487,
@@ -1114,7 +1099,10 @@ enum Capability : uint
     TensorsARM = 4174,
     StorageTensorArrayDynamicIndexingARM = 4175,
     StorageTensorArrayNonUniformIndexingARM = 4176,
+    GraphARM = 4191,
     CooperativeMatrixLayoutsARM = 4201,
+    Float8EXT = 4212,
+    Float8CooperativeMatrixEXT = 4213,
     FragmentShadingRateKHR = 4422,
     SubgroupBallotKHR = 4423,
     DrawParameters = 4427,
@@ -1331,6 +1319,7 @@ enum Capability : uint
     MaskedGatherScatterINTEL = 6427,
     CacheControlsINTEL = 6441,
     RegisterLimitsINTEL = 6460,
+    BindlessImagesINTEL = 6528,
     Max = 0x7fffffff,
 }
 
@@ -1644,6 +1633,8 @@ enum RawAccessChainOperandsMask : uint
 enum FPEncoding : uint
 {
     BFloat16KHR = 0,
+    Float8E4M3EXT = 4214,
+    Float8E5M2EXT = 4215,
     Max = 0x7fffffff,
 }
 
@@ -2029,6 +2020,13 @@ enum Op : uint
     OpTensorReadARM = 4164,
     OpTensorWriteARM = 4165,
     OpTensorQuerySizeARM = 4166,
+    OpGraphConstantARM = 4181,
+    OpGraphEntryPointARM = 4182,
+    OpGraphARM = 4183,
+    OpGraphInputARM = 4184,
+    OpGraphSetOutputARM = 4185,
+    OpGraphEndARM = 4186,
+    OpTypeGraphARM = 4190,
     OpTerminateInvocation = 4416,
     OpTypeUntypedPointerKHR = 4417,
     OpUntypedVariableKHR = 4418,
@@ -2487,6 +2485,9 @@ enum Op : uint
     OpRoundFToTF32INTEL = 6426,
     OpMaskedGatherINTEL = 6428,
     OpMaskedScatterINTEL = 6429,
+    OpConvertHandleToImageINTEL = 6529,
+    OpConvertHandleToSamplerINTEL = 6530,
+    OpConvertHandleToSampledImageINTEL = 6531,
     Max = 0x7fffffff,
 }
 

@@ -54,6 +54,7 @@ set(private_headers
     "ContentLessObjectCache.h"
     "ContentLessObjectCacheable.h"
     "CoreFoundationRef.h"
+    "Defer.h"
     "DynamicLib.h"
     "egl_platform.h"
     "Enumerator.h"
@@ -68,6 +69,7 @@ set(private_headers
     "ityp_vector.h"
     "LinkedList.h"
     "Log.h"
+    "LRUCache.h"
     "MatchVariant.h"
     "Math.h"
     "Mutex.h"
@@ -108,6 +110,7 @@ set(sources
     "${DAWN_GPU_INFO_AUTOGEN_SOURCES}"
     "AlignedAlloc.cpp"
     "Assert.cpp"
+    "Defer.cpp"
     "DynamicLib.cpp"
     "FutureUtils.cpp"
     "GPUInfo.cpp"
@@ -178,6 +181,7 @@ dawn_add_library(
     PRIVATE_DEPENDS
         absl::inlined_vector
         absl::no_destructor
+        absl::overload
         dawn::partition_alloc
         dawn_shared_utils
         ${conditional_private_depends}

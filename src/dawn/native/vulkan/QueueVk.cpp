@@ -103,7 +103,7 @@ MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* co
     }
     TRACE_EVENT_END0(GetDevice()->GetPlatform(), Recording, "CommandBufferVk::RecordCommands");
 
-    DAWN_TRY(SubmitPendingCommands());
+    DAWN_TRY(SubmitPendingCommandsImpl());
 
     return {};
 }
@@ -318,7 +318,7 @@ void Queue::RecycleCompletedCommands(ExecutionSerial completedSerial) {
     mCommandsInFlight.ClearUpTo(completedSerial);
 }
 
-MaybeError Queue::SubmitPendingCommands() {
+MaybeError Queue::SubmitPendingCommandsImpl() {
     if (!mRecordingContext.needsSubmit) {
         return {};
     }
@@ -492,7 +492,6 @@ ResultOrError<bool> Queue::WaitForQueueSerial(ExecutionSerial serial, Nanosecond
             if (waitFence == VK_NULL_HANDLE) {
                 // Fence not found. This serial must have already completed.
                 // Return a VK_SUCCESS status.
-                DAWN_ASSERT(serial <= GetCompletedCommandSerial());
                 return VkResult::WrapUnsafe(VK_SUCCESS);
             }
             // Wait for the fence.

@@ -133,6 +133,7 @@ class Printer : public tint::TextGenerator {
                 core::ir::Capability::kAllowAnyLetType,
                 core::ir::Capability::kAllowModuleScopeLets,
                 core::ir::Capability::kAllowWorkspacePointerInputToEntryPoint,
+                core::ir::Capability::kAllowNonCoreTypes,
             });
         if (valid != Success) {
             return std::move(valid.Failure());
@@ -357,9 +358,6 @@ class Printer : public tint::TextGenerator {
                 case core::ir::Function::PipelineStage::kUndefined:
                     break;
             }
-            if (func->IsEntryPoint()) {
-                result_.workgroup_info.allocations.insert({func_name, {}});
-            }
 
             EmitType(out, func->ReturnType());
             out << " " << func_name << "(";
@@ -428,7 +426,7 @@ class Printer : public tint::TextGenerator {
                     func->Stage() == core::ir::Function::PipelineStage::kCompute) {
                     auto* ty = ptr->StoreType();
 
-                    auto& allocations = result_.workgroup_info.allocations.at(func_name);
+                    auto& allocations = result_.workgroup_info.allocations;
                     out << " [[threadgroup(" << allocations.size() << ")]]";
                     allocations.push_back(ty->Size());
 
@@ -665,7 +663,9 @@ class Printer : public tint::TextGenerator {
 
         if (current_function_ == nullptr) {
             // program scope let
-            out << "constexpr constant ";
+            // TODO(crbug.com/419804339): This should be 'constexpr constant' but the matrix class
+            // (constructor) in metal is not constexpr.
+            out << "const constant ";
         }
         EmitType(out, l->Result()->Type());
         out << " ";
@@ -1416,6 +1416,9 @@ class Printer : public tint::TextGenerator {
     /// @param vec the vector to emit
     void EmitVectorType(StringStream& out, const core::type::Vector* vec) {
         if (vec->Packed()) {
+            // packed_bool* vectors are accepted by the MSL compiler but are reserved by the MSL
+            // spec, and cause issues with some drivers (see crbug.com/424772881).
+            TINT_ASSERT(!vec->IsBoolVector());
             out << "packed_";
         }
         EmitType(out, vec->Type());

@@ -55,19 +55,19 @@ namespace {
 using OptionalVertexPullingTransformConfig = std::optional<tint::VertexPullingConfig>;
 using SubstituteOverrideConfig = std::unordered_map<tint::OverrideId, double>;
 
-#define MSL_COMPILATION_REQUEST_MEMBERS(X)                                                \
-    X(SingleShaderStage, stage)                                                           \
-    X(ShaderModuleBase::ShaderModuleHash, shaderModuleHash)                               \
-    X(CacheKey::UnsafeUnkeyedValue<ShaderModuleBase::ScopedUseTintProgram>, inputProgram) \
-    X(SubstituteOverrideConfig, substituteOverrideConfig)                                 \
-    X(LimitsForCompilationRequest, limits)                                                \
-    X(CacheKey::UnsafeUnkeyedValue<LimitsForCompilationRequest>, adapterSupportedLimits)  \
-    X(uint32_t, maxSubgroupSize)                                                          \
-    X(std::string, entryPointName)                                                        \
-    X(bool, usesSubgroupMatrix)                                                           \
-    X(bool, disableSymbolRenaming)                                                        \
-    X(tint::msl::writer::Options, tintOptions)                                            \
-    X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, platform)
+#define MSL_COMPILATION_REQUEST_MEMBERS(X)                                           \
+    X(SingleShaderStage, stage)                                                      \
+    X(ShaderModuleBase::ShaderModuleHash, shaderModuleHash)                          \
+    X(UnsafeUnserializedValue<ShaderModuleBase::ScopedUseTintProgram>, inputProgram) \
+    X(SubstituteOverrideConfig, substituteOverrideConfig)                            \
+    X(LimitsForCompilationRequest, limits)                                           \
+    X(UnsafeUnserializedValue<LimitsForCompilationRequest>, adapterSupportedLimits)  \
+    X(uint32_t, maxSubgroupSize)                                                     \
+    X(std::string, entryPointName)                                                   \
+    X(bool, usesSubgroupMatrix)                                                      \
+    X(bool, disableSymbolRenaming)                                                   \
+    X(tint::msl::writer::Options, tintOptions)                                       \
+    X(UnsafeUnserializedValue<dawn::platform::Platform*>, platform)
 
 DAWN_MAKE_CACHE_REQUEST(MslCompilationRequest, MSL_COMPILATION_REQUEST_MEMBERS);
 #undef MSL_COMPILATION_REQUEST_MEMBERS
@@ -105,10 +105,9 @@ ResultOrError<Ref<ShaderModule>> ShaderModule::Create(
     Device* device,
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
     const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* parseResult,
-    std::unique_ptr<OwnedCompilationMessages>* compilationMessages) {
+    ShaderModuleParseResult* parseResult) {
     Ref<ShaderModule> module = AcquireRef(new ShaderModule(device, descriptor, internalExtensions));
-    DAWN_TRY(module->Initialize(parseResult, compilationMessages));
+    DAWN_TRY(module->Initialize(parseResult));
     return module;
 }
 
@@ -119,10 +118,8 @@ ShaderModule::ShaderModule(Device* device,
 
 ShaderModule::~ShaderModule() = default;
 
-MaybeError ShaderModule::Initialize(
-    ShaderModuleParseResult* parseResult,
-    std::unique_ptr<OwnedCompilationMessages>* compilationMessages) {
-    return InitializeBase(parseResult, compilationMessages);
+MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult) {
+    return InitializeBase(parseResult);
 }
 
 namespace {
@@ -275,12 +272,12 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     MslCompilationRequest req = {};
     req.stage = stage;
     req.shaderModuleHash = programmableStage.module->GetHash();
-    req.inputProgram = programmableStage.module->UseTintProgram();
+    req.inputProgram = UnsafeUnserializedValue(programmableStage.module->UseTintProgram());
     req.substituteOverrideConfig = BuildSubstituteOverridesTransformConfig(programmableStage);
     req.entryPointName = programmableStage.entryPoint.c_str();
     req.disableSymbolRenaming = device->IsToggleEnabled(Toggle::DisableSymbolRenaming);
     req.usesSubgroupMatrix = programmableStage.metadata->usesSubgroupMatrix;
-    req.platform = UnsafeUnkeyedValue(device->GetPlatform());
+    req.platform = UnsafeUnserializedValue(device->GetPlatform());
 
     req.tintOptions.strip_all_names = !req.disableSymbolRenaming;
     req.tintOptions.remapped_entry_point_name = device->GetIsolatedEntryPointName();
@@ -298,11 +295,16 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     req.tintOptions.bindings = std::move(bindings);
     req.tintOptions.disable_polyfill_integer_div_mod =
         device->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
+    req.tintOptions.scalarize_max_min_clamp = device->IsToggleEnabled(Toggle::ScalarizeMaxMinClamp);
+    req.tintOptions.enable_module_constant =
+        device->IsToggleEnabled(Toggle::MetalEnableModuleConstant);
     req.tintOptions.vertex_pulling_config = std::move(vertexPullingTransformConfig);
+    req.tintOptions.enable_integer_range_analysis =
+        device->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
 
     req.limits = LimitsForCompilationRequest::Create(device->GetLimits().v1);
-    req.adapterSupportedLimits =
-        LimitsForCompilationRequest::Create(device->GetAdapter()->GetLimits().v1);
+    req.adapterSupportedLimits = UnsafeUnserializedValue(
+        LimitsForCompilationRequest::Create(device->GetAdapter()->GetLimits().v1));
     req.maxSubgroupSize = device->GetAdapter()->GetPhysicalDevice()->GetSubgroupMaxSize();
 
     CacheResult<MslCompilation> mslCompilation;
@@ -384,14 +386,12 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
                 )" +
                   msl;
 
-            auto workgroupAllocations = std::move(
-                result->workgroup_info.allocations.at(r.tintOptions.remapped_entry_point_name));
             return MslCompilation{{
                 std::move(msl),
                 r.tintOptions.remapped_entry_point_name,
                 result->needs_storage_buffer_sizes,
                 result->has_invariant_attribute,
-                std::move(workgroupAllocations),
+                std::move(result->workgroup_info.allocations),
                 localSize,
             }};
         },
@@ -400,7 +400,7 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     if (device->IsToggleEnabled(Toggle::DumpShaders)) {
         std::ostringstream dumpedMsg;
         dumpedMsg << "/* Dumped generated MSL */\n" << mslCompilation->msl;
-        device->EmitLog(WGPULoggingType_Info, dumpedMsg.str().c_str());
+        device->EmitLog(wgpu::LoggingType::Info, dumpedMsg.str().c_str());
     }
 
     return mslCompilation;

@@ -28,11 +28,20 @@
 import("../../../scripts/dawn_overrides_with_defaults.gni")
 import("../../../scripts/tint_overrides_with_defaults.gni")
 
+import("${dawn_root}/generator/dawn_generator.gni")
 import("${dawn_root}/scripts/dawn_features.gni")
 
 ###############################################################################
 # Utils for tests and samples
 ###############################################################################
+
+dawn_json_generator("dawn_utils_gen") {
+  target = "dawn_utils"
+  outputs = [
+    "src/dawn/utils/ComboLimits.h",
+    "src/dawn/utils/ComboLimits.cpp",
+  ]
+}
 
 static_library("wgpu_utils") {
   configs += [
@@ -52,11 +61,20 @@ static_library("wgpu_utils") {
     "WGPUHelpers.h",
   ]
 
+  if (!is_wasm) {
+    # TODO(crbug.com/422530025): Currently the generated files cannot be used with WASM.
+    sources += get_target_outputs(":dawn_utils_gen")
+  }
+
   public_deps = [
     "${dawn_root}/include/dawn:cpp_headers",
     "${dawn_root}/src/dawn/common",
   ]
   deps = []
+  if (!is_wasm) {
+    # TODO(crbug.com/422530025): Currently the generated files cannot be used with WASM.
+    deps += [ ":dawn_utils_gen" ]
+  }
   if (tint_build_spv_reader) {
     deps += [ "${dawn_spirv_tools_dir}:spvtools_opt" ]
   }

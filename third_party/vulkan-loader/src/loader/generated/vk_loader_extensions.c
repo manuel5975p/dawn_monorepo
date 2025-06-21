@@ -310,11 +310,19 @@ VKAPI_ATTR bool VKAPI_CALL loader_icd_init_entries(struct loader_instance* inst,
     LOOKUP_GIPA(GetPhysicalDeviceScreenPresentationSupportQNX);
 #endif // VK_USE_PLATFORM_SCREEN_QNX
 
+    // ---- VK_ARM_tensors extension commands
+    LOOKUP_GIPA(GetPhysicalDeviceExternalTensorPropertiesARM);
+
     // ---- VK_NV_optical_flow extension commands
     LOOKUP_GIPA(GetPhysicalDeviceOpticalFlowImageFormatsNV);
 
     // ---- VK_NV_cooperative_vector extension commands
     LOOKUP_GIPA(GetPhysicalDeviceCooperativeVectorPropertiesNV);
+
+    // ---- VK_OHOS_surface extension commands
+#if defined(VK_USE_PLATFORM_OHOS)
+    LOOKUP_GIPA(CreateSurfaceOHOS);
+#endif // VK_USE_PLATFORM_OHOS
 
     // ---- VK_NV_cooperative_matrix2 extension commands
     LOOKUP_GIPA(GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV);
@@ -744,6 +752,9 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     table->GetRenderingAreaGranularityKHR = (PFN_vkGetRenderingAreaGranularityKHR)gdpa(dev, "vkGetRenderingAreaGranularityKHR");
     table->GetDeviceImageSubresourceLayoutKHR = (PFN_vkGetDeviceImageSubresourceLayoutKHR)gdpa(dev, "vkGetDeviceImageSubresourceLayoutKHR");
     table->GetImageSubresourceLayout2KHR = (PFN_vkGetImageSubresourceLayout2KHR)gdpa(dev, "vkGetImageSubresourceLayout2KHR");
+
+    // ---- VK_KHR_present_wait2 extension commands
+    table->WaitForPresent2KHR = (PFN_vkWaitForPresent2KHR)gdpa(dev, "vkWaitForPresent2KHR");
 
     // ---- VK_KHR_pipeline_binary extension commands
     table->CreatePipelineBinariesKHR = (PFN_vkCreatePipelineBinariesKHR)gdpa(dev, "vkCreatePipelineBinariesKHR");
@@ -1191,6 +1202,18 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     table->CmdSetRepresentativeFragmentTestEnableNV = (PFN_vkCmdSetRepresentativeFragmentTestEnableNV)gdpa(dev, "vkCmdSetRepresentativeFragmentTestEnableNV");
     table->CmdSetCoverageReductionModeNV = (PFN_vkCmdSetCoverageReductionModeNV)gdpa(dev, "vkCmdSetCoverageReductionModeNV");
 
+    // ---- VK_ARM_tensors extension commands
+    table->CreateTensorARM = (PFN_vkCreateTensorARM)gdpa(dev, "vkCreateTensorARM");
+    table->DestroyTensorARM = (PFN_vkDestroyTensorARM)gdpa(dev, "vkDestroyTensorARM");
+    table->CreateTensorViewARM = (PFN_vkCreateTensorViewARM)gdpa(dev, "vkCreateTensorViewARM");
+    table->DestroyTensorViewARM = (PFN_vkDestroyTensorViewARM)gdpa(dev, "vkDestroyTensorViewARM");
+    table->GetTensorMemoryRequirementsARM = (PFN_vkGetTensorMemoryRequirementsARM)gdpa(dev, "vkGetTensorMemoryRequirementsARM");
+    table->BindTensorMemoryARM = (PFN_vkBindTensorMemoryARM)gdpa(dev, "vkBindTensorMemoryARM");
+    table->GetDeviceTensorMemoryRequirementsARM = (PFN_vkGetDeviceTensorMemoryRequirementsARM)gdpa(dev, "vkGetDeviceTensorMemoryRequirementsARM");
+    table->CmdCopyTensorARM = (PFN_vkCmdCopyTensorARM)gdpa(dev, "vkCmdCopyTensorARM");
+    table->GetTensorOpaqueCaptureDescriptorDataARM = (PFN_vkGetTensorOpaqueCaptureDescriptorDataARM)gdpa(dev, "vkGetTensorOpaqueCaptureDescriptorDataARM");
+    table->GetTensorViewOpaqueCaptureDescriptorDataARM = (PFN_vkGetTensorViewOpaqueCaptureDescriptorDataARM)gdpa(dev, "vkGetTensorViewOpaqueCaptureDescriptorDataARM");
+
     // ---- VK_EXT_shader_module_identifier extension commands
     table->GetShaderModuleIdentifierEXT = (PFN_vkGetShaderModuleIdentifierEXT)gdpa(dev, "vkGetShaderModuleIdentifierEXT");
     table->GetShaderModuleCreateInfoIdentifierEXT = (PFN_vkGetShaderModuleCreateInfoIdentifierEXT)gdpa(dev, "vkGetShaderModuleCreateInfoIdentifierEXT");
@@ -1558,11 +1581,19 @@ VKAPI_ATTR void VKAPI_CALL loader_init_instance_extension_dispatch_table(VkLayer
     table->GetPhysicalDeviceScreenPresentationSupportQNX = (PFN_vkGetPhysicalDeviceScreenPresentationSupportQNX)gpa(inst, "vkGetPhysicalDeviceScreenPresentationSupportQNX");
 #endif // VK_USE_PLATFORM_SCREEN_QNX
 
+    // ---- VK_ARM_tensors extension commands
+    table->GetPhysicalDeviceExternalTensorPropertiesARM = (PFN_vkGetPhysicalDeviceExternalTensorPropertiesARM)gpa(inst, "vkGetPhysicalDeviceExternalTensorPropertiesARM");
+
     // ---- VK_NV_optical_flow extension commands
     table->GetPhysicalDeviceOpticalFlowImageFormatsNV = (PFN_vkGetPhysicalDeviceOpticalFlowImageFormatsNV)gpa(inst, "vkGetPhysicalDeviceOpticalFlowImageFormatsNV");
 
     // ---- VK_NV_cooperative_vector extension commands
     table->GetPhysicalDeviceCooperativeVectorPropertiesNV = (PFN_vkGetPhysicalDeviceCooperativeVectorPropertiesNV)gpa(inst, "vkGetPhysicalDeviceCooperativeVectorPropertiesNV");
+
+    // ---- VK_OHOS_surface extension commands
+#if defined(VK_USE_PLATFORM_OHOS)
+    table->CreateSurfaceOHOS = (PFN_vkCreateSurfaceOHOS)gpa(inst, "vkCreateSurfaceOHOS");
+#endif // VK_USE_PLATFORM_OHOS
 
     // ---- VK_NV_cooperative_matrix2 extension commands
     table->GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV = (PFN_vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV)gpa(inst, "vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV");
@@ -2666,6 +2697,9 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "GetDeviceImageSubresourceLayoutKHR")) return (void *)table->GetDeviceImageSubresourceLayoutKHR;
     if (!strcmp(name, "GetImageSubresourceLayout2KHR")) return (void *)table->GetImageSubresourceLayout2KHR;
 
+    // ---- VK_KHR_present_wait2 extension commands
+    if (!strcmp(name, "WaitForPresent2KHR")) return (void *)table->WaitForPresent2KHR;
+
     // ---- VK_KHR_pipeline_binary extension commands
     if (!strcmp(name, "CreatePipelineBinariesKHR")) return (void *)table->CreatePipelineBinariesKHR;
     if (!strcmp(name, "DestroyPipelineBinaryKHR")) return (void *)table->DestroyPipelineBinaryKHR;
@@ -3112,6 +3146,18 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "CmdSetRepresentativeFragmentTestEnableNV")) return (void *)table->CmdSetRepresentativeFragmentTestEnableNV;
     if (!strcmp(name, "CmdSetCoverageReductionModeNV")) return (void *)table->CmdSetCoverageReductionModeNV;
 
+    // ---- VK_ARM_tensors extension commands
+    if (!strcmp(name, "CreateTensorARM")) return (void *)table->CreateTensorARM;
+    if (!strcmp(name, "DestroyTensorARM")) return (void *)table->DestroyTensorARM;
+    if (!strcmp(name, "CreateTensorViewARM")) return (void *)table->CreateTensorViewARM;
+    if (!strcmp(name, "DestroyTensorViewARM")) return (void *)table->DestroyTensorViewARM;
+    if (!strcmp(name, "GetTensorMemoryRequirementsARM")) return (void *)table->GetTensorMemoryRequirementsARM;
+    if (!strcmp(name, "BindTensorMemoryARM")) return (void *)table->BindTensorMemoryARM;
+    if (!strcmp(name, "GetDeviceTensorMemoryRequirementsARM")) return (void *)table->GetDeviceTensorMemoryRequirementsARM;
+    if (!strcmp(name, "CmdCopyTensorARM")) return (void *)table->CmdCopyTensorARM;
+    if (!strcmp(name, "GetTensorOpaqueCaptureDescriptorDataARM")) return (void *)table->GetTensorOpaqueCaptureDescriptorDataARM;
+    if (!strcmp(name, "GetTensorViewOpaqueCaptureDescriptorDataARM")) return (void *)table->GetTensorViewOpaqueCaptureDescriptorDataARM;
+
     // ---- VK_EXT_shader_module_identifier extension commands
     if (!strcmp(name, "GetShaderModuleIdentifierEXT")) return (void *)table->GetShaderModuleIdentifierEXT;
     if (!strcmp(name, "GetShaderModuleCreateInfoIdentifierEXT")) return (void *)table->GetShaderModuleCreateInfoIdentifierEXT;
@@ -3484,11 +3530,19 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_instance_dispatch_table(const VkLayerI
     if (!strcmp(name, "GetPhysicalDeviceScreenPresentationSupportQNX")) return (void *)table->GetPhysicalDeviceScreenPresentationSupportQNX;
 #endif // VK_USE_PLATFORM_SCREEN_QNX
 
+    // ---- VK_ARM_tensors extension commands
+    if (!strcmp(name, "GetPhysicalDeviceExternalTensorPropertiesARM")) return (void *)table->GetPhysicalDeviceExternalTensorPropertiesARM;
+
     // ---- VK_NV_optical_flow extension commands
     if (!strcmp(name, "GetPhysicalDeviceOpticalFlowImageFormatsNV")) return (void *)table->GetPhysicalDeviceOpticalFlowImageFormatsNV;
 
     // ---- VK_NV_cooperative_vector extension commands
     if (!strcmp(name, "GetPhysicalDeviceCooperativeVectorPropertiesNV")) return (void *)table->GetPhysicalDeviceCooperativeVectorPropertiesNV;
+
+    // ---- VK_OHOS_surface extension commands
+#if defined(VK_USE_PLATFORM_OHOS)
+    if (!strcmp(name, "CreateSurfaceOHOS")) return (void *)table->CreateSurfaceOHOS;
+#endif // VK_USE_PLATFORM_OHOS
 
     // ---- VK_NV_cooperative_matrix2 extension commands
     if (!strcmp(name, "GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV")) return (void *)table->GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV;
@@ -5107,6 +5161,23 @@ VKAPI_ATTR void VKAPI_CALL GetImageSubresourceLayout2KHR(
         abort(); /* Intentionally fail so user can correct issue. */
     }
     disp->GetImageSubresourceLayout2KHR(device, image, pSubresource, pLayout);
+}
+
+
+// ---- VK_KHR_present_wait2 extension trampoline/terminators
+
+VKAPI_ATTR VkResult VKAPI_CALL WaitForPresent2KHR(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    const VkPresentWait2InfoKHR*                pPresentWait2Info) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkWaitForPresent2KHR: Invalid device "
+                   "[VUID-vkWaitForPresent2KHR-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->WaitForPresent2KHR(device, swapchain, pPresentWait2Info);
 }
 
 
@@ -7980,7 +8051,8 @@ VKAPI_ATTR void VKAPI_CALL CmdCudaLaunchKernelNV(
 // ---- VK_QCOM_tile_shading extension trampoline/terminators
 
 VKAPI_ATTR void VKAPI_CALL CmdDispatchTileQCOM(
-    VkCommandBuffer                             commandBuffer) {
+    VkCommandBuffer                             commandBuffer,
+    const VkDispatchTileInfoQCOM*               pDispatchTileInfo) {
     const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
     if (NULL == disp) {
         loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
@@ -7988,7 +8060,7 @@ VKAPI_ATTR void VKAPI_CALL CmdDispatchTileQCOM(
                    "[VUID-vkCmdDispatchTileQCOM-commandBuffer-parameter]");
         abort(); /* Intentionally fail so user can correct issue. */
     }
-    disp->CmdDispatchTileQCOM(commandBuffer);
+    disp->CmdDispatchTileQCOM(commandBuffer, pDispatchTileInfo);
 }
 
 VKAPI_ATTR void VKAPI_CALL CmdBeginPerTileExecutionQCOM(
@@ -9491,6 +9563,180 @@ VKAPI_ATTR void VKAPI_CALL CmdSetCoverageReductionModeNV(
 }
 
 
+// ---- VK_ARM_tensors extension trampoline/terminators
+
+VKAPI_ATTR VkResult VKAPI_CALL CreateTensorARM(
+    VkDevice                                    device,
+    const VkTensorCreateInfoARM*                pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkTensorARM*                                pTensor) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCreateTensorARM: Invalid device "
+                   "[VUID-vkCreateTensorARM-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->CreateTensorARM(device, pCreateInfo, pAllocator, pTensor);
+}
+
+VKAPI_ATTR void VKAPI_CALL DestroyTensorARM(
+    VkDevice                                    device,
+    VkTensorARM                                 tensor,
+    const VkAllocationCallbacks*                pAllocator) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkDestroyTensorARM: Invalid device "
+                   "[VUID-vkDestroyTensorARM-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->DestroyTensorARM(device, tensor, pAllocator);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL CreateTensorViewARM(
+    VkDevice                                    device,
+    const VkTensorViewCreateInfoARM*            pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkTensorViewARM*                            pView) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCreateTensorViewARM: Invalid device "
+                   "[VUID-vkCreateTensorViewARM-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->CreateTensorViewARM(device, pCreateInfo, pAllocator, pView);
+}
+
+VKAPI_ATTR void VKAPI_CALL DestroyTensorViewARM(
+    VkDevice                                    device,
+    VkTensorViewARM                             tensorView,
+    const VkAllocationCallbacks*                pAllocator) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkDestroyTensorViewARM: Invalid device "
+                   "[VUID-vkDestroyTensorViewARM-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->DestroyTensorViewARM(device, tensorView, pAllocator);
+}
+
+VKAPI_ATTR void VKAPI_CALL GetTensorMemoryRequirementsARM(
+    VkDevice                                    device,
+    const VkTensorMemoryRequirementsInfoARM*    pInfo,
+    VkMemoryRequirements2*                      pMemoryRequirements) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetTensorMemoryRequirementsARM: Invalid device "
+                   "[VUID-vkGetTensorMemoryRequirementsARM-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->GetTensorMemoryRequirementsARM(device, pInfo, pMemoryRequirements);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL BindTensorMemoryARM(
+    VkDevice                                    device,
+    uint32_t                                    bindInfoCount,
+    const VkBindTensorMemoryInfoARM*            pBindInfos) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkBindTensorMemoryARM: Invalid device "
+                   "[VUID-vkBindTensorMemoryARM-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->BindTensorMemoryARM(device, bindInfoCount, pBindInfos);
+}
+
+VKAPI_ATTR void VKAPI_CALL GetDeviceTensorMemoryRequirementsARM(
+    VkDevice                                    device,
+    const VkDeviceTensorMemoryRequirementsARM*  pInfo,
+    VkMemoryRequirements2*                      pMemoryRequirements) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetDeviceTensorMemoryRequirementsARM: Invalid device "
+                   "[VUID-vkGetDeviceTensorMemoryRequirementsARM-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->GetDeviceTensorMemoryRequirementsARM(device, pInfo, pMemoryRequirements);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdCopyTensorARM(
+    VkCommandBuffer                             commandBuffer,
+     const VkCopyTensorInfoARM*                 pCopyTensorInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdCopyTensorARM: Invalid commandBuffer "
+                   "[VUID-vkCmdCopyTensorARM-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdCopyTensorARM(commandBuffer, pCopyTensorInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceExternalTensorPropertiesARM(
+    VkPhysicalDevice                            physicalDevice,
+    const VkPhysicalDeviceExternalTensorInfoARM* pExternalTensorInfo,
+    VkExternalTensorPropertiesARM*              pExternalTensorProperties) {
+    const VkLayerInstanceDispatchTable *disp;
+    VkPhysicalDevice unwrapped_phys_dev = loader_unwrap_physical_device(physicalDevice);
+    if (VK_NULL_HANDLE == unwrapped_phys_dev) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetPhysicalDeviceExternalTensorPropertiesARM: Invalid physicalDevice "
+                   "[VUID-vkGetPhysicalDeviceExternalTensorPropertiesARM-physicalDevice-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp = loader_get_instance_layer_dispatch(physicalDevice);
+    disp->GetPhysicalDeviceExternalTensorPropertiesARM(unwrapped_phys_dev, pExternalTensorInfo, pExternalTensorProperties);
+}
+
+VKAPI_ATTR void VKAPI_CALL terminator_GetPhysicalDeviceExternalTensorPropertiesARM(
+    VkPhysicalDevice                            physicalDevice,
+    const VkPhysicalDeviceExternalTensorInfoARM* pExternalTensorInfo,
+    VkExternalTensorPropertiesARM*              pExternalTensorProperties) {
+    struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)physicalDevice;
+    struct loader_icd_term *icd_term = phys_dev_term->this_icd_term;
+    if (NULL == icd_term->dispatch.GetPhysicalDeviceExternalTensorPropertiesARM) {
+        loader_log(icd_term->this_instance, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT, 0,
+                   "ICD associated with VkPhysicalDevice does not support GetPhysicalDeviceExternalTensorPropertiesARM");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    icd_term->dispatch.GetPhysicalDeviceExternalTensorPropertiesARM(phys_dev_term->phys_dev, pExternalTensorInfo, pExternalTensorProperties);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetTensorOpaqueCaptureDescriptorDataARM(
+    VkDevice                                    device,
+    const VkTensorCaptureDescriptorDataInfoARM* pInfo,
+    void*                                       pData) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetTensorOpaqueCaptureDescriptorDataARM: Invalid device "
+                   "[VUID-vkGetTensorOpaqueCaptureDescriptorDataARM-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetTensorOpaqueCaptureDescriptorDataARM(device, pInfo, pData);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetTensorViewOpaqueCaptureDescriptorDataARM(
+    VkDevice                                    device,
+    const VkTensorViewCaptureDescriptorDataInfoARM* pInfo,
+    void*                                       pData) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetTensorViewOpaqueCaptureDescriptorDataARM: Invalid device "
+                   "[VUID-vkGetTensorViewOpaqueCaptureDescriptorDataARM-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetTensorViewOpaqueCaptureDescriptorDataARM(device, pInfo, pData);
+}
+
+
 // ---- VK_EXT_shader_module_identifier extension trampoline/terminators
 
 VKAPI_ATTR void VKAPI_CALL GetShaderModuleIdentifierEXT(
@@ -10162,6 +10408,42 @@ VKAPI_ATTR void VKAPI_CALL UpdateIndirectExecutionSetShaderEXT(
     disp->UpdateIndirectExecutionSetShaderEXT(device, indirectExecutionSet, executionSetWriteCount, pExecutionSetWrites);
 }
 
+
+// ---- VK_OHOS_surface extension trampoline/terminators
+
+#if defined(VK_USE_PLATFORM_OHOS)
+VKAPI_ATTR VkResult VKAPI_CALL CreateSurfaceOHOS(
+    VkInstance                                  instance,
+    const VkSurfaceCreateInfoOHOS*              pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkSurfaceKHR*                               pSurface) {
+    struct loader_instance *inst = loader_get_instance(instance);
+    if (NULL == inst) {
+        loader_log(
+            NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+            "vkCreateSurfaceOHOS: Invalid instance [VUID-vkCreateSurfaceOHOS-instance-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+#error("Not implemented. Likely needs to be manually generated!");
+    return inst->disp->CreateSurfaceOHOS(instance, pCreateInfo, pAllocator, pSurface);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateSurfaceOHOS(
+    VkInstance                                  instance,
+    const VkSurfaceCreateInfoOHOS*              pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkSurfaceKHR*                               pSurface) {
+    struct loader_instance *inst = loader_get_instance(instance);
+    if (NULL == inst) {
+        loader_log(
+            NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+            "vkCreateSurfaceOHOS: Invalid instance [VUID-vkCreateSurfaceOHOS-instance-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+#error("Not implemented. Likely needs to be manually generated!");
+}
+
+#endif // VK_USE_PLATFORM_OHOS
 
 // ---- VK_NV_cooperative_matrix2 extension trampoline/terminators
 
@@ -11196,6 +11478,12 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
     }
     if (!strcmp("vkGetImageSubresourceLayout2KHR", name)) {
         *addr = (void *)GetImageSubresourceLayout2KHR;
+        return true;
+    }
+
+    // ---- VK_KHR_present_wait2 extension commands
+    if (!strcmp("vkWaitForPresent2KHR", name)) {
+        *addr = (void *)WaitForPresent2KHR;
         return true;
     }
 
@@ -12517,6 +12805,52 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
         return true;
     }
 
+    // ---- VK_ARM_tensors extension commands
+    if (!strcmp("vkCreateTensorARM", name)) {
+        *addr = (void *)CreateTensorARM;
+        return true;
+    }
+    if (!strcmp("vkDestroyTensorARM", name)) {
+        *addr = (void *)DestroyTensorARM;
+        return true;
+    }
+    if (!strcmp("vkCreateTensorViewARM", name)) {
+        *addr = (void *)CreateTensorViewARM;
+        return true;
+    }
+    if (!strcmp("vkDestroyTensorViewARM", name)) {
+        *addr = (void *)DestroyTensorViewARM;
+        return true;
+    }
+    if (!strcmp("vkGetTensorMemoryRequirementsARM", name)) {
+        *addr = (void *)GetTensorMemoryRequirementsARM;
+        return true;
+    }
+    if (!strcmp("vkBindTensorMemoryARM", name)) {
+        *addr = (void *)BindTensorMemoryARM;
+        return true;
+    }
+    if (!strcmp("vkGetDeviceTensorMemoryRequirementsARM", name)) {
+        *addr = (void *)GetDeviceTensorMemoryRequirementsARM;
+        return true;
+    }
+    if (!strcmp("vkCmdCopyTensorARM", name)) {
+        *addr = (void *)CmdCopyTensorARM;
+        return true;
+    }
+    if (!strcmp("vkGetPhysicalDeviceExternalTensorPropertiesARM", name)) {
+        *addr = (void *)GetPhysicalDeviceExternalTensorPropertiesARM;
+        return true;
+    }
+    if (!strcmp("vkGetTensorOpaqueCaptureDescriptorDataARM", name)) {
+        *addr = (void *)GetTensorOpaqueCaptureDescriptorDataARM;
+        return true;
+    }
+    if (!strcmp("vkGetTensorViewOpaqueCaptureDescriptorDataARM", name)) {
+        *addr = (void *)GetTensorViewOpaqueCaptureDescriptorDataARM;
+        return true;
+    }
+
     // ---- VK_EXT_shader_module_identifier extension commands
     if (!strcmp("vkGetShaderModuleIdentifierEXT", name)) {
         *addr = (void *)GetShaderModuleIdentifierEXT;
@@ -12714,6 +13048,16 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
         *addr = (void *)UpdateIndirectExecutionSetShaderEXT;
         return true;
     }
+
+    // ---- VK_OHOS_surface extension commands
+#if defined(VK_USE_PLATFORM_OHOS)
+    if (!strcmp("vkCreateSurfaceOHOS", name)) {
+        *addr = (ptr_instance->enabled_extensions.ohos_surface == 1)
+                     ? (void *)CreateSurfaceOHOS
+                     : NULL;
+        return true;
+    }
+#endif // VK_USE_PLATFORM_OHOS
 
     // ---- VK_NV_cooperative_matrix2 extension commands
     if (!strcmp("vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV", name)) {
@@ -13000,6 +13344,11 @@ void fill_out_enabled_instance_extensions(uint32_t extension_count, const char *
 
     // ---- VK_NV_display_stereo extension commands
         else if (0 == strcmp(extension_list[i], VK_NV_DISPLAY_STEREO_EXTENSION_NAME)) { enables->nv_display_stereo = 1; }
+
+    // ---- VK_OHOS_surface extension commands
+#if defined(VK_USE_PLATFORM_OHOS)
+        else if (0 == strcmp(extension_list[i], VK_OHOS_SURFACE_EXTENSION_NAME)) { enables->ohos_surface = 1; }
+#endif // VK_USE_PLATFORM_OHOS
     }
 }
 
@@ -13342,11 +13691,19 @@ const VkLayerInstanceDispatchTable instance_disp = {
     .GetPhysicalDeviceScreenPresentationSupportQNX = terminator_GetPhysicalDeviceScreenPresentationSupportQNX,
 #endif // VK_USE_PLATFORM_SCREEN_QNX
 
+    // ---- VK_ARM_tensors extension commands
+    .GetPhysicalDeviceExternalTensorPropertiesARM = terminator_GetPhysicalDeviceExternalTensorPropertiesARM,
+
     // ---- VK_NV_optical_flow extension commands
     .GetPhysicalDeviceOpticalFlowImageFormatsNV = terminator_GetPhysicalDeviceOpticalFlowImageFormatsNV,
 
     // ---- VK_NV_cooperative_vector extension commands
     .GetPhysicalDeviceCooperativeVectorPropertiesNV = terminator_GetPhysicalDeviceCooperativeVectorPropertiesNV,
+
+    // ---- VK_OHOS_surface extension commands
+#if defined(VK_USE_PLATFORM_OHOS)
+    .CreateSurfaceOHOS = terminator_CreateSurfaceOHOS,
+#endif // VK_USE_PLATFORM_OHOS
 
     // ---- VK_NV_cooperative_matrix2 extension commands
     .GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV = terminator_GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV,
@@ -13425,5 +13782,8 @@ const char *const LOADER_INSTANCE_EXTENSIONS[] = {
                                                   VK_LUNARG_DIRECT_DRIVER_LOADING_EXTENSION_NAME,
                                                   VK_EXT_LAYER_SETTINGS_EXTENSION_NAME,
                                                   VK_NV_DISPLAY_STEREO_EXTENSION_NAME,
+#if defined(VK_USE_PLATFORM_OHOS)
+                                                  VK_OHOS_SURFACE_EXTENSION_NAME,
+#endif // VK_USE_PLATFORM_OHOS
                                                   NULL };
 // clang-format on

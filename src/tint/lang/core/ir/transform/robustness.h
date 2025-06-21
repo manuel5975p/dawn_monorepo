@@ -29,6 +29,7 @@
 #define SRC_TINT_LANG_CORE_IR_TRANSFORM_ROBUSTNESS_H_
 
 #include <unordered_set>
+#include "src/tint/lang/core/ir/validator.h"
 
 #include "src/tint/api/common/binding_point.h"
 #include "src/tint/utils/reflection.h"
@@ -40,6 +41,9 @@ class Module;
 }
 
 namespace tint::core::ir::transform {
+
+/// The capabilities that the transform can support.
+const Capabilities kRobustnessCapabilities{Capability::kAllowDuplicateBindings};
 
 /// Configuration options that control when to clamp accesses.
 struct RobustnessConfig {
@@ -72,6 +76,9 @@ struct RobustnessConfig {
     /// Should the transform skip index clamping on runtime-sized arrays?
     bool disable_runtime_sized_array_index_clamping = false;
 
+    /// Should the integer range analysis be used before doing index clamping?
+    bool use_integer_range_analysis = false;
+
     /// Reflection for this class
     TINT_REFLECT(RobustnessConfig,
                  clamp_value,
@@ -82,8 +89,10 @@ struct RobustnessConfig {
                  clamp_storage,
                  clamp_uniform,
                  clamp_workgroup,
+                 predicate_subgroup_matrix,
                  bindings_ignored,
-                 disable_runtime_sized_array_index_clamping);
+                 disable_runtime_sized_array_index_clamping,
+                 use_integer_range_analysis);
 };
 
 /// Robustness is a transform that prevents out-of-bounds memory accesses.

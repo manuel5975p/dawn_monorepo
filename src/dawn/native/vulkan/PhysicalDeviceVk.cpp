@@ -447,8 +447,9 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     // 2. subgroupSupportedStages includes compute and fragment stage bit, and
     // 3. subgroupSupportedOperations includes vote, ballot, shuffle, shuffle relative, arithmetic,
     //    and quad bits, and
-    // 4. VK_EXT_subgroup_size_control extension is valid, and both subgroupSizeControl
-    //    and computeFullSubgroups is TRUE in VkPhysicalDeviceSubgroupSizeControlFeaturesEXT.
+    // 4. VK_EXT_subgroup_size_control extension is valid, and subgroupSizeControl
+    //    is TRUE in VkPhysicalDeviceSubgroupSizeControlFeaturesEXT. This is required
+    //    to support VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT.
     const bool hasBaseSubgroupSupport =
         (mDeviceInfo.properties.apiVersion >= VK_API_VERSION_1_1) &&
         (mDeviceInfo.subgroupProperties.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
@@ -461,8 +462,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         (mDeviceInfo.subgroupProperties.supportedOperations & VK_SUBGROUP_FEATURE_ARITHMETIC_BIT) &&
         (mDeviceInfo.subgroupProperties.supportedOperations & VK_SUBGROUP_FEATURE_QUAD_BIT) &&
         (mDeviceInfo.HasExt(DeviceExt::SubgroupSizeControl)) &&
-        (mDeviceInfo.subgroupSizeControlFeatures.subgroupSizeControl == VK_TRUE) &&
-        (mDeviceInfo.subgroupSizeControlFeatures.computeFullSubgroups == VK_TRUE);
+        (mDeviceInfo.subgroupSizeControlFeatures.subgroupSizeControl == VK_TRUE);
 
     // If shader f16 is enabled we only enable subgroups if we extended subgroup support.
     // This means there is a vary narrow number of devices (~4%) will not get subgroup
@@ -473,7 +473,8 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         (mDeviceInfo.shaderSubgroupExtendedTypes.shaderSubgroupExtendedTypes == VK_TRUE);
 
     // Some devices (PowerVR GE8320) can apparently report subgroup size of 1.
-    const bool allowSubgroupSizeRanges = mSubgroupMinSize >= 4u && mSubgroupMaxSize <= 128u;
+    const bool allowSubgroupSizeRanges =
+        mSubgroupMinSize >= kDefaultSubgroupMinSize && mSubgroupMaxSize <= kDefaultSubgroupMaxSize;
     if (!kForceDisableSubgroups && hasBaseSubgroupSupport && hasRequiredF16Support &&
         allowSubgroupSizeRanges) {
         EnableFeature(Feature::Subgroups);
@@ -656,10 +657,10 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsInternal(wgpu::FeatureLevel 
             std::min(baseLimits.v1.maxStorageBuffersPerShaderStage + extraResources,
                      vkLimits.maxPerStageDescriptorStorageBuffers);
     }
-    limits->v1.maxStorageTexturesInFragmentStage = limits->v1.maxStorageTexturesPerShaderStage;
-    limits->v1.maxStorageBuffersInFragmentStage = limits->v1.maxStorageBuffersPerShaderStage;
-    limits->v1.maxStorageTexturesInVertexStage = limits->v1.maxStorageTexturesPerShaderStage;
-    limits->v1.maxStorageBuffersInVertexStage = limits->v1.maxStorageBuffersPerShaderStage;
+    limits->compat.maxStorageTexturesInFragmentStage = limits->v1.maxStorageTexturesPerShaderStage;
+    limits->compat.maxStorageBuffersInFragmentStage = limits->v1.maxStorageBuffersPerShaderStage;
+    limits->compat.maxStorageTexturesInVertexStage = limits->v1.maxStorageTexturesPerShaderStage;
+    limits->compat.maxStorageBuffersInVertexStage = limits->v1.maxStorageBuffersPerShaderStage;
 
     CHECK_AND_SET_V1_MIN_LIMIT(minUniformBufferOffsetAlignment, minUniformBufferOffsetAlignment);
     CHECK_AND_SET_V1_MIN_LIMIT(minStorageBufferOffsetAlignment, minStorageBufferOffsetAlignment);
@@ -815,7 +816,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
 
         // chromium:407109052: Qualcomm devices have a bug where the spirv extended op NClamp
         // modifies other components of a vector when one of the components is nan.
-        deviceToggles->Default(Toggle::VulkanScalarizeClampBuiltin, true);
+        deviceToggles->Default(Toggle::ScalarizeMaxMinClamp, true);
     }
 
     if (IsAndroidARM()) {
@@ -829,6 +830,12 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         // `unpack4x8unorm` methods can have issues on ARM. To work around the issue we re-write the
         // pack/unpack calls and do the packing manually.
         deviceToggles->Default(Toggle::PolyfillPackUnpack4x8Norm, true);
+    }
+
+    if (gpu_info::IsARM(GetVendorId())) {
+        // chromium:387000529: Arm devices have issues passing texture handles as parameters to
+        // functions for accesses without a sampler (TextureLoad).
+        deviceToggles->Default(Toggle::VulkanDirectVariableAccessTransformHandle, true);
     }
 
     if (IsAndroidSamsung() || IsAndroidQualcomm() || IsAndroidHuawei()) {
@@ -957,6 +964,12 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         GetDeviceInfo().shaderIntegerDotProductFeatures.shaderIntegerDotProduct == VK_FALSE) {
         deviceToggles->ForceSet(Toggle::PolyFillPacked4x8DotProduct, true);
     }
+
+    // Enable the integer range analysis for shader robustness by default if the corresponding
+    // platform feature is enabled.
+    deviceToggles->Default(
+        Toggle::EnableIntegerRangeAnalysisInRobustness,
+        platform->IsFeatureEnabled(platform::Features::kWebGPUEnableRangeAnalysisForRobustness));
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
@@ -1192,13 +1205,6 @@ const AHBFunctions* PhysicalDevice::GetOrLoadAHBFunctions() {
 }
 
 void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const {
-    if (auto* subgroupProperties = info.Get<AdapterPropertiesSubgroups>()) {
-        // Subgroups are supported only if subgroup size control is supported.
-        subgroupProperties->subgroupMinSize =
-            mDeviceInfo.subgroupSizeControlProperties.minSubgroupSize;
-        subgroupProperties->subgroupMaxSize =
-            mDeviceInfo.subgroupSizeControlProperties.maxSubgroupSize;
-    }
     if (auto* memoryHeapProperties = info.Get<AdapterPropertiesMemoryHeaps>()) {
         size_t count = mDeviceInfo.memoryHeaps.size();
         auto* heapInfo = new MemoryHeapInfo[count];

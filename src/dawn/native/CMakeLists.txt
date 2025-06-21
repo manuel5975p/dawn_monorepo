@@ -56,6 +56,7 @@ set(private_headers
     "BlitTextureToBuffer.h"
     "Blob.h"
     "BlobCache.h"
+    "BlockInfo.h"
     "BuddyAllocator.h"
     "BuddyMemoryAllocator.h"
     "Buffer.h"
@@ -101,6 +102,7 @@ set(private_headers
     "IntegerTypes.h"
     "InternalPipelineStore.h"
     "Limits.h"
+    "LogEmitter.h"
     "ObjectBase.h"
     "ObjectContentHasher.h"
     "PassResourceUsage.h"
@@ -129,6 +131,7 @@ set(private_headers
     "ScratchBuffer.h"
     "Serializable.h"
     "ShaderModule.h"
+    "ShaderModuleParseRequest.h"
     "SharedBufferMemory.h"
     "SharedFence.h"
     "SharedResourceMemory.h"
@@ -206,6 +209,7 @@ set(sources
     "ExternalTexture.cpp"
     "Features.cpp"
     "Format.cpp"
+    "ImmediateConstantsLayout.cpp"
     "ImmediateConstantsTracker.cpp"
     "IndirectDrawMetadata.cpp"
     "IndirectDrawValidationEncoder.cpp"
@@ -236,6 +240,7 @@ set(sources
     "Sampler.cpp"
     "ScratchBuffer.cpp"
     "ShaderModule.cpp"
+    "ShaderModuleParseRequest.cpp"
     "SharedBufferMemory.cpp"
     "SharedFence.cpp"
     "SharedResourceMemory.cpp"
@@ -571,10 +576,21 @@ if (DAWN_ENABLE_WEBGPU_ON_WEBGPU)
     )
     list(APPEND private_headers
         "webgpu/BackendWGPU.h"
+        "webgpu/BufferWGPU.h"
+        "webgpu/CommandBufferWGPU.h"
+        "webgpu/DeviceWGPU.h"
         "webgpu/Forward.h"
+        "webgpu/PhysicalDeviceWGPU.h"
+        "webgpu/QueueWGPU.h"
+        "webgpu/WebGPUError.h"
     )
     list(APPEND sources
         "webgpu/BackendWGPU.cpp"
+        "webgpu/BufferWGPU.cpp"
+        "webgpu/CommandBufferWGPU.cpp"
+        "webgpu/DeviceWGPU.cpp"
+        "webgpu/PhysicalDeviceWGPU.cpp"
+        "webgpu/QueueWGPU.cpp"
     )
 endif()
 

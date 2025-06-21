@@ -94,8 +94,12 @@ const char* str(BuiltinFn i) {
             return "image_read";
         case BuiltinFn::kImageSampleImplicitLod:
             return "image_sample_implicit_lod";
+        case BuiltinFn::kImageSampleProjImplicitLod:
+            return "image_sample_proj_implicit_lod";
         case BuiltinFn::kImageSampleExplicitLod:
             return "image_sample_explicit_lod";
+        case BuiltinFn::kImageSampleProjExplicitLod:
+            return "image_sample_proj_explicit_lod";
         case BuiltinFn::kImageSampleDrefImplicitLod:
             return "image_sample_dref_implicit_lod";
         case BuiltinFn::kImageSampleDrefExplicitLod:
@@ -241,6 +245,8 @@ tint::core::ir::Instruction::Accesses GetSideEffects(BuiltinFn fn) {
         case BuiltinFn::kImageRead:
         case BuiltinFn::kImageSampleImplicitLod:
         case BuiltinFn::kImageSampleExplicitLod:
+        case BuiltinFn::kImageSampleProjImplicitLod:
+        case BuiltinFn::kImageSampleProjExplicitLod:
         case BuiltinFn::kImageSampleDrefImplicitLod:
         case BuiltinFn::kImageSampleDrefExplicitLod:
         case BuiltinFn::kSampledImage:

@@ -63,7 +63,7 @@ struct State {
     core::type::Manager& ty{ir.Types()};
 
     // A map of single texture to the replacement var. Note, this doesn't just re-use the
-    // `texture_sampler_to_replacment` with the placeholder sampler because we can share an
+    // `texture_sampler_to_replacement` with the placeholder sampler because we can share an
     // individual texture with a texture,sampler pair. So, if we create the texture as `t1,s1` we
     // want to use that `t1` individually but if we look it up with `t1,sp` then we won't find it.
     // This secondary map exists to allow us access to textures which may have been created
@@ -379,7 +379,8 @@ struct State {
                         });
                         break;
                     }
-                    case core::BuiltinFn::kTextureSample: {
+                    case core::BuiltinFn::kTextureSample:
+                    case core::BuiltinFn::kTextureSampleLevel: {
                         // Add a new coord item so it's a vec2.
                         auto arg = call->Args()[2];
                         b.InsertBefore(call, [&] {
@@ -966,6 +967,9 @@ struct State {
 
             core::ir::Value* coords = args[idx++];
             switch (tex_type->Dim()) {
+                case core::type::TextureDimension::k1d:
+                    params.Push(coords);
+                    break;
                 case core::type::TextureDimension::k2d:
                     if (is_depth) {
                         coords = b.Construct(ty.vec3<f32>(), coords, depth_ref)->Result();
@@ -1228,7 +1232,9 @@ struct State {
 }  // namespace
 
 Result<SuccessType> TexturePolyfill(core::ir::Module& ir, const TexturePolyfillConfig& cfg) {
-    auto result = ValidateAndDumpIfNeeded(ir, "glsl.TexturePolyfill");
+    auto result = ValidateAndDumpIfNeeded(
+        ir, "glsl.TexturePolyfill",
+        core::ir::Capabilities{core::ir::Capability::kAllowDuplicateBindings});
     if (result != Success) {
         return result.Failure();
     }

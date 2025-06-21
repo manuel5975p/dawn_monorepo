@@ -55,7 +55,7 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
     {Feature::TextureCompressionBCSliced3D,
      {"Allows Block Compressed (BC) texture formats to be used with 3D dimensions",
       "https://gpuweb.github.io/gpuweb/#texture-compression-bc-sliced-3d",
-      FeatureInfo::FeatureState::Experimental}},
+      FeatureInfo::FeatureState::Stable}},
     {Feature::TextureCompressionETC2,
      {"Support Ericsson Texture Compressed (ETC2/EAC) texture formats",
       "https://gpuweb.github.io/gpuweb/#texture-compression-etc2",
@@ -69,7 +69,7 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Allows Adaptable Scalable Texture Compressed (ASTC) texture formats to be used with 3D "
       "dimensions",
       "https://gpuweb.github.io/gpuweb/#texture-compression-astc-sliced-3d",
-      FeatureInfo::FeatureState::Experimental}},
+      FeatureInfo::FeatureState::Stable}},
     {Feature::TimestampQuery,
      {"Support Timestamp Query", "https://gpuweb.github.io/gpuweb/#timestamp-query",
       FeatureInfo::FeatureState::Stable}},
@@ -380,6 +380,12 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Supports the \"enable subgroups;\" directive in WGSL.",
       "https://github.com/gpuweb/gpuweb/blob/main/proposals/subgroups.md",
       FeatureInfo::FeatureState::Stable}},
+    {Feature::TextureFormatsTier1,
+     {"Supports some new GPUTextureFormats with the RENDER_ATTACHMENT, blendable, multisampling "
+      "capabilities and the STORAGE_BINDING capability with the 'read-only' and 'write-only'"
+      "GPUStorageTextureAccesses ",
+      "https://gpuweb.github.io/gpuweb/#texture-formats-tier1",
+      FeatureInfo::FeatureState::Experimental}},
     {Feature::CoreFeaturesAndLimits,
      {"Lifts all compatibility mode restrictions (features and limits) to core when enabled on a "
       "device.",

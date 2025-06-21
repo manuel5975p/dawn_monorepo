@@ -35,6 +35,27 @@ namespace {
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
 
+TEST_F(MslWriterTest, WorkgroupAllocations_NoAllocations) {
+    auto* var_a = b.Var("a", ty.ptr<workgroup, i32>());
+    auto* var_b = b.Var("b", ty.ptr<workgroup, i32>());
+    mod.root_block->Append(var_a);
+    mod.root_block->Append(var_b);
+
+    // No allocations, but still needs an entry in the map.
+    auto* bar = b.ComputeFunction("bar");
+    b.Append(bar->Block(), [&] { b.Return(bar); });
+
+    ASSERT_TRUE(Generate()) << err_ << output_.msl;
+    EXPECT_EQ(output_.msl, R"(#include <metal_stdlib>
+using namespace metal;
+
+kernel void bar() {
+}
+)");
+
+    EXPECT_THAT(output_.workgroup_info.allocations, testing::ElementsAre());
+}
+
 TEST_F(MslWriterTest, WorkgroupAllocations) {
     auto* var_a = b.Var("a", ty.ptr<workgroup, i32>());
     auto* var_b = b.Var("b", ty.ptr<workgroup, i32>());
@@ -48,10 +69,6 @@ TEST_F(MslWriterTest, WorkgroupAllocations) {
         b.Store(var_a, b.Add<i32>(load_a, load_b));
         b.Return(foo);
     });
-
-    // No allocations, but still needs an entry in the map.
-    auto* bar = b.ComputeFunction("bar");
-    b.Append(bar->Block(), [&] { b.Return(bar); });
 
     ASSERT_TRUE(Generate()) << err_ << output_.msl;
     EXPECT_EQ(output_.msl, R"(#include <metal_stdlib>
@@ -76,19 +93,13 @@ void foo_inner(uint tint_local_index, tint_module_vars_struct tint_module_vars) 
   (*tint_module_vars.a) = as_type<int>((as_type<uint>((*tint_module_vars.a)) + as_type<uint>((*tint_module_vars.b))));
 }
 
-kernel void bar() {
-}
-
 kernel void foo(uint tint_local_index [[thread_index_in_threadgroup]], threadgroup tint_symbol_2* v [[threadgroup(0)]]) {
   tint_module_vars_struct const tint_module_vars = tint_module_vars_struct{.a=(&(*v).tint_symbol), .b=(&(*v).tint_symbol_1)};
   foo_inner(tint_local_index, tint_module_vars);
 }
 )");
-    ASSERT_EQ(output_.workgroup_info.allocations.size(), 2u);
-    ASSERT_EQ(output_.workgroup_info.allocations.count("foo"), 1u);
-    ASSERT_EQ(output_.workgroup_info.allocations.count("bar"), 1u);
-    EXPECT_THAT(output_.workgroup_info.allocations.at("foo"), testing::ElementsAre(8u));
-    EXPECT_THAT(output_.workgroup_info.allocations.at("bar"), testing::ElementsAre());
+
+    EXPECT_THAT(output_.workgroup_info.allocations, testing::ElementsAre(8u));
 }
 
 TEST_F(MslWriterTest, NeedsStorageBufferSizes_False) {
@@ -171,9 +182,13 @@ struct tint_module_vars_struct {
   const constant tint_array<uint4, 1>* tint_storage_buffer_sizes;
 };
 
+struct tint_array_lengths_struct {
+  uint tint_array_length_0_0;
+};
+
 kernel void foo(device tint_array<uint, 1>* a [[buffer(0)]], const constant tint_array<uint4, 1>* tint_storage_buffer_sizes [[buffer(30)]]) {
   tint_module_vars_struct const tint_module_vars = tint_module_vars_struct{.a=a, .tint_storage_buffer_sizes=tint_storage_buffer_sizes};
-  (*tint_module_vars.a)[0u] = ((*tint_module_vars.tint_storage_buffer_sizes)[0u].x / 4u);
+  (*tint_module_vars.a)[0u] = tint_array_lengths_struct{.tint_array_length_0_0=((*tint_module_vars.tint_storage_buffer_sizes)[0u].x / 4u)}.tint_array_length_0_0;
 }
 )");
     EXPECT_TRUE(output_.needs_storage_buffer_sizes);
@@ -274,12 +289,16 @@ struct tint_module_vars_struct {
   const constant tint_array<uint4, 1>* tint_storage_buffer_sizes;
 };
 
+struct tint_array_lengths_struct {
+  uint tint_array_length_0_1;
+};
+
 struct main_outputs {
   float4 tint_symbol [[position]];
 };
 
 float4 main_inner(uint tint_vertex_index, tint_module_vars_struct tint_module_vars) {
-  return float4(as_type<float>((*tint_module_vars.tint_vertex_buffer_0)[min(tint_vertex_index, (((*tint_module_vars.tint_storage_buffer_sizes)[0u].x / 4u) - 1u))]), 0.0f, 0.0f, 1.0f);
+  return float4(as_type<float>((*tint_module_vars.tint_vertex_buffer_0)[min(tint_vertex_index, (tint_array_lengths_struct{.tint_array_length_0_1=((*tint_module_vars.tint_storage_buffer_sizes)[0u].x / 4u)}.tint_array_length_0_1 - 1u))]), 0.0f, 0.0f, 1.0f);
 }
 
 vertex main_outputs v(uint tint_vertex_index [[vertex_id]], const device tint_array<uint, 1>* tint_vertex_buffer_0 [[buffer(1)]], const constant tint_array<uint4, 1>* tint_storage_buffer_sizes [[buffer(30)]]) {

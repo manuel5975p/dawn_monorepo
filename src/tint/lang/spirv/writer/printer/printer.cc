@@ -91,6 +91,7 @@
 #include "src/tint/lang/core/type/vector.h"
 #include "src/tint/lang/core/type/void.h"
 #include "src/tint/lang/spirv/ir/builtin_call.h"
+#include "src/tint/lang/spirv/ir/copy_logical.h"
 #include "src/tint/lang/spirv/ir/literal_operand.h"
 #include "src/tint/lang/spirv/type/explicit_layout_array.h"
 #include "src/tint/lang/spirv/type/sampled_image.h"
@@ -219,7 +220,8 @@ class Printer {
 
         // Serialize the module into binary SPIR-V.
         BinaryWriter writer;
-        writer.WriteHeader(module_.IdBound(), kWriterVersion);
+        writer.WriteHeader(module_.IdBound(), kWriterVersion,
+                           static_cast<uint32_t>(options_.spirv_version));
         writer.WriteModule(module_);
 
         output_.spirv = std::move(writer.Result());
@@ -436,6 +438,13 @@ class Printer {
                     module_.PushType(spv::Op::OpConstant,
                                      {Type(ty), id, U32Operand(constant->ValueAs<i32>())});
                 },
+                [&](const core::type::I8*) {
+                    module_.PushType(spv::Op::OpConstant, {Type(ty), id, constant->ValueAs<u32>()});
+                },
+                [&](const core::type::U8*) {
+                    module_.PushType(spv::Op::OpConstant,
+                                     {Type(ty), id, U32Operand(constant->ValueAs<i32>())});
+                },
                 [&](const core::type::F32*) {
                     module_.PushType(spv::Op::OpConstant, {Type(ty), id, constant->ValueAs<f32>()});
                 },
@@ -549,6 +558,14 @@ class Printer {
                 },
                 [&](const core::type::U32*) {
                     module_.PushType(spv::Op::OpTypeInt, {id, 32u, 0u});
+                },
+                [&](const core::type::I8*) {
+                    module_.PushCapability(SpvCapabilityInt8);
+                    module_.PushType(spv::Op::OpTypeInt, {id, 8u, 1u});
+                },
+                [&](const core::type::U8*) {
+                    module_.PushCapability(SpvCapabilityInt8);
+                    module_.PushType(spv::Op::OpTypeInt, {id, 8u, 0u});
                 },
                 [&](const core::type::F32*) { module_.PushType(spv::Op::OpTypeFloat, {id, 32u}); },
                 [&](const core::type::F16*) {
@@ -862,27 +879,35 @@ class Printer {
             }
 
             auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
-            if (!(ptr->AddressSpace() == core::AddressSpace::kIn ||
-                  ptr->AddressSpace() == core::AddressSpace::kOut)) {
-                continue;
-            }
+            if (options_.spirv_version < SpvVersion::kSpv14) {
+                // In SPIR-V 1.3 or earlier, OpEntryPoint should list only statically used
+                // input/output variables.
+                if (!(ptr->AddressSpace() == core::AddressSpace::kIn ||
+                      ptr->AddressSpace() == core::AddressSpace::kOut)) {
+                    continue;
+                }
 
-            // Determine if this IO variable is used by the entry point.
-            bool used = false;
-            for (const auto& use : var->Result()->UsagesUnsorted()) {
-                auto* block = use->instruction->Block();
-                while (block->Parent()) {
-                    block = block->Parent()->Block();
+                // Determine if this IO variable is used by the entry point.
+                bool used = false;
+                for (const auto& use : var->Result()->UsagesUnsorted()) {
+                    auto* block = use->instruction->Block();
+                    while (block->Parent()) {
+                        block = block->Parent()->Block();
+                    }
+                    if (block == func->Block()) {
+                        used = true;
+                        break;
+                    }
                 }
-                if (block == func->Block()) {
-                    used = true;
-                    break;
+                if (!used) {
+                    continue;
                 }
+                operands.push_back(Value(var));
+            } else {
+                // In SPIR-V 1.4 or later, OpEntryPoint must list all global variables statically
+                // used by the entry point. It may be a superset of the used variables though.
+                operands.push_back(Value(var));
             }
-            if (!used) {
-                continue;
-            }
-            operands.push_back(Value(var));
 
             // Add the `DepthReplacing` execution mode if `frag_depth` is used.
             if (var->Attributes().builtin == core::BuiltinValue::kFragDepth) {
@@ -986,6 +1011,7 @@ class Printer {
                 [&](core::ir::If* i) { EmitIf(i); },                                  //
                 [&](core::ir::Terminator* t) { EmitTerminator(t); },                  //
                 [&](core::ir::Discard* t) { EmitDiscard(t); },                        //
+                [&](spirv::ir::CopyLogical* c) { EmitCopyLogical(c); },               //
                 TINT_ICE_ON_NO_MATCH);
 
             // Set the name for the SPIR-V result ID if provided in the module.
@@ -1432,6 +1458,12 @@ class Printer {
             case spirv::BuiltinFn::kImageSampleExplicitLod:
                 op = spv::Op::OpImageSampleExplicitLod;
                 break;
+            case spirv::BuiltinFn::kImageSampleProjImplicitLod:
+                op = spv::Op::OpImageSampleProjImplicitLod;
+                break;
+            case spirv::BuiltinFn::kImageSampleProjExplicitLod:
+                op = spv::Op::OpImageSampleProjExplicitLod;
+                break;
             case spirv::BuiltinFn::kImageSampleDrefImplicitLod:
                 op = spv::Op::OpImageSampleDrefImplicitLod;
                 break;
@@ -1643,6 +1675,16 @@ class Printer {
         current_function_.PushInst(op, operands);
     }
 
+    /// Emit an OpCopyLogical instruction.
+    /// @param copy The logical copy instruction to emit
+    void EmitCopyLogical(spirv::ir::CopyLogical* copy) {
+        auto id = Value(copy);
+
+        OperandList operands = {Type(copy->Result()->Type()), id};
+        operands.push_back(Value(copy->Arg()));
+        current_function_.PushInst(spv::Op::OpCopyLogical, operands);
+    }
+
     uint32_t ImportGlslStd450() {
         return imports_.GetOrAdd(kGLSLstd450, [&] {
             // Import the instruction set the first time it is requested.
@@ -1833,7 +1875,7 @@ class Printer {
                 break;
             case core::BuiltinFn::kMax:
                 if (result_ty->IsFloatScalarOrVector()) {
-                    glsl_ext_inst(GLSLstd450FMax);
+                    glsl_ext_inst(GLSLstd450NMax);
                 } else if (result_ty->IsSignedIntegerScalarOrVector()) {
                     glsl_ext_inst(GLSLstd450SMax);
                 } else if (result_ty->IsUnsignedIntegerScalarOrVector()) {
@@ -1842,7 +1884,7 @@ class Printer {
                 break;
             case core::BuiltinFn::kMin:
                 if (result_ty->IsFloatScalarOrVector()) {
-                    glsl_ext_inst(GLSLstd450FMin);
+                    glsl_ext_inst(GLSLstd450NMin);
                 } else if (result_ty->IsSignedIntegerScalarOrVector()) {
                     glsl_ext_inst(GLSLstd450SMin);
                 } else if (result_ty->IsUnsignedIntegerScalarOrVector()) {

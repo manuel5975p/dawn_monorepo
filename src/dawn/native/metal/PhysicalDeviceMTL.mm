@@ -29,6 +29,7 @@
 
 #include "dawn/common/CoreFoundationRef.h"
 #include "dawn/common/GPUInfo.h"
+#include "dawn/common/GPUInfo_autogen.h"
 #include "dawn/common/Log.h"
 #include "dawn/common/NSRef.h"
 #include "dawn/common/Platform.h"
@@ -441,6 +442,15 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(Toggle::MetalRenderR8RG8UnormSmallMipToTempTexture, true);
     }
 
+    // chromium:419804339: Module constant hoisting is broadly available as a msl transform but
+    // there are execution correction issues with f16 for non apple silicon (Intel/AMD). Therefore
+    // we only enable for apple silicon for now.
+    // chromium:417519810: Mutiple cts tests will fail on AMD if module scope hoisting is not
+    // enabled on AMD. These failures will be internal compiler errors.
+    if (gpu_info::IsApple(vendorId) || gpu_info::IsAMD(vendorId)) {
+        deviceToggles->Default(Toggle::MetalEnableModuleConstant, true);
+    }
+
     // On some Intel GPUs vertex only render pipeline get wrong depth result if no fragment
     // shader provided. Create a placeholder fragment shader module to work around this issue.
     if (gpu_info::IsIntel(vendorId)) {
@@ -532,6 +542,12 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
             Toggle::MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats, true);
     }
 #endif
+
+    // Enable the integer range analysis for shader robustness by default if the corresponding
+    // platform feature is enabled.
+    deviceToggles->Default(
+        Toggle::EnableIntegerRangeAnalysisInRobustness,
+        platform->IsFeatureEnabled(platform::Features::kWebGPUEnableRangeAnalysisForRobustness));
 }
 
 MaybeError PhysicalDevice::InitializeImpl() {
@@ -633,7 +649,11 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     // Memoryless storage mode and programmable blending are available only from the Apple2
     // family of GPUs on.
     if ([*mDevice supportsFamily:MTLGPUFamilyApple2]) {
+        // Programmable blending doesn't seem to work as expected on the iOS simulator.
+        // NOTE: TARGET_OS_SIMULATOR can be defined but set to false for MacOS builds.
+#if !defined(TARGET_OS_SIMULATOR) || !TARGET_OS_SIMULATOR
         EnableFeature(Feature::FramebufferFetch);
+#endif
         EnableFeature(Feature::TransientAttachments);
     }
 
@@ -658,6 +678,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::ClipDistances);
     EnableFeature(Feature::Float32Blendable);
     EnableFeature(Feature::FlexibleTextureViews);
+    EnableFeature(Feature::TextureFormatsTier1);
 
     // The function subgroupBroadcast(f16) fails for some edge cases on intel gen-9 devices.
     // See crbug.com/391680973
@@ -875,10 +896,10 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // - maxBindGroups
     // - maxVertexBufferArrayStride
 
-    limits->v1.maxStorageBuffersInFragmentStage = limits->v1.maxStorageBuffersPerShaderStage;
-    limits->v1.maxStorageTexturesInFragmentStage = limits->v1.maxStorageTexturesPerShaderStage;
-    limits->v1.maxStorageBuffersInVertexStage = limits->v1.maxStorageBuffersPerShaderStage;
-    limits->v1.maxStorageTexturesInVertexStage = limits->v1.maxStorageTexturesPerShaderStage;
+    limits->compat.maxStorageBuffersInFragmentStage = limits->v1.maxStorageBuffersPerShaderStage;
+    limits->compat.maxStorageTexturesInFragmentStage = limits->v1.maxStorageTexturesPerShaderStage;
+    limits->compat.maxStorageBuffersInVertexStage = limits->v1.maxStorageBuffersPerShaderStage;
+    limits->compat.maxStorageTexturesInVertexStage = limits->v1.maxStorageTexturesPerShaderStage;
 
     // The memory allocation must be in a single virtual memory (VM) region.
     limits->hostMappedPointerLimits.hostMappedPointerAlignment = 4096;
@@ -893,10 +914,6 @@ FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
 }
 
 void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const {
-    if (auto* subgroupProperties = info.Get<AdapterPropertiesSubgroups>()) {
-        subgroupProperties->subgroupMinSize = 4;
-        subgroupProperties->subgroupMaxSize = 64;
-    }
     if (auto* memoryHeapProperties = info.Get<AdapterPropertiesMemoryHeaps>()) {
         if ([*mDevice hasUnifiedMemory]) {
             auto* heapInfo = new MemoryHeapInfo[1];

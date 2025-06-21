@@ -93,7 +93,10 @@ var LibraryWebGPU = {
       // care about object type, and is keyed on the pointer address.
       jsObjects: [],
       jsObjectInsert: (ptr, jsObject) => {
-        WebGPU.Internals.jsObjects[ptr] = jsObject;
+        // TODO(crbug.com/422847728): If the bindings aren't built with the same
+        // linkopts as dependencies, i.e. in google3, the pointers can be signed
+        // ints and results in crashes, so force the pointers to be unsigned.
+        WebGPU.Internals.jsObjects[(ptr >>>= 0)] = jsObject;
       },
 
       // Buffer unmapping callbacks are stored in a separate table to keep
@@ -129,10 +132,14 @@ var LibraryWebGPU = {
     // because importing is not a "move" into the API, rather just a "copy".
     getJsObject: (ptr) => {
       if (!ptr) return undefined;
+      // TODO(crbug.com/422847728): If the bindings aren't built with the same
+      // linkopts as dependencies, i.e. in google3, the pointers can be signed
+      // ints and results in crashes, so force the pointers to be unsigned.
+      var key = (ptr >>>= 0);
 #if ASSERTIONS
-      assert(ptr in WebGPU.Internals.jsObjects);
+      assert(key in WebGPU.Internals.jsObjects);
 #endif
-      return WebGPU.Internals.jsObjects[ptr];
+      return WebGPU.Internals.jsObjects[key];
     },
     {{{ gpu.makeImportJsObject('Adapter') }}}
     {{{ gpu.makeImportJsObject('BindGroup') }}}
@@ -1481,6 +1488,13 @@ var LibraryWebGPU = {
 
     function makeEntry(entryPtr) {
       {{{ gpu.makeCheck('entryPtr') }}}
+#if ASSERTIONS
+      // bindingArraySize is not specced and thus not implemented yet. We don't pass it through
+      // because if we did, then existing apps using this version of the bindings could break when
+      // browsers start accepting bindingArraySize.
+      var bindingArraySize = {{{ gpu.makeGetU32('entryPtr', C_STRUCTS.WGPUBindGroupLayoutEntry.bindingArraySize) }}};
+      assert(bindingArraySize == 0 || bindingArraySize == 1);
+#endif
 
       return {
         "binding":
@@ -1738,6 +1752,7 @@ var LibraryWebGPU = {
         "lodMaxClamp": {{{ makeGetValue('descriptor', C_STRUCTS.WGPUSamplerDescriptor.lodMaxClamp, 'float') }}},
         "compare": WebGPU.CompareFunction[
             {{{ gpu.makeGetU32('descriptor', C_STRUCTS.WGPUSamplerDescriptor.compare) }}}],
+        "maxAnisotropy": {{{ makeGetValue('descriptor', C_STRUCTS.WGPUSamplerDescriptor.maxAnisotropy, 'u16') }}},
       };
     }
 
@@ -2070,6 +2085,7 @@ var LibraryWebGPU = {
       _emwgpuOnWorkDoneCompleted(futureId, {{{ gpu.QueueWorkDoneStatus.Success }}});
     }, () => {
       {{{ runtimeKeepalivePop() }}}
+      // We could translate this into a status+message, but it's not supposed to ever happen.
       abort('Unexpected failure in GPUQueue.onSubmittedWorkDone().')
     }));
   },

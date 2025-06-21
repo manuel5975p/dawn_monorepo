@@ -46,6 +46,9 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
             if (!m->Type()->IsAnyOf<core::type::F16, core::type::F32>()) {
                 return Failure("non-float subgroup matrices are not supported by the MSL backend");
             }
+            if (m->Columns() != 8 || m->Rows() != 8) {
+                return Failure("the MSL backend only supports 8x8 subgroup matrices");
+            }
         }
     }
 
@@ -114,10 +117,6 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
         }
     }
 
-    return Success;
-}
-
-Result<Output> Generate(core::ir::Module& ir, const Options& options) {
     {
         auto res = ValidateBindingOptions(options);
         if (res != Success) {
@@ -125,6 +124,10 @@ Result<Output> Generate(core::ir::Module& ir, const Options& options) {
         }
     }
 
+    return Success;
+}
+
+Result<Output> Generate(core::ir::Module& ir, const Options& options) {
     Output output;
 
     // Raise from core-dialect to MSL-dialect.

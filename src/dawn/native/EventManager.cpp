@@ -162,27 +162,32 @@ void WaitQueueSerials(const QueueWaitSerialsMap& queueWaitSerials, Nanoseconds t
         auto waitSerial = queueAndSerial.second;
 
         auto* device = queue->GetDevice();
-        auto deviceLock(device->GetScopedLock());
-
-        [[maybe_unused]] bool error = device->ConsumedError(
-            [&]() -> MaybeError {
-                if (waitSerial > queue->GetLastSubmittedCommandSerial()) {
-                    // Serial has not been submitted yet. Submit it now.
-                    DAWN_TRY(queue->EnsureCommandsFlushed(waitSerial));
-                }
-                // Check the completed serial.
-                if (waitSerial > queue->GetCompletedCommandSerial()) {
-                    if (timeout > Nanoseconds(0)) {
-                        // Wait on the serial if it hasn't passed yet.
-                        [[maybe_unused]] bool waitResult = false;
-                        DAWN_TRY_ASSIGN(waitResult, queue->WaitForQueueSerial(waitSerial, timeout));
+        {
+            auto deviceLock(device->GetScopedLock());
+            [[maybe_unused]] bool error = device->ConsumedError(
+                [&]() -> MaybeError {
+                    if (waitSerial > queue->GetLastSubmittedCommandSerial()) {
+                        // Serial has not been submitted yet. Submit it now.
+                        DAWN_TRY(queue->EnsureCommandsFlushed(waitSerial));
                     }
-                    // Update completed serials.
-                    DAWN_TRY(queue->CheckPassedSerials());
-                }
-                return {};
-            }(),
-            "waiting for work in %s.", queue.Get());
+                    // Check the completed serial.
+                    if (waitSerial > queue->GetCompletedCommandSerial()) {
+                        if (timeout > Nanoseconds(0)) {
+                            // Wait on the serial if it hasn't passed yet.
+                            [[maybe_unused]] bool waitResult = false;
+                            DAWN_TRY_ASSIGN(waitResult,
+                                            queue->WaitForQueueSerial(waitSerial, timeout));
+                        }
+                        // Update completed serials.
+                        DAWN_TRY(queue->CheckPassedSerials());
+                    }
+                    return {};
+                }(),
+                "waiting for work in %s.", queue.Get());
+        }
+        // TODO(crbug.com/421945313): Checking and updating serials cannot hold the device-wide lock
+        // because it may cause user callbacks to fire.
+        queue->UpdateCompletedSerial(queue->GetCompletedCommandSerial());
     }
 }
 
@@ -384,13 +389,18 @@ void EventManager::SetFutureReady(TrackedEvent* event) {
 
     // Handle spontaneous completion now.
     if (event->mCallbackMode == wgpu::CallbackMode::AllowSpontaneous) {
+        // Since we use the presence of the event to indicate whether the callback has already been
+        // called in WaitAny when searching for the matching FutureID, untrack the event after
+        // calling the callbacks to ensure that we can't race on two different threads waiting on
+        // the same future. Note that only one thread will actually call the callback since
+        // EnsureComplete is thread safe.
+        event->EnsureComplete(EventCompletionType::Ready);
         mEvents.Use([&](auto events) {
             if (!events->has_value()) {
                 return;
             }
             (*events)->erase(event->mFutureID);
         });
-        event->EnsureComplete(EventCompletionType::Ready);
     }
 }
 
@@ -437,18 +447,22 @@ bool EventManager::ProcessPollEvents() {
     auto readyEnd = PrepareReadyCallbacks(futures);
     bool hasIncompleteEvents = readyEnd != futures.end();
 
-    // For all the futures we are about to complete, first ensure they're untracked.
+    // Call all the callbacks.
+    for (auto it = futures.begin(); it != readyEnd; ++it) {
+        it->event->EnsureComplete(EventCompletionType::Ready);
+    }
+
+    // Since we use the presence of the event to indicate whether the callback has already been
+    // called in WaitAny when searching for the matching FutureID, untrack the event after calling
+    // the callbacks to ensure that we can't race on two different threads waiting on the same
+    // future. Note that only one thread will actually call the callback since EnsureComplete is
+    // thread safe.
     mEvents.Use([&](auto events) {
         for (auto it = futures.begin(); it != readyEnd; ++it) {
             (*events)->erase(it->futureID);
         }
     });
 
-    // Finally, call callbacks while comparing the last process event id with any new ones that may
-    // have been created via the callbacks.
-    for (auto it = futures.begin(); it != readyEnd; ++it) {
-        it->event->EnsureComplete(EventCompletionType::Ready);
-    }
     // Note that in the event of all progressing events completing, but there exists non-progressing
     // events, we will return true one extra time.
     return hasIncompleteEvents ||
@@ -492,7 +506,8 @@ wgpu::WaitStatus EventManager::WaitAny(size_t count, FutureWaitInfo* infos, Nano
             DAWN_ASSERT(futureID != 0);
             DAWN_ASSERT(futureID < firstInvalidFutureID);
 
-            // Try to find the event.
+            // Try to find the event, if we don't find it, we can assume that it has already been
+            // completed.
             auto it = (*events)->find(futureID);
             if (it == (*events)->end()) {
                 infos[i].completed = true;
@@ -519,20 +534,23 @@ wgpu::WaitStatus EventManager::WaitAny(size_t count, FutureWaitInfo* infos, Nano
     // Enforce callback ordering
     auto readyEnd = PrepareReadyCallbacks(futures);
 
-    // For any futures that we're about to complete, first ensure they're untracked. It's OK if
-    // something actually isn't tracked anymore (because it completed elsewhere while waiting.)
-    mEvents.Use([&](auto events) {
-        for (auto it = futures.begin(); it != readyEnd; ++it) {
-            (*events)->erase(it->futureID);
-        }
-    });
-
-    // Finally, call callbacks and update return values.
+    // Call callbacks and update return values.
     for (auto it = futures.begin(); it != readyEnd; ++it) {
         // Set completed before calling the callback.
         infos[it->indexInInfos].completed = true;
         it->event->EnsureComplete(EventCompletionType::Ready);
     }
+
+    // Since we use the presence of the event to indicate whether the callback has already been
+    // called in WaitAny when searching for the matching FutureID, untrack the event after calling
+    // the callbacks to ensure that we can't race on two different threads waiting on the same
+    // future. Note that only one thread will actually call the callback since EnsureComplete is
+    // thread safe.
+    mEvents.Use([&](auto events) {
+        for (auto it = futures.begin(); it != readyEnd; ++it) {
+            (*events)->erase(it->futureID);
+        }
+    });
 
     return wgpu::WaitStatus::Success;
 }

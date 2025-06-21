@@ -28,7 +28,9 @@
 #include "src/tint/lang/core/ir/transform/robustness.h"
 
 #include <algorithm>
+#include <optional>
 
+#include "src/tint/lang/core/ir/analysis/integer_range_analysis.h"
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
@@ -57,6 +59,9 @@ struct State {
     /// The type manager.
     core::type::Manager& ty{ir.Types()};
 
+    /// For integer range analysis when needed
+    std::optional<ir::analysis::IntegerRangeAnalysis> integer_range_analysis = {};
+
     /// Process the module.
     void Process() {
         // Find the access instructions that may need to be clamped.
@@ -65,6 +70,11 @@ struct State {
         Vector<ir::StoreVectorElement*, 64> vector_stores;
         Vector<ir::CoreBuiltinCall*, 64> subgroup_matrix_calls;
         Vector<ir::CoreBuiltinCall*, 64> texture_calls;
+
+        if (config.use_integer_range_analysis) {
+            integer_range_analysis.emplace(&ir);
+        }
+
         for (auto* inst : ir.Instructions()) {
             tint::Switch(
                 inst,  //
@@ -206,13 +216,58 @@ struct State {
             // Generate a new constant index that is clamped to the limit.
             clamped_idx = b.Constant(u32(std::min(const_idx->Value()->ValueAs<uint32_t>(),
                                                   const_limit->Value()->ValueAs<uint32_t>())));
-        } else {
+        } else if (IndexMayOutOfBound(idx, limit)) {
             // Clamp it to the dynamic limit.
             clamped_idx = b.Call(ty.u32(), core::BuiltinFn::kMin, CastToU32(idx), limit)->Result();
         }
 
-        // Replace the index operand with the clamped version.
-        inst->SetOperand(op_idx, clamped_idx);
+        if (clamped_idx != nullptr) {
+            // Replace the index operand with the clamped version.
+            inst->SetOperand(op_idx, clamped_idx);
+        }
+    }
+
+    /// Check if operand @p idx may be less than 0 or greater than @p limit with integer range
+    /// analysis algorithm.
+    /// @param idx the index to check
+    /// @param limit the upper limit @idx to compare with.
+    /// @returns true when @idx may be out of bound, false otherwise
+    bool IndexMayOutOfBound(ir::Value* idx, ir::Value* limit) {
+        // Return true when integer range analysis is disabled.
+        if (!integer_range_analysis.has_value()) {
+            return true;
+        }
+
+        // Return true when `limit` is not a constant value.
+        auto* const_limit = limit->As<ir::Constant>();
+        if (!const_limit) {
+            return true;
+        }
+
+        // Return true when we cannot get a valid range for `idx`.
+        const auto& integer_range = integer_range_analysis->GetInfo(idx);
+        if (!integer_range.IsValid()) {
+            return true;
+        }
+
+        TINT_ASSERT(const_limit->Value()->Type()->Is<type::U32>());
+        uint32_t const_limit_value = const_limit->Value()->ValueAs<uint32_t>();
+
+        using SignedIntegerRange = ir::analysis::IntegerRangeInfo::SignedIntegerRange;
+        using UnsignedIntegerRange = ir::analysis::IntegerRangeInfo::UnsignedIntegerRange;
+
+        // Return true when `idx` may be negative or the upper bound of `idx` is greater than
+        // `limit`.
+        if (std::holds_alternative<UnsignedIntegerRange>(integer_range.range)) {
+            UnsignedIntegerRange range = std::get<UnsignedIntegerRange>(integer_range.range);
+            return range.max_bound > static_cast<uint64_t>(const_limit_value);
+        } else {
+            SignedIntegerRange range = std::get<SignedIntegerRange>(integer_range.range);
+            if (range.min_bound < 0) {
+                return true;
+            }
+            return range.max_bound > static_cast<int64_t>(const_limit_value);
+        }
     }
 
     /// Clamp the indices of an access instruction to ensure they are within the limits of the types
@@ -400,9 +455,13 @@ struct State {
 
         // Some matrix components types are packed together into a single array element.
         // Take that into account here by scaling the array length to number of components.
-        // TODO(crbug.com/403609083): I8 and U8 will be 4 components per element.
-        TINT_ASSERT((matrix_ty->Type()->IsAnyOf<type::F16, type::F32, type::I32, type::U32>()));
-        uint32_t components_per_element = 1;
+        uint32_t components_per_element = 0;
+        if (matrix_ty->Type()->IsAnyOf<type::I8, type::U8>()) {
+            components_per_element = 4;
+        } else {
+            TINT_ASSERT((matrix_ty->Type()->IsAnyOf<type::F16, type::F32, type::I32, type::U32>()));
+            components_per_element = 1;
+        }
 
         // Get the length of the array (in terms of matrix elements).
         auto* arr_ty = arr->Type()->UnwrapPtr()->As<core::type::Array>();
@@ -515,7 +574,7 @@ struct State {
 }  // namespace
 
 Result<SuccessType> Robustness(Module& ir, const RobustnessConfig& config) {
-    auto result = ValidateAndDumpIfNeeded(ir, "core.Robustness");
+    auto result = ValidateAndDumpIfNeeded(ir, "core.Robustness", kRobustnessCapabilities);
     if (result != Success) {
         return result;
     }

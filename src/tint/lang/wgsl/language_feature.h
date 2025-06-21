@@ -43,7 +43,7 @@
 namespace tint::wgsl {
 
 /// An enumerator of WGSL language features
-/// @see src/tint/lang/wgsl/intrinsics.def for language feature descriptions
+/// @see src/tint/lang/wgsl/wgsl.def for language feature descriptions
 enum class LanguageFeature : uint8_t {
     kUndefined,
     kChromiumTestingExperimental,
@@ -55,6 +55,8 @@ enum class LanguageFeature : uint8_t {
     kPointerCompositeAccess,
     kReadonlyAndReadwriteStorageTextures,
     kSizedBindingArray,
+    kTexelBuffers,
+    kTextureSampleLevel1D,
     kUnrestrictedPointerParameters,
 };
 
@@ -77,6 +79,8 @@ constexpr std::string_view kLanguageFeatureStrings[] = {
     "pointer_composite_access",
     "readonly_and_readwrite_storage_textures",
     "sized_binding_array",
+    "texel_buffers",
+    "texture_sample_level_1d",
     "unrestricted_pointer_parameters",
 };
 
@@ -91,6 +95,8 @@ static constexpr LanguageFeature kAllLanguageFeatures[] = {
     LanguageFeature::kPointerCompositeAccess,
     LanguageFeature::kReadonlyAndReadwriteStorageTextures,
     LanguageFeature::kSizedBindingArray,
+    LanguageFeature::kTexelBuffers,
+    LanguageFeature::kTextureSampleLevel1D,
     LanguageFeature::kUnrestrictedPointerParameters,
 };
 

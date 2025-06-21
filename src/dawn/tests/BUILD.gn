@@ -674,6 +674,7 @@ source_set("end2end_tests_sources") {
     "end2end/ShaderAtomicTests.cpp",
     "end2end/ShaderBuiltinPartialConstArgsErrorTests.cpp",
     "end2end/ShaderF16Tests.cpp",
+    "end2end/ShaderModuleCachingTests.cpp",
     "end2end/ShaderTests.cpp",
     "end2end/ShaderValidationTests.cpp",
     "end2end/StorageTextureTests.cpp",
@@ -684,6 +685,7 @@ source_set("end2end_tests_sources") {
     "end2end/Texture3DTests.cpp",
     "end2end/TextureCorruptionTests.cpp",
     "end2end/TextureFormatTests.cpp",
+    "end2end/TextureFormatsTier1Tests.cpp",
     "end2end/TextureShaderBuiltinTests.cpp",
     "end2end/TextureSubresourceTests.cpp",
     "end2end/TextureViewTests.cpp",
@@ -694,6 +696,10 @@ source_set("end2end_tests_sources") {
     "end2end/ViewportOrientationTests.cpp",
     "end2end/ViewportTests.cpp",
   ]
+
+  if (!is_debug) {
+    sources += [ "end2end/RuntimeTimeoutCompute.cpp" ]
+  }
 
   libs = []
 

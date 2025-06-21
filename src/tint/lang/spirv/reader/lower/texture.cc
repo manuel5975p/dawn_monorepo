@@ -30,8 +30,10 @@
 #include <optional>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "src/tint/lang/core/ir/builder.h"
+#include "src/tint/lang/core/ir/clone_context.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
@@ -51,6 +53,7 @@ enum class ImageOperandsMask : uint32_t {
     kLod = 0x00000002,
     kGrad = 0x00000004,
     kConstOffset = 0x00000008,
+    kSample = 0x00000040,
 };
 
 /// PIMPL state for the transform.
@@ -67,6 +70,20 @@ struct State {
     /// Map of all OpSampledImages seen
     Hashmap<core::ir::Value*, core::ir::Instruction*, 4> sampled_images_{};
 
+    /// Any `ir::UserCall` instructions which have texture params which need to be updated.
+    Hashset<core::ir::UserCall*, 2> user_calls_to_convert_{};
+
+    /// The `ir::Values`s which have had their types changed, they then need to have their
+    /// usages updated to match. This maps to the root FunctionParam or Var for each texture.
+    Vector<core::ir::Value*, 8> values_to_fix_usages_{};
+
+    Vector<core::ir::Let*, 8> lets_to_inline_{};
+
+    /// Function to texture replacements, this is done by hashcode since the
+    /// function pointer is combined with the parameters which are converted to
+    /// textures.
+    Hashmap<size_t, core::ir::Function*, 4> func_hash_to_func_{};
+
     /// Process the module.
     void Process() {
         for (auto* inst : *ir.root_block) {
@@ -79,30 +96,39 @@ struct State {
             TINT_ASSERT(ptr);
 
             auto* type = ptr->UnwrapPtr();
-            if (!type->Is<spirv::type::Image>()) {
+            if (!type->IsAnyOf<spirv::type::Image, core::type::Sampler>()) {
                 continue;
             }
 
             auto* new_ty = TypeFor(type);
-            var->Result()->SetType(ty.ptr(ptr->AddressSpace(), new_ty, ptr->Access()));
-
-            // TODO(dsinclair): Propagate through functions
-
-            for (auto& usage : var->Result()->UsagesUnsorted()) {
-                if (usage->instruction->Is<core::ir::Load>()) {
-                    usage->instruction->Result()->SetType(new_ty);
-                }
+            if (type->Is<spirv::type::Image>()) {
+                var->Result()->SetType(ty.ptr(ptr->AddressSpace(), new_ty, ptr->Access()));
+                values_to_fix_usages_.Push(var->Result());
             }
-        }
 
-        // TODO(dsinclair): Propagate OpTypeSampledImage through function params by replacing with
-        // the texture/sampler
+            var->Result()->ForEachUseUnsorted([&](const core::ir::Usage& usage) {
+                tint::Switch(
+                    usage.instruction,  //
+                    [&](core::ir::Load* l) {
+                        if (type->Is<spirv::type::Image>()) {
+                            l->Result()->SetType(new_ty);
+                        }
+                    },
+                    [&](core::ir::Let* let) {
+                        if (type->Is<core::type::Sampler>()) {
+                            lets_to_inline_.Push(let);
+                        }
+                    });
+            });
+        }
 
         Vector<spirv::ir::BuiltinCall*, 4> builtin_worklist;
         for (auto* inst : ir.Instructions()) {
             if (auto* builtin = inst->As<spirv::ir::BuiltinCall>()) {
                 switch (builtin->Func()) {
                     case spirv::BuiltinFn::kSampledImage:
+                    case spirv::BuiltinFn::kImageRead:
+                    case spirv::BuiltinFn::kImageFetch:
                     case spirv::BuiltinFn::kImageGather:
                     case spirv::BuiltinFn::kImageQueryLevels:
                     case spirv::BuiltinFn::kImageQuerySamples:
@@ -110,6 +136,8 @@ struct State {
                     case spirv::BuiltinFn::kImageQuerySizeLod:
                     case spirv::BuiltinFn::kImageSampleExplicitLod:
                     case spirv::BuiltinFn::kImageSampleImplicitLod:
+                    case spirv::BuiltinFn::kImageSampleProjImplicitLod:
+                    case spirv::BuiltinFn::kImageSampleProjExplicitLod:
                     case spirv::BuiltinFn::kImageWrite:
                         builtin_worklist.Push(builtin);
                         break;
@@ -119,10 +147,51 @@ struct State {
             }
         }
 
+        // TODO(dsinclair): Propagate OpTypeSampledImage through function params by replacing with
+        // the texture/sampler
+
+        // The double loop happens because when we convert user calls, that will
+        // add more values to convert, but those values can find user calls to
+        // convert, so we have to work until we stabilize
+        while (!values_to_fix_usages_.IsEmpty() || !lets_to_inline_.IsEmpty()) {
+            while (!values_to_fix_usages_.IsEmpty()) {
+                auto* val = values_to_fix_usages_.Pop();
+                ConvertUsagesToTexture(val);
+            }
+
+            while (!lets_to_inline_.IsEmpty()) {
+                auto* let = lets_to_inline_.Pop();
+                TINT_ASSERT(let->Value());
+                let->Result()->ReplaceAllUsesWith(let->Value());
+                // We may have done this value already, but push it back on as any of the let usages
+                // will now point to it and they need to be updated.
+                values_to_fix_usages_.Push(let->Value());
+                let->Destroy();
+            }
+
+            auto user_calls = user_calls_to_convert_.Vector();
+            // Sort for deterministic output
+            user_calls.Sort();
+            for (auto& call : user_calls) {
+                ConvertUserCall(call);
+            }
+            user_calls_to_convert_.Clear();
+        }
+
+        TINT_ASSERT(lets_to_inline_.IsEmpty());
+        TINT_ASSERT(values_to_fix_usages_.IsEmpty());
+        TINT_ASSERT(user_calls_to_convert_.IsEmpty());
+
         for (auto* builtin : builtin_worklist) {
             switch (builtin->Func()) {
                 case spirv::BuiltinFn::kSampledImage:
                     SampledImage(builtin);
+                    break;
+                case spirv::BuiltinFn::kImageRead:
+                    ImageFetch(builtin);
+                    break;
+                case spirv::BuiltinFn::kImageFetch:
+                    ImageFetch(builtin);
                     break;
                 case spirv::BuiltinFn::kImageGather:
                     ImageGather(builtin);
@@ -139,6 +208,8 @@ struct State {
                     break;
                 case spirv::BuiltinFn::kImageSampleExplicitLod:
                 case spirv::BuiltinFn::kImageSampleImplicitLod:
+                case spirv::BuiltinFn::kImageSampleProjImplicitLod:
+                case spirv::BuiltinFn::kImageSampleProjExplicitLod:
                     ImageSample(builtin);
                     break;
                 case spirv::BuiltinFn::kImageWrite:
@@ -155,6 +226,74 @@ struct State {
         }
     }
 
+    // Stores information for operands which need to be updated with the new load result.
+    struct ReplacementValue {
+        // The instruction to update
+        core::ir::Instruction* instruction;
+        // The operand index to insert into
+        size_t idx;
+        // The new value to insert into the instruction operands at `idx`
+        core::ir::Value* value;
+    };
+
+    void ConvertUsagesToTexture(core::ir::Value* val) {
+        val->ForEachUseUnsorted([&](const core::ir::Usage& usage) {
+            auto* inst = usage.instruction;
+
+            tint::Switch(  //
+                inst,      //
+                [&](core::ir::Let* l) { lets_to_inline_.Push(l); },
+                [&](core::ir::Load* l) {
+                    auto* res = l->Result();
+                    res->SetType(val->Type()->UnwrapPtr());
+                    values_to_fix_usages_.Push(res);
+                },  //
+                [&](core::ir::UserCall* uc) { user_calls_to_convert_.Add(uc); },
+                [&](core::ir::BuiltinCall*) {},  //
+                TINT_ICE_ON_NO_MATCH);
+        });
+    }
+
+    // The user calls need to check all of the parameters which were converted
+    // to textures and create a forked function call for that combination of
+    // parameters.
+    void ConvertUserCall(core::ir::UserCall* uc) {
+        auto* target = uc->Target();
+        auto& params = target->Params();
+        const auto& args = uc->Args();
+
+        Vector<size_t, 2> to_convert;
+        for (size_t i = 0; i < args.Length(); ++i) {
+            if (params[i]->Type() != args[i]->Type()) {
+                to_convert.Push(i);
+            }
+        }
+        // Everything is already converted we're done.
+        if (to_convert.IsEmpty()) {
+            return;
+        }
+
+        // Hash based on the original function pointer and the specific
+        // parameters we're converting.
+        auto hash = Hash(target);
+        hash = HashCombine(hash, to_convert);
+
+        auto* new_fn = func_hash_to_func_.GetOrAdd(hash, [&] {
+            core::ir::CloneContext ctx{ir};
+            auto* fn = uc->Target()->Clone(ctx);
+            ir.functions.Push(fn);
+
+            for (auto idx : to_convert) {
+                auto* p = fn->Params()[idx];
+                p->SetType(args[idx]->Type());
+
+                values_to_fix_usages_.Push(p);
+            }
+            return fn;
+        });
+        uc->SetTarget(new_fn);
+    }
+
     // Record the sampled image so we can extract the texture/sampler information as we process the
     // builtins. It will be destroyed after all builtins are done.
     void SampledImage(spirv::ir::BuiltinCall* call) { sampled_images_.Add(call->Result(), call); }
@@ -169,32 +308,102 @@ struct State {
         return {inst->Operands()[0], inst->Operands()[1]};
     }
 
+    uint32_t CoordsRequiredForDim(core::type::TextureDimension dim, bool is_proj) {
+        uint32_t ret = 0;
+        if (is_proj) {
+            ++ret;
+        }
+
+        switch (dim) {
+            case core::type::TextureDimension::k1d:
+                ret += 1;
+                break;
+            case core::type::TextureDimension::k2d:
+                ret += 2;
+                break;
+            case core::type::TextureDimension::k2dArray:
+            case core::type::TextureDimension::k3d:
+            case core::type::TextureDimension::kCube:
+                ret += 3;
+                break;
+            case core::type::TextureDimension::kCubeArray:
+                ret += 4;
+                break;
+            default:
+                TINT_UNREACHABLE();
+        }
+
+        return ret;
+    }
+
+    uint32_t Length(const core::type::Type* type) {
+        if (type->IsScalar()) {
+            return 1;
+        }
+        if (auto* vec = type->As<core::type::Vector>()) {
+            return vec->Width();
+        }
+        TINT_UNREACHABLE();
+    }
+
     void ProcessCoords(const core::type::Type* type,
+                       bool is_proj,
                        core::ir::Value* coords,
                        Vector<core::ir::Value*, 5>& new_args) {
-        if (!IsTextureArray(type->As<core::type::Texture>()->Dim())) {
-            new_args.Push(coords);
+        auto* tex_ty = type->As<core::type::Texture>();
+        TINT_ASSERT(tex_ty);
+
+        auto coords_received = Length(coords->Type());
+
+        auto mk_coords = [&](uint32_t count) -> core::ir::Value* {
+            if (count == coords_received) {
+                return coords;
+            }
+
+            Vector<uint32_t, 3> swizzle_idx = {0};
+            for (uint32_t i = 1; i < count; ++i) {
+                swizzle_idx.Push(i);
+            }
+
+            auto* new_ty = ty.MatchWidth(coords->Type()->DeepestElement(), count);
+            return b.Swizzle(new_ty, coords, swizzle_idx)->Result();
+        };
+
+        auto coords_needed = CoordsRequiredForDim(tex_ty->Dim(), is_proj);
+        TINT_ASSERT(coords_needed <= coords_received);
+
+        if (!is_proj && !IsTextureArray(tex_ty->Dim())) {
+            new_args.Push(mk_coords(coords_needed));
             return;
         }
 
         auto* coords_ty = coords->Type()->As<core::type::Vector>();
         TINT_ASSERT(coords_ty);
 
-        auto* new_coords_ty = ty.vec(coords_ty->Type(), coords_ty->Width() - 1);
-        TINT_ASSERT(new_coords_ty->Width() != 4);
+        // The array / projection index, is on the end
+        uint32_t new_coords_width = coords_needed - 1;
+        auto* new_coords_ty = ty.MatchWidth(coords_ty->Type(), new_coords_width);
 
-        // New coords
-        uint32_t array_idx = 2;
-        Vector<uint32_t, 3> swizzle_idx = {0, 1};
-        if (new_coords_ty->Width() == 3) {
-            swizzle_idx.Push(2);
-            array_idx = 3;
+        auto* swizzle = mk_coords(new_coords_width);
+        core::ir::Value* last =
+            b.Swizzle(coords_ty->Type(), coords, Vector{new_coords_width})->Result();
+
+        if (is_proj) {
+            // New coords
+            // Divide the coordinates by the last value to simulate the
+            // projection behaviour.
+            new_args.Push(b.Divide(new_coords_ty, swizzle, last)->Result());
+        } else {
+            TINT_ASSERT(new_coords_ty->Is<core::type::Vector>());
+
+            // New coords
+            new_args.Push(swizzle);
+            // Array index
+            if (!last->Type()->Is<core::type::I32>()) {
+                last = b.Convert(ty.i32(), last)->Result();
+            }
+            new_args.Push(last);
         }
-        new_args.Push(b.Swizzle(new_coords_ty, coords, swizzle_idx)->Result());
-
-        // Array index
-        auto* convert = b.Convert(ty.i32(), b.Swizzle(new_coords_ty->Type(), coords, {array_idx}));
-        new_args.Push(convert->Result());
     }
 
     void ProcessOffset(core::ir::Value* offset, Vector<core::ir::Value*, 5>& new_args) {
@@ -222,6 +431,66 @@ struct State {
     bool HasConstOffset(uint32_t mask) {
         return (mask & static_cast<uint32_t>(ImageOperandsMask::kConstOffset)) != 0;
     }
+    bool HasSample(uint32_t mask) {
+        return (mask & static_cast<uint32_t>(ImageOperandsMask::kSample)) != 0;
+    }
+
+    void ImageFetch(spirv::ir::BuiltinCall* call) {
+        const auto& args = call->Args();
+
+        b.InsertBefore(call, [&] {
+            core::ir::Value* tex = args[0];
+            auto* coords = args[1];
+
+            auto* tex_ty = tex->Type();
+            uint32_t operand_mask = GetOperandMask(args[2]);
+
+            Vector<core::ir::Value*, 5> new_args = {tex};
+            ProcessCoords(tex->Type(), false, coords, new_args);
+
+            uint32_t idx = 3;
+            if (HasLod(operand_mask)) {
+                core::ir::Value* lod = args[idx++];
+
+                if (!lod->Type()->Is<core::type::I32>()) {
+                    lod = b.Convert(ty.i32(), lod)->Result();
+                }
+                new_args.Push(lod);
+            } else if (!tex_ty->IsAnyOf<core::type::DepthMultisampledTexture,
+                                        core::type::MultisampledTexture,
+                                        core::type::StorageTexture>()) {
+                // textureLoad requires an explicit level-of-detail parameter for non-multisampled
+                // and non-storage texture types.
+                new_args.Push(b.Zero(ty.i32()));
+            }
+            if (HasSample(operand_mask)) {
+                core::ir::Value* sample = args[idx++];
+
+                if (!sample->Type()->Is<core::type::I32>()) {
+                    sample = b.Convert(ty.i32(), sample)->Result();
+                }
+                new_args.Push(sample);
+            }
+
+            // Depth textures have a single value return in WGSL, but a vec4 in SPIR-V.
+            auto* call_ty = call->Result()->Type();
+            if (tex_ty->IsAnyOf<core::type::DepthTexture, core::type::DepthMultisampledTexture>()) {
+                call_ty = call_ty->DeepestElement();
+            }
+            auto* res = b.Call(call_ty, core::BuiltinFn::kTextureLoad, new_args)->Result();
+
+            // Restore the vec4 result by padding with 0's.
+            if (call_ty != call->Result()->Type()) {
+                auto* vec = call->Result()->Type()->As<core::type::Vector>();
+                TINT_ASSERT(vec && vec->Width() == 4);
+
+                auto* z = b.Zero(call_ty);
+                res = b.Construct(call->Result()->Type(), res, z, z, z)->Result();
+            }
+            call->Result()->ReplaceAllUsesWith(res);
+        });
+        call->Destroy();
+    }
 
     void ImageGather(spirv::ir::BuiltinCall* call) {
         const auto& args = call->Args();
@@ -243,7 +512,7 @@ struct State {
             new_args.Push(tex);
             new_args.Push(sampler);
 
-            ProcessCoords(tex->Type(), coords, new_args);
+            ProcessCoords(tex->Type(), false, coords, new_args);
 
             if (HasConstOffset(operand_mask)) {
                 ProcessOffset(args[4], new_args);
@@ -268,13 +537,16 @@ struct State {
         auto* coords = args[1];
         uint32_t operand_mask = GetOperandMask(args[2]);
 
+        bool is_proj = call->Func() == spirv::BuiltinFn::kImageSampleProjImplicitLod ||
+                       call->Func() == spirv::BuiltinFn::kImageSampleProjExplicitLod;
+
         uint32_t idx = 3;
         b.InsertBefore(call, [&] {
             Vector<core::ir::Value*, 5> new_args;
             new_args.Push(tex);
             new_args.Push(sampler);
 
-            ProcessCoords(tex_ty, coords, new_args);
+            ProcessCoords(tex_ty, is_proj, coords, new_args);
 
             core::BuiltinFn fn = core::BuiltinFn::kTextureSample;
             if (HasBias(operand_mask)) {
@@ -334,7 +606,7 @@ struct State {
             Vector<core::ir::Value*, 5> new_args;
             new_args.Push(tex);
 
-            ProcessCoords(tex->Type(), coords, new_args);
+            ProcessCoords(tex->Type(), false, coords, new_args);
 
             new_args.Push(texel);
 
@@ -465,6 +737,7 @@ Result<SuccessType> Texture(core::ir::Module& ir) {
     auto result = ValidateAndDumpIfNeeded(ir, "spirv.Texture",
                                           core::ir::Capabilities{
                                               core::ir::Capability::kAllowOverrides,
+                                              core::ir::Capability::kAllowNonCoreTypes,
                                           });
     if (result != Success) {
         return result.Failure();

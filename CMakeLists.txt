@@ -126,7 +126,7 @@ endif()
 
 # GLFW is not supported in UWP
 set(DAWN_SUPPORTS_GLFW_FOR_WINDOWING OFF)
-if (NOT EMSCRIPTEN AND ((WIN32 AND NOT WINDOWS_STORE) OR (UNIX AND NOT ANDROID)))
+if (EMSCRIPTEN OR (WIN32 AND NOT WINDOWS_STORE) OR (UNIX AND NOT ANDROID))
     set(DAWN_SUPPORTS_GLFW_FOR_WINDOWING ON)
 endif()
 
@@ -387,7 +387,8 @@ endif()
 find_package(Python3 REQUIRED)
 message(STATUS "Dawn: using python at ${Python3_EXECUTABLE}")
 
-# Compile definitions for the internal config
+# Options and compile definitions for the internal config
+add_dependencies(dawn_internal_config dawn_warnings_config)
 if (DAWN_ALWAYS_ASSERT OR IS_DEBUG_BUILD)
     target_compile_definitions(dawn_internal_config INTERFACE "DAWN_ENABLE_ASSERTS")
 endif()

@@ -34,6 +34,7 @@
 #include "src/tint/lang/core/address_space.h"
 #include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/texel_format.h"
+#include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/ir/builtin_call.h"
@@ -90,6 +91,18 @@ TEST_F(IRToProgramTest, SingleFunction_Return) {
 
     EXPECT_WGSL(R"(
 fn f() {
+}
+)");
+}
+
+TEST_F(IRToProgramTest, SingleFunction_Unreachable) {
+    auto* fn = b.Function("f", ty.u32());
+
+    fn->Block()->Append(b.Unreachable());
+
+    EXPECT_WGSL(R"(
+fn f() -> u32 {
+  return u32();
 }
 )");
 }
@@ -1952,6 +1965,46 @@ fn f(i : i32) -> i32 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Load
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(IRToProgramTest, Load_Reused) {
+    auto im = b.Var(
+        "im",
+        ty.ref(handle, ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()), read));
+    im->SetBindingPoint(0, 0);
+    auto sampler = b.Var("sampler", ty.ref(handle, ty.sampler(), read));
+    sampler->SetBindingPoint(0, 1);
+
+    b.ir.root_block->Append(im);
+    b.ir.root_block->Append(sampler);
+
+    auto* fn = b.Function("f", ty.void_());
+    b.Append(fn->Block(), [&] {  //
+        auto* tl = b.Load(im);
+        auto* sl = b.Load(sampler);
+
+        b.Phony(b.Call<wgsl::ir::BuiltinCall>(ty.vec4<f32>(), wgsl::BuiltinFn::kTextureSample, tl,
+                                              sl, b.Splat(ty.vec2<f32>(), 0_f)));
+        b.Phony(b.Call<wgsl::ir::BuiltinCall>(ty.vec4<f32>(), wgsl::BuiltinFn::kTextureSample, tl,
+                                              sl, b.Splat(ty.vec2<f32>(), 0_f)));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+diagnostic(off, derivative_uniformity);
+
+@group(0u) @binding(0u) var im : texture_2d<f32>;
+
+@group(0u) @binding(1u) var v : sampler;
+
+fn f() {
+  _ = textureSample(im, v, vec2<f32>());
+  _ = textureSample(im, v, vec2<f32>());
+}
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Function-scope var
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(IRToProgramTest, FunctionScopeVar_i32) {
@@ -2146,6 +2199,7 @@ fn f() -> f32 {
   } else {
     return 2.0f;
   }
+  return f32();
 }
 )");
 }

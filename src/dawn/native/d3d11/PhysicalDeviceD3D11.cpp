@@ -161,6 +161,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::DawnLoadResolveTexture);
     EnableFeature(Feature::DawnPartialLoadResolveTexture);
     EnableFeature(Feature::RG11B10UfloatRenderable);
+    EnableFeature(Feature::TextureFormatsTier1);
     if (mDeviceInfo.isUMA && mDeviceInfo.supportsMapNoOverwriteDynamicBuffers) {
         // With UMA we should allow mapping usages on more type of buffers.
         EnableFeature(Feature::BufferMapExtendedUsages);
@@ -237,15 +238,15 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // Allocate half of the UAVs to storage buffers, and half to storage textures.
     limits->v1.maxStorageTexturesPerShaderStage = maxUAVsPerStage / 2;
     limits->v1.maxStorageBuffersPerShaderStage = maxUAVsPerStage / 2;
-    limits->v1.maxStorageTexturesInFragmentStage = limits->v1.maxStorageTexturesPerShaderStage;
-    limits->v1.maxStorageBuffersInFragmentStage = limits->v1.maxStorageBuffersPerShaderStage;
+    limits->compat.maxStorageTexturesInFragmentStage = limits->v1.maxStorageTexturesPerShaderStage;
+    limits->compat.maxStorageBuffersInFragmentStage = limits->v1.maxStorageBuffersPerShaderStage;
     // If the device only has feature level 11.0, technically, vertex stage doesn't have any UAV
     // slot (writable storage buffers). However, since Dawn spec requires that storage buffers must
     // be readonly in VS, it's safe to advertise that we have storage buffers in VS. Readonly
     // storage buffers will use SRV slots which are available in all stages.
     // The same for read-only storage textures in VS.
-    limits->v1.maxStorageTexturesInVertexStage = limits->v1.maxStorageTexturesPerShaderStage;
-    limits->v1.maxStorageBuffersInVertexStage = limits->v1.maxStorageBuffersPerShaderStage;
+    limits->compat.maxStorageTexturesInVertexStage = limits->v1.maxStorageTexturesPerShaderStage;
+    limits->compat.maxStorageBuffersInVertexStage = limits->v1.maxStorageBuffersPerShaderStage;
     limits->v1.maxSampledTexturesPerShaderStage = D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT;
     limits->v1.maxSamplersPerShaderStage = D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT;
     limits->v1.maxColorAttachments = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
@@ -291,6 +292,8 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // 1 for SV_Position and 1 for (SV_IsFrontFace OR SV_SampleIndex).
     // See the discussions in https://github.com/gpuweb/gpuweb/issues/1962 for more details.
     limits->v1.maxInterStageShaderVariables = D3D11_PS_INPUT_REGISTER_COUNT - 2;
+
+    limits->v1.maxImmediateSize = kDefaultMaxImmediateDataBytes;
 
     // The BlitTextureToBuffer helper requires the alignment to be 4.
     limits->texelCopyBufferRowAlignmentLimits.minTexelCopyBufferRowAlignment = 4;
@@ -339,6 +342,12 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     // Use the Tint IR backend by default if the corresponding platform feature is enabled.
     deviceToggles->Default(Toggle::UseTintIR,
                            platform->IsFeatureEnabled(platform::Features::kWebGPUUseTintIR));
+
+    // Enable the integer range analysis for shader robustness by default if the corresponding
+    // platform feature is enabled.
+    deviceToggles->Default(
+        Toggle::EnableIntegerRangeAnalysisInRobustness,
+        platform->IsFeatureEnabled(platform::Features::kWebGPUEnableRangeAnalysisForRobustness));
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(

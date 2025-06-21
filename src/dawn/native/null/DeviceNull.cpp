@@ -116,10 +116,6 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
 }
 
 void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const {
-    if (auto* subgroupProperties = info.Get<AdapterPropertiesSubgroups>()) {
-        subgroupProperties->subgroupMinSize = 4;
-        subgroupProperties->subgroupMaxSize = 128;
-    }
     if (auto* memoryHeapProperties = info.Get<AdapterPropertiesMemoryHeaps>()) {
         auto* heapInfo = new MemoryHeapInfo[1];
         memoryHeapProperties->heapCount = 1;
@@ -196,7 +192,8 @@ Device::~Device() {
 }
 
 MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
-    return DeviceBase::Initialize(AcquireRef(new Queue(this, &descriptor->defaultQueue)));
+    return DeviceBase::Initialize(descriptor,
+                                  AcquireRef(new Queue(this, &descriptor->defaultQueue)));
 }
 
 ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
@@ -240,10 +237,9 @@ ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescripto
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
     const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* parseResult,
-    std::unique_ptr<OwnedCompilationMessages>* compilationMessages) {
+    ShaderModuleParseResult* parseResult) {
     Ref<ShaderModule> module = AcquireRef(new ShaderModule(this, descriptor, internalExtensions));
-    DAWN_TRY(module->Initialize(parseResult, compilationMessages));
+    DAWN_TRY(module->Initialize(parseResult));
     return module;
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(Surface* surface,
@@ -281,11 +277,11 @@ void Device::ForgetPendingOperations() {
     mPendingOperations.clear();
 }
 
-MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
-                                               uint64_t sourceOffset,
-                                               BufferBase* destination,
-                                               uint64_t destinationOffset,
-                                               uint64_t size) {
+MaybeError Device::CopyFromStagingToBuffer(BufferBase* source,
+                                           uint64_t sourceOffset,
+                                           BufferBase* destination,
+                                           uint64_t destinationOffset,
+                                           uint64_t size) {
     if (IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
         destination->SetInitialized(true);
     }
@@ -466,7 +462,7 @@ bool Queue::HasPendingCommands() const {
     return false;
 }
 
-MaybeError Queue::SubmitPendingCommands() {
+MaybeError Queue::SubmitPendingCommandsImpl() {
     return {};
 }
 
@@ -580,10 +576,8 @@ void SwapChain::DetachFromSurfaceImpl() {
 
 // ShaderModule
 
-MaybeError ShaderModule::Initialize(
-    ShaderModuleParseResult* parseResult,
-    std::unique_ptr<OwnedCompilationMessages>* compilationMessages) {
-    return InitializeBase(parseResult, compilationMessages);
+MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult) {
+    return InitializeBase(parseResult);
 }
 
 uint32_t Device::GetOptimalBytesPerRowAlignment() const {

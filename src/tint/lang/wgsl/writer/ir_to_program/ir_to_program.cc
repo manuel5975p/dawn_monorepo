@@ -97,12 +97,6 @@
 #include "src/tint/utils/math/math.h"
 #include "src/tint/utils/rtti/switch.h"
 
-// Helper for incrementing nesting_depth_ and then decrementing nesting_depth_ at the end
-// of the scope that holds the call.
-#define SCOPED_NESTING() \
-    nesting_depth_++;    \
-    TINT_DEFER(nesting_depth_--)
-
 using namespace tint::core::fluent_types;  // NOLINT
 
 namespace tint::wgsl::writer {
@@ -153,22 +147,12 @@ class State {
     /// The target ProgramBuilder
     ProgramBuilder b;
 
-    /// The structure for a value held by a 'let', 'var' or parameter.
-    struct VariableValue {
-        Symbol name;  // Name of the variable
+    /// The structure for a reusable value
+    struct ValueBinding {
+        Symbol name{};
+        const core::ir::Value* ir_expr = nullptr;
+        const ast::Expression* ast_expr = nullptr;
     };
-
-    /// The structure for an inlined value
-    struct InlinedValue {
-        const ast::Expression* expr = nullptr;
-    };
-
-    /// Empty struct used as a sentinel value to indicate that an ast::Value has been consumed by
-    /// its single place of usage. Attempting to use this value a second time should result in an
-    /// ICE.
-    struct ConsumedValue {};
-
-    using ValueBinding = std::variant<VariableValue, InlinedValue, ConsumedValue>;
 
     /// IR values to their representation
     Hashmap<const core::ir::Value*, ValueBinding, 32> bindings_;
@@ -195,6 +179,9 @@ class State {
     /// Map of struct to output program name.
     Hashmap<const core::type::Struct*, Symbol, 8> structs_;
 
+    /// The current function being emitted.
+    const core::ir::Function* current_function_ = nullptr;
+
     /// True if 'diagnostic(off, derivative_uniformity)' has been emitted
     bool disabled_derivative_uniformity_ = false;
 
@@ -209,7 +196,8 @@ class State {
         }
     }
     const ast::Function* Fn(const core::ir::Function* fn) {
-        SCOPED_NESTING();
+        TINT_SCOPED_ASSIGNMENT(nesting_depth_, nesting_depth_ + 1);
+        TINT_SCOPED_ASSIGNMENT(current_function_, fn);
 
         // Emit parameters.
         static constexpr size_t N = decltype(ast::Function::params)::static_length;
@@ -367,7 +355,7 @@ class State {
             [&](const core::ir::Binary* i) { Binary(i); },                          //
             [&](const core::ir::BreakIf* i) { BreakIf(i); },                        //
             [&](const core::ir::Call* i) { Call(i); },                              //
-            [&](const core::ir::Continue*) {},                                      //
+            [&](const core::ir::Continue* c) { EmitContinue(c); },                  //
             [&](const core::ir::ExitIf*) {},                                        //
             [&](const core::ir::ExitLoop* i) { ExitLoop(i); },                      //
             [&](const core::ir::ExitSwitch* i) { ExitSwitch(i); },                  //
@@ -384,13 +372,28 @@ class State {
             [&](const core::ir::Switch* i) { Switch(i); },                          //
             [&](const core::ir::Swizzle* i) { Swizzle(i); },                        //
             [&](const core::ir::Unary* i) { Unary(i); },                            //
-            [&](const core::ir::Unreachable*) {},                                   //
+            [&](const core::ir::Unreachable* u) { Unreachable(u); },                //
             [&](const core::ir::Var* i) { Var(i); },                                //
             TINT_ICE_ON_NO_MATCH);
     }
 
+    // In the case of an `unreachable` as the last statement in a non-void function, swap it to a
+    // `return` of the zero value for the return type. This is to satisfy the requirement for WGSL
+    // to always end in a `return` but `unreachable` really only meaning undefined behaviour if you
+    // get here.
+    void Unreachable(const core::ir::Unreachable* u) {
+        if (current_function_->ReturnType()->Is<core::type::Void>()) {
+            return;
+        }
+        if (u != current_function_->Block()->Terminator()) {
+            return;
+        }
+
+        Append(b.Return(b.Call(Type(current_function_->ReturnType()))));
+    }
+
     void If(const core::ir::If* if_) {
-        SCOPED_NESTING();
+        TINT_SCOPED_ASSIGNMENT(nesting_depth_, nesting_depth_ + 1);
 
         auto true_stmts = Statements(if_->True());
         auto false_stmts = Statements(if_->False());
@@ -418,7 +421,7 @@ class State {
     }
 
     void Loop(const core::ir::Loop* l) {
-        SCOPED_NESTING();
+        TINT_SCOPED_ASSIGNMENT(nesting_depth_, nesting_depth_ + 1);
 
         // Build all the initializer statements
         auto init_stmts = Statements(l->Initializer());
@@ -479,9 +482,8 @@ class State {
 
         // Depending on 'init', 'cond' and 'cont', build a 'for', 'while' or 'loop'
         const ast::Statement* loop = nullptr;
-        if ((!cont && !cont_stmts.IsEmpty())  // Non-trivial continuing
-            || !cond                          // or non-trivial or no condition
-        ) {
+        bool non_trivial_continuing = !cont && !cont_stmts.IsEmpty();
+        if (non_trivial_continuing || !cond) {
             // Build a loop
             if (cond) {
                 body_stmts.Insert(0, b.If(b.Not(cond), b.Block(b.Break())));
@@ -514,14 +516,14 @@ class State {
     }
 
     void Switch(const core::ir::Switch* s) {
-        SCOPED_NESTING();
+        TINT_SCOPED_ASSIGNMENT(nesting_depth_, nesting_depth_ + 1);
 
         auto* cond = Expr(s->Condition());
 
         auto cases = tint::Transform<4>(
             s->Cases(),  //
             [&](const core::ir::Switch::Case& c) -> const tint::ast::CaseStatement* {
-                SCOPED_NESTING();
+                TINT_SCOPED_ASSIGNMENT(nesting_depth_, nesting_depth_ + 1);
 
                 const ast::BlockStatement* body = nullptr;
                 {
@@ -546,6 +548,15 @@ class State {
             return;  // No need to emit
         }
         Append(b.Break());
+    }
+
+    void EmitContinue(const core::ir::Continue* c) {
+        auto* loop = c->Loop();
+        // No need to emit the continue as the last statement in loop as it's implicit
+        if (loop->Body()->Terminator() == c) {
+            return;
+        }
+        Append(b.Continue());
     }
 
     void ExitLoop(const core::ir::ExitLoop*) { Append(b.Break()); }
@@ -746,7 +757,18 @@ class State {
             TINT_ICE_ON_NO_MATCH);
     }
 
-    void Load(const core::ir::Load* l) { Bind(l->Result(), Expr(l->From())); }
+    void Load(const core::ir::Load* l) {
+        bool reusable = false;
+        // Read-only pointer is reusable inline
+        if (auto* ptr = l->From()->Type()->As<core::type::Reference>()) {
+            reusable = ptr->Access() == core::Access::kRead;
+        }
+        if (reusable) {
+            Bind(l->Result(), l->From());
+        } else {
+            Bind(l->Result(), Expr(l->From()));
+        }
+    }
 
     void LoadVectorElement(const core::ir::LoadVectorElement* l) {
         auto* vec = Expr(l->From());
@@ -814,7 +836,7 @@ class State {
         auto* vec = Expr(s->Object());
         Vector<char, 4> components;
         for (uint32_t i : s->Indices()) {
-            if (DAWN_UNLIKELY(i >= 4)) {
+            if (i >= 4) {
                 TINT_ICE() << "invalid swizzle index: " << i;
             }
             components.Push(xyzw[i]);
@@ -896,54 +918,25 @@ class State {
         Bind(e->Result(), expr);
     }
 
-    TINT_BEGIN_DISABLE_WARNING(UNREACHABLE_CODE);
-
     const ast::Expression* Expr(const core::ir::Value* value) {
-        auto expr = tint::Switch(
-            value,  //
-            [&](const core::ir::Constant* c) { return Constant(c); },
-            [&](Default) -> const ast::Expression* {
-                auto lookup = bindings_.Get(value);
-                if (DAWN_UNLIKELY(!lookup)) {
-                    TINT_ICE() << "Expr(" << (value ? value->TypeInfo().name : "null")
-                               << ") value has no expression";
-                }
-                return std::visit(
-                    [&](auto&& got) -> const ast::Expression* {
-                        using T = std::decay_t<decltype(got)>;
-
-                        if constexpr (std::is_same_v<T, VariableValue>) {
-                            return b.Expr(got.name);
-                        }
-
-                        if constexpr (std::is_same_v<T, InlinedValue>) {
-                            auto result = got.expr;
-                            // Single use (inlined) expression.
-                            // Mark the bindings_ map entry as consumed.
-                            *lookup = ConsumedValue{};
-                            return result;
-                        }
-
-                        if constexpr (std::is_same_v<T, ConsumedValue>) {
-                            TINT_ICE() << "Expr(" << value->TypeInfo().name
-                                       << ") called twice on the same value";
-                        } else {
-                            TINT_ICE()
-                                << "Expr(" << value->TypeInfo().name << ") has unhandled value";
-                        }
-                        return nullptr;
-                    },
-                    *lookup);
-            });
-
-        if (!expr) {
-            return b.Expr("<error>");
+        if (auto* cnst = value->As<core::ir::Constant>()) {
+            return Constant(cnst);
         }
 
-        return expr;
-    }
+        auto lookup = bindings_.Get(value);
+        if (!lookup) {
+            TINT_ICE() << "Expr(" << (value ? value->TypeInfo().name : "null")
+                       << ") value has no expression";
+        }
 
-    TINT_END_DISABLE_WARNING(UNREACHABLE_CODE);
+        if (lookup->ast_expr != nullptr) {
+            return lookup->ast_expr;
+        }
+        if (lookup->ir_expr != nullptr) {
+            return Expr(lookup->ir_expr);
+        }
+        return b.Expr(lookup->name);
+    }
 
     const ast::Expression* Constant(const core::ir::Constant* c) { return Constant(c->Value()); }
 
@@ -986,16 +979,6 @@ class State {
         }
     }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    // Types
-    //
-    // The the case of an error:
-    // * The types generating methods must return a non-null ast type, which may not be semantically
-    //   legal, but is enough to populate the AST.
-    // * A diagnostic error must be added to the ast::ProgramBuilder.
-    // This prevents littering the ToProgram logic with expensive error checking code.
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-
     /// @param ty the type::Type
     /// @return an ast::Type from @p ty.
     /// @note May be a semantically-invalid placeholder type on error.
@@ -1033,7 +1016,7 @@ class State {
                     return b.ty.array(el, std::move(attrs));
                 }
                 auto count = a->ConstantCount();
-                if (DAWN_UNLIKELY(!count)) {
+                if (!count) {
                     TINT_ICE() << core::type::Array::kErrExpectedConstantCount;
                 }
                 return b.ty.array(el, u32(count.value()), std::move(attrs));
@@ -1222,13 +1205,21 @@ class State {
         });
     }
 
+    void Bind(const core::ir::Value* value, const core::ir::Value* expr) {
+        TINT_ASSERT(value);
+        if (value->IsUsed()) {
+            bindings_.Replace(value, ValueBinding{.ir_expr = expr});
+        } else {
+            Append(b.Assign(b.Phony(), Expr(expr)));
+        }
+    }
+
     /// Associates the IR value @p value with the AST expression @p expr if it is used, otherwise
     /// creates a phony assignment with @p expr.
     void Bind(const core::ir::Value* value, const ast::Expression* expr) {
         TINT_ASSERT(value);
         if (value->IsUsed()) {
-            // Value will be inlined at its place of usage.
-            if (DAWN_UNLIKELY(!bindings_.Add(value, InlinedValue{expr}))) {
+            if (!bindings_.Add(value, ValueBinding{.ast_expr = expr})) {
                 TINT_ICE() << "Bind(" << value->TypeInfo().name << ") called twice for same value";
             }
         } else {
@@ -1240,7 +1231,7 @@ class State {
     /// name.
     void Bind(const core::ir::Value* value, Symbol name) {
         TINT_ASSERT(value);
-        if (DAWN_UNLIKELY(!bindings_.Add(value, VariableValue{name}))) {
+        if (!bindings_.Add(value, ValueBinding{.name = name})) {
             TINT_ICE() << "Bind(" << value->TypeInfo().name << ") called twice for same value";
         }
     }

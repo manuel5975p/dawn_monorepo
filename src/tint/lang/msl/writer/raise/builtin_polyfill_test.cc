@@ -2295,6 +2295,10 @@ TEST_F(MslWriter_BuiltinPolyfillTest, TextureSample) {
 }
 
 TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleBias) {
+    capabilities = core::ir::Capabilities{
+        core::ir::Capability::kAllowNonCoreTypes,
+    };
+
     auto* t = b.FunctionParam("t", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()));
     auto* s = b.FunctionParam("s", ty.sampler());
     auto* coords = b.FunctionParam("coords", ty.vec2<f32>());
@@ -2332,6 +2336,10 @@ TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleBias) {
 }
 
 TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleBias_Array) {
+    capabilities = core::ir::Capabilities{
+        core::ir::Capability::kAllowNonCoreTypes,
+    };
+
     auto* t =
         b.FunctionParam("t", ty.sampled_texture(core::type::TextureDimension::k2dArray, ty.f32()));
     auto* s = b.FunctionParam("s", ty.sampler());
@@ -2408,6 +2416,10 @@ TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleCompare) {
 }
 
 TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleCompareLevel) {
+    capabilities = core::ir::Capabilities{
+        core::ir::Capability::kAllowNonCoreTypes,
+    };
+
     auto* t = b.FunctionParam("t", ty.depth_texture(core::type::TextureDimension::k2d));
     auto* s = b.FunctionParam("s", ty.comparison_sampler());
     auto* coords = b.FunctionParam("coords", ty.vec2<f32>());
@@ -2446,6 +2458,10 @@ TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleCompareLevel) {
 }
 
 TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleCompareLevel_WithOffset) {
+    capabilities = core::ir::Capabilities{
+        core::ir::Capability::kAllowNonCoreTypes,
+    };
+
     auto* t = b.FunctionParam("t", ty.depth_texture(core::type::TextureDimension::k2d));
     auto* s = b.FunctionParam("s", ty.comparison_sampler());
     auto* coords = b.FunctionParam("coords", ty.vec2<f32>());
@@ -2485,6 +2501,10 @@ TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleCompareLevel_WithOffset) {
 }
 
 TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleGrad_2d) {
+    capabilities = core::ir::Capabilities{
+        core::ir::Capability::kAllowNonCoreTypes,
+    };
+
     auto* t = b.FunctionParam("t", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()));
     auto* s = b.FunctionParam("s", ty.sampler());
     auto* coords = b.FunctionParam("coords", ty.vec2<f32>());
@@ -2562,6 +2582,10 @@ TEST_F(MslWriter_BuiltinPolyfillTest, TextureGather_2dArray) {
 }
 
 TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleGrad_2dArray) {
+    capabilities = core::ir::Capabilities{
+        core::ir::Capability::kAllowNonCoreTypes,
+    };
+
     auto* t =
         b.FunctionParam("t", ty.sampled_texture(core::type::TextureDimension::k2dArray, ty.f32()));
     auto* s = b.FunctionParam("s", ty.sampler());
@@ -2604,6 +2628,10 @@ TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleGrad_2dArray) {
 }
 
 TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleGrad_3d) {
+    capabilities = core::ir::Capabilities{
+        core::ir::Capability::kAllowNonCoreTypes,
+    };
+
     auto* t = b.FunctionParam("t", ty.sampled_texture(core::type::TextureDimension::k3d, ty.f32()));
     auto* s = b.FunctionParam("s", ty.sampler());
     auto* coords = b.FunctionParam("coords", ty.vec3<f32>());
@@ -2643,6 +2671,10 @@ TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleGrad_3d) {
 }
 
 TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleGrad_Cube) {
+    capabilities = core::ir::Capabilities{
+        core::ir::Capability::kAllowNonCoreTypes,
+    };
+
     auto* t =
         b.FunctionParam("t", ty.sampled_texture(core::type::TextureDimension::kCube, ty.f32()));
     auto* s = b.FunctionParam("s", ty.sampler());
@@ -2683,6 +2715,10 @@ TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleGrad_Cube) {
 }
 
 TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleGrad_WithOffset) {
+    capabilities = core::ir::Capabilities{
+        core::ir::Capability::kAllowNonCoreTypes,
+    };
+
     auto* t = b.FunctionParam("t", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()));
     auto* s = b.FunctionParam("s", ty.sampler());
     auto* coords = b.FunctionParam("coords", ty.vec2<f32>());
@@ -2722,7 +2758,47 @@ TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleGrad_WithOffset) {
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleLevel) {
+TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleLevel_1d) {
+    auto* t = b.FunctionParam("t", ty.sampled_texture(core::type::TextureDimension::k1d, ty.f32()));
+    auto* s = b.FunctionParam("s", ty.sampler());
+    auto* coords = b.FunctionParam("coords", ty.f32());
+    auto* level = b.FunctionParam("level", ty.f32());
+    auto* func = b.Function("foo", ty.vec4<f32>());
+    func->SetParams({t, s, coords, level});
+    b.Append(func->Block(), [&] {
+        auto* result = b.Call<vec4<f32>>(core::BuiltinFn::kTextureSampleLevel, t, s, coords, level);
+        b.Return(func, result);
+    });
+
+    auto* src = R"(
+%foo = func(%t:texture_1d<f32>, %s:sampler, %coords:f32, %level:f32):vec4<f32> {
+  $B1: {
+    %6:vec4<f32> = textureSampleLevel %t, %s, %coords, %level
+    ret %6
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%t:texture_1d<f32>, %s:sampler, %coords:f32, %level:f32):vec4<f32> {
+  $B1: {
+    %6:vec4<f32> = %t.sample %s, %coords
+    ret %6
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleLevel_2d) {
+    capabilities = core::ir::Capabilities{
+        core::ir::Capability::kAllowNonCoreTypes,
+    };
+
     auto* t = b.FunctionParam("t", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()));
     auto* s = b.FunctionParam("s", ty.sampler());
     auto* coords = b.FunctionParam("coords", ty.vec2<f32>());
@@ -2760,6 +2836,10 @@ TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleLevel) {
 }
 
 TEST_F(MslWriter_BuiltinPolyfillTest, TextureSampleLevel_Array) {
+    capabilities = core::ir::Capabilities{
+        core::ir::Capability::kAllowNonCoreTypes,
+    };
+
     auto* t =
         b.FunctionParam("t", ty.sampled_texture(core::type::TextureDimension::k2dArray, ty.f32()));
     auto* s = b.FunctionParam("s", ty.sampler());

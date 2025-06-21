@@ -236,6 +236,8 @@ struct State {
                     // Ignore Atomics, they'll be handled by the `Atomics` transform.
                     break;
                 case spirv::BuiltinFn::kSampledImage:
+                case spirv::BuiltinFn::kImageRead:
+                case spirv::BuiltinFn::kImageFetch:
                 case spirv::BuiltinFn::kImageGather:
                 case spirv::BuiltinFn::kImageQueryLevels:
                 case spirv::BuiltinFn::kImageQuerySamples:
@@ -243,6 +245,8 @@ struct State {
                 case spirv::BuiltinFn::kImageQuerySizeLod:
                 case spirv::BuiltinFn::kImageSampleExplicitLod:
                 case spirv::BuiltinFn::kImageSampleImplicitLod:
+                case spirv::BuiltinFn::kImageSampleProjImplicitLod:
+                case spirv::BuiltinFn::kImageSampleProjExplicitLod:
                 case spirv::BuiltinFn::kImageWrite:
                     // Ignore image methods, they'll be handled by the `Texture` transform.
                     break;
@@ -1163,6 +1167,7 @@ Result<SuccessType> Builtins(core::ir::Module& ir) {
     auto result = ValidateAndDumpIfNeeded(ir, "spirv.Builtins",
                                           core::ir::Capabilities{
                                               core::ir::Capability::kAllowOverrides,
+                                              core::ir::Capability::kAllowNonCoreTypes,
                                           });
     if (result != Success) {
         return result.Failure();

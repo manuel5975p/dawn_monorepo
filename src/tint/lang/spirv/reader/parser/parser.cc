@@ -52,9 +52,11 @@ TINT_END_DISABLE_WARNING(NEWLINE_EOF);
 
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/module.h"
+#include "src/tint/lang/core/ir/referenced_module_vars.h"
 #include "src/tint/lang/core/type/builtin_structs.h"
 #include "src/tint/lang/spirv/builtin_fn.h"
 #include "src/tint/lang/spirv/ir/builtin_call.h"
+#include "src/tint/lang/spirv/type/explicit_layout_array.h"
 #include "src/tint/lang/spirv/type/image.h"
 #include "src/tint/lang/spirv/type/sampled_image.h"
 #include "src/tint/lang/spirv/validate/validate.h"
@@ -65,6 +67,18 @@ using namespace tint::core::fluent_types;     // NOLINT
 namespace tint::spirv::reader {
 
 namespace {
+
+// Stores information for operands which need to be calculated after a block is complete. Because
+// a phi can store values which come after it, we can't calculate the value when the `OpPhi` is
+// seen.
+struct ReplacementValue {
+    // The terminator instruction the operand belongs to
+    core::ir::Terminator* terminator;
+    // The operand index in `terminator` to replace
+    uint32_t idx;
+    // The SPIR-V value id to create the value from
+    uint32_t value_id;
+};
 
 /// The SPIR-V environment that we validate against.
 constexpr auto kTargetEnv = SPV_ENV_VULKAN_1_1;
@@ -139,8 +153,71 @@ class Parser {
         // TODO(crbug.com/tint/1907): Handle annotation instructions.
 
         RemapSamplers();
+        RemapBufferBlockAddressSpace();
+        AddRefToOutputsIfNeeded();
 
         return std::move(ir_);
+    }
+
+    // If the spir-v struct was marked as `BufferBlock` then we always treat this as a storage
+    // address space. We do this as a post-pass because we have to propagate the change through all
+    // the types that derive from the buffer block, e.g. any access needs to change from `Uniform`
+    // to `Storage` address space.
+    void RemapBufferBlockAddressSpace() {
+        for (auto* inst : *ir_.root_block) {
+            auto* var = inst->As<core::ir::Var>();
+            if (!var) {
+                continue;
+            }
+
+            auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
+            TINT_ASSERT(ptr);
+
+            auto* str = ptr->UnwrapPtr()->As<core::type::Struct>();
+            if (!str) {
+                continue;
+            }
+            if (!storage_buffer_types_.contains(str)) {
+                continue;
+            }
+            auto iter = var_to_original_access_mode_.find(var);
+            TINT_ASSERT(iter != var_to_original_access_mode_.end());
+            auto access_mode = iter->second;
+
+            var->Result()->SetType(ty_.ptr(core::AddressSpace::kStorage, str, access_mode));
+            UpdateUsagesToStorageAddressSpace(var->Result(), access_mode);
+        }
+    }
+
+    void UpdateUsagesToStorageAddressSpace(core::ir::Value* val, core::Access access_mode) {
+        for (auto& usage : val->UsagesUnsorted()) {
+            if (usage->instruction->Results().IsEmpty()) {
+                continue;
+            }
+
+            auto* res = usage->instruction->Result();
+            auto* ptr = res->Type()->As<core::type::Pointer>();
+            if (!ptr) {
+                continue;
+            }
+            TINT_ASSERT(ptr->AddressSpace() == core::AddressSpace::kUniform);
+
+            res->SetType(ty_.ptr(core::AddressSpace::kStorage, ptr->StoreType(), access_mode));
+            UpdateUsagesToStorageAddressSpace(res, access_mode);
+        }
+    }
+
+    void AddRefToOutputsIfNeeded() {
+        for (auto& entry_point : spirv_context_->module()->entry_points()) {
+            uint32_t spv_id = entry_point.GetSingleWordInOperand(1);
+            TINT_ASSERT(functions_.Contains(spv_id));
+
+            auto* func = *(functions_.Get(spv_id));
+            for (uint32_t i = 3; i < entry_point.NumInOperands(); ++i) {
+                auto* val = Value(entry_point.GetSingleWordInOperand(i));
+                b_.Phony(val)->InsertBefore(func->Block()->Front());
+            }
+        }
     }
 
     void RemapSamplers() {
@@ -296,6 +373,35 @@ class Parser {
                     CreateOverride(inst, Value(inst.result_id()), std::nullopt);
                     break;
                 }
+                case spv::Op::OpSpecConstantComposite: {
+                    auto spec_id = GetSpecId(inst);
+                    if (spec_id.has_value()) {
+                        TINT_ICE()
+                            << "OpSpecConstantCompositeOp not supported when set with a SpecId";
+                    }
+
+                    auto* cnst = SpvConstant(inst.result_id());
+                    if (cnst != nullptr) {
+                        // The spec constant is made of literals, so it's return as a constant from
+                        // SPIR-V Tools Opt. We can just ignore it and let the normal constant
+                        // handling take over.
+                        break;
+                    }
+
+                    Vector<uint32_t, 4> args;
+                    args.Reserve(inst.NumInOperands());
+
+                    for (uint32_t i = 0; i < inst.NumInOperands(); ++i) {
+                        uint32_t id = inst.GetSingleWordInOperand(i);
+                        args.Push(id);
+                    }
+
+                    spec_composites_.insert({inst.result_id(), SpecComposite{
+                                                                   .type = Type(inst.type_id()),
+                                                                   .args = args,
+                                                               }});
+                    break;
+                }
                 default:
                     break;
             }
@@ -422,6 +528,38 @@ class Parser {
         }
 
         return types_.GetOrAdd(TypeKey{type, key_mode}, [&]() -> const core::type::Type* {
+            // TODO(crbug.com/1907): Handle decorations that affect the type
+            uint32_t array_stride = 0;
+            bool set_as_storage_buffer = false;
+            for (auto& deco : type->decorations()) {
+                switch (spv::Decoration(deco[0])) {
+                    case spv::Decoration::Block: {
+                        // Ignore, just means it's a memory block.
+                        break;
+                    }
+                    case spv::Decoration::BufferBlock: {
+                        set_as_storage_buffer = true;
+                        break;
+                    }
+                    case spv::Decoration::ArrayStride: {
+                        array_stride = deco[1];
+                        break;
+                    }
+                    default: {
+                        TINT_UNIMPLEMENTED() << " unhandled type decoration " << deco[0];
+                    }
+                }
+            }
+            // Storage buffer is only set ons structs
+            if (set_as_storage_buffer) {
+                TINT_ASSERT(type->kind() == spvtools::opt::analysis::Type::kStruct);
+            }
+            // ArrayStride is only handled on the array type for now
+            if (array_stride > 0) {
+                TINT_ASSERT(type->kind() == spvtools::opt::analysis::Type::kArray ||
+                            type->kind() == spvtools::opt::analysis::Type::kRuntimeArray);
+            }
+
             switch (type->kind()) {
                 case spvtools::opt::analysis::Type::kVoid: {
                     return ty_.void_();
@@ -461,19 +599,22 @@ class Parser {
                                    mat_ty->element_count());
                 }
                 case spvtools::opt::analysis::Type::kArray: {
-                    return EmitArray(type->AsArray());
+                    return EmitArray(type->AsArray(), array_stride);
                 }
                 case spvtools::opt::analysis::Type::kRuntimeArray: {
                     auto* arr_ty = type->AsRuntimeArray();
                     return ty_.runtime_array(Type(arr_ty->element_type()));
                 }
                 case spvtools::opt::analysis::Type::kStruct: {
-                    return EmitStruct(type->AsStruct());
+                    const core::type::Struct* str_ty = EmitStruct(type->AsStruct());
+                    if (set_as_storage_buffer) {
+                        storage_buffer_types_.insert(str_ty);
+                    }
+                    return str_ty;
                 }
                 case spvtools::opt::analysis::Type::kPointer: {
                     auto* ptr_ty = type->AsPointer();
                     auto* subtype = Type(ptr_ty->pointee_type(), access_mode);
-
                     // Handle is always a read pointer
                     if (subtype->IsHandle()) {
                         access_mode = core::Access::kRead;
@@ -581,7 +722,8 @@ class Parser {
 
     /// @param arr_ty a SPIR-V array object
     /// @returns a Tint array object
-    const core::type::Type* EmitArray(const spvtools::opt::analysis::Array* arr_ty) {
+    const core::type::Type* EmitArray(const spvtools::opt::analysis::Array* arr_ty,
+                                      uint32_t array_stride) {
         const auto& length = arr_ty->length_info();
         TINT_ASSERT(!length.words.empty());
         if (length.words[0] != spvtools::opt::analysis::Array::LengthInfo::kConstant) {
@@ -595,14 +737,20 @@ class Parser {
         const uint64_t count_val = count_const->GetZeroExtendedValue();
         TINT_ASSERT(count_val <= UINT32_MAX);
 
-        // TODO(crbug.com/1907): Handle decorations that affect the array layout.
+        auto* elem_ty = Type(arr_ty->element_type());
+        uint32_t implicit_stride = tint::RoundUp(elem_ty->Align(), elem_ty->Size());
+        if (array_stride == 0 || array_stride == implicit_stride) {
+            return ty_.array(elem_ty, static_cast<uint32_t>(count_val));
+        }
 
-        return ty_.array(Type(arr_ty->element_type()), static_cast<uint32_t>(count_val));
+        return ty_.Get<spirv::type::ExplicitLayoutArray>(
+            elem_ty, ty_.Get<core::type::ConstantArrayCount>(static_cast<uint32_t>(count_val)),
+            elem_ty->Align(), static_cast<uint32_t>(array_stride * count_val), array_stride);
     }
 
     /// @param struct_ty a SPIR-V struct object
     /// @returns a Tint struct object
-    const core::type::Type* EmitStruct(const spvtools::opt::analysis::Struct* struct_ty) {
+    const core::type::Struct* EmitStruct(const spvtools::opt::analysis::Struct* struct_ty) {
         if (struct_ty->NumberOfComponents() == 0) {
             TINT_ICE() << "empty structures are not supported";
         }
@@ -629,7 +777,7 @@ class Parser {
                 if (!attributes.interpolation.has_value()) {
                     attributes.interpolation =
                         core::Interpolation{core::InterpolationType::kPerspective,
-                                            core::InterpolationSampling::kCenter};
+                                            core::InterpolationSampling::kUndefined};
                 }
                 return attributes.interpolation.value();
             };
@@ -715,22 +863,139 @@ class Parser {
         return functions_.GetOrAdd(id, [&] { return b_.Function(ty_.void_()); });
     }
 
+    // Passes a value up through control flow to make it visible in an outer scope. Because SPIR-V
+    // allows an id to be referenced as long as it's dominated, you can access a variable which is
+    // defined inside an if branch for example. In order for that to be accessed in IR, we have to
+    // propagate the value as a return of the control instruction (like the if).
+    //
+    // e.g. if the IR is similar to the following:
+    // ```
+    // if (b) {
+    //    %a:i32 = let 4;
+    //    exit_if
+    // }
+    // %c:i32 = %a + %a;
+    // ```
+    //
+    // We propagate to something like:
+    // ```
+    // %d:i32 = if (b) {
+    //   %a:i32 = let 4;  // The spir-v ID refers to %a at this point
+    //   exit_if %a
+    // }
+    // %c:i32 = %d + %d  // The spir-v ID will now refer to %d instead of %a
+    // ```
+    //
+    // We can end up propagating up through multiple levels, so we can end up with something like:
+    // ```
+    // %k:i32 = if (true) {
+    //   %l:i32 = if (false) {
+    //     %m:i32 = if (true) {
+    //       %n:i32 = switch 4 {
+    //         default: {
+    //           %o:i32 = loop {
+    //             %a:i32 = let 4;
+    //             exit_loop %a
+    //           }
+    //           exit_switch %o
+    //         }
+    //       }
+    //       exit_if %n
+    //     }
+    //     exit_if %m
+    //   }
+    //   exit_if %l
+    // }
+    // %b:i32 = %k + %k
+    // ```
+    //
+    // @param id the spir-v ID to propagate up
+    // @param src the source value being propagated
     core::ir::Value* Propagate(uint32_t id, core::ir::Value* src) {
-        auto* src_res = src->As<core::ir::InstructionResult>();
-        TINT_ASSERT(src_res);
+        // Function params are always in scope so we should never need to propagate.
+        if (src->Is<core::ir::FunctionParam>()) {
+            return src;
+        }
 
-        auto* blk = src_res->Instruction()->Block();
+        auto* blk = tint::Switch(
+            src,  //
+            [&](core::ir::BlockParam* bp) { return bp->Block(); },
+            [&](core::ir::InstructionResult* res) { return res->Instruction()->Block(); },
+            TINT_ICE_ON_NO_MATCH);
+
+        // Walk up the set of control instructions from the current `blk`. We'll update the `src`
+        // instruction as the new result which is to be used for the given SPIR-V `id`. At each
+        // control instruction we'll add the current `src` as a result of each exit from the control
+        // instruction, making a new result which is available in the parent scope.
         while (blk) {
             if (InBlock(blk)) {
                 break;
             }
 
-            auto* ctrl = blk->Parent();
+            core::ir::ControlInstruction* ctrl = nullptr;
+            if (auto* mb = blk->As<core::ir::MultiInBlock>()) {
+                ctrl = mb->Parent()->As<core::ir::ControlInstruction>();
+                TINT_ASSERT(ctrl);
 
-            TINT_ASSERT(blk->Terminator());
+                for (auto exit : ctrl->Exits()) {
+                    tint::Switch(
+                        exit.Value(),  //
+                        [&](core::ir::ExitLoop* el) { el->PushOperand(src); },
+                        [&](core::ir::BreakIf* bi) { bi->PushOperand(src); },  //
+                        TINT_ICE_ON_NO_MATCH);
+                }
+            } else {
+                TINT_ASSERT(blk->Terminator());
 
-            // Add ourselves as part of the terminator return value
-            blk->Terminator()->PushOperand(src);
+                ctrl = tint::Switch(
+                    blk->Terminator(),  //
+                    [&](core::ir::ExitIf* ei) { return ei->If(); },
+                    [&](core::ir::ExitSwitch* es) { return es->Switch(); },
+                    [&](core::ir::ExitLoop* el) { return el->Loop(); },
+                    [&](core::ir::NextIteration* ni) { return ni->Loop(); },
+                    [&](core::ir::Continue* cont) {
+                        // The propagation is going through a `continue`. This means
+                        // this is the only path to the continuing block, but it also
+                        // means we're current in the continuing block. We can't do
+                        // normal propagation here, we have to pass a block param
+                        // instead.
+
+                        auto* param = b_.BlockParam(src->Type());
+
+                        // We're in the continuing block, so make the block param available in the
+                        // scope.
+                        id_stack_.back().insert(id);
+
+                        auto* loop = cont->Loop();
+                        loop->Continuing()->AddParam(param);
+
+                        cont->PushOperand(src);
+
+                        // Set `src` as the `param` so it's returned as the new value
+                        src = param;
+                        return nullptr;
+                    },                                                      //
+                    [&](core::ir::Unreachable*) { return blk->Parent(); },  //
+                    TINT_ICE_ON_NO_MATCH);
+
+                if (!ctrl) {
+                    break;
+                }
+
+                for (auto& exit : ctrl->Exits()) {
+                    exit->PushOperand(src);
+                }
+            }
+
+            // If this control has no exits, then we don't need to add the result through the
+            // control as we're jumping over the control to its parent control. (This is an
+            // `if` inside a `loop` where the `if` is doing a `break`).
+            if (ctrl->Exits().IsEmpty()) {
+                TINT_ASSERT(ctrl->Is<core::ir::If>());
+                blk = ctrl->Block();
+                continue;
+            }
+
             // Add a new result to the control instruction
             ctrl->AddResult(b_.InstructionResult(src->Type()));
             // The source instruction is now the control result we just inserted
@@ -752,36 +1017,67 @@ class Parser {
         return false;
     }
 
+    // Get the spirv constant for the given `id`. `nullptr` if no constant exists.
+    const spvtools::opt::analysis::Constant* SpvConstant(uint32_t id) {
+        return spirv_context_->get_constant_mgr()->FindDeclaredConstant(id);
+    }
+
+    /// Attempts to retrieve the current Tint IR value for `id`. This ignores scoping for the
+    /// variable, if it exists it's returned (or if it's constant it's created). The value will not
+    /// propagate up through control instructions.
+    ///
     /// @param id a SPIR-V result ID
     /// @returns a Tint value object
-    core::ir::Value* Value(uint32_t id) {
+    core::ir::Value* ValueNoPropagate(uint32_t id) {
         auto v = values_.Get(id);
         if (v) {
-            if (!(*v)->Is<core::ir::InstructionResult>()) {
-                return *v;
-            }
-            if (IdIsInScope(id)) {
-                return *v;
-            }
-
-            // The Value is not in scope, so we need to find the originating Value, and then
-            // propagate it up through the control instructions. That will then change the
-            // `Value` which is returned so, set it into the values map as the new "Value" and
-            // return it.
-
-            auto* new_v = Propagate(id, *v);
-            values_.Replace(id, new_v);
-            return new_v;
+            return *v;
         }
 
-        if (auto* c = spirv_context_->get_constant_mgr()->FindDeclaredConstant(id)) {
+        if (auto* c = SpvConstant(id)) {
             auto* val = b_.Constant(Constant(c));
             values_.Add(id, val);
             return val;
         }
+
+        // If this was a spec composite, then it currently isn't in scope, so we construct
+        // a new copy and assign the constant ID to the new construct in this scope.
+        auto iter = spec_composites_.find(id);
+        if (iter != spec_composites_.end()) {
+            Vector<core::ir::Value*, 4> args;
+            for (auto arg : iter->second.args) {
+                args.Push(Value(arg));
+            }
+
+            auto* construct = b_.Construct(iter->second.type, args);
+            current_block_->Append(construct);
+            values_.Replace(id, construct->Result());
+            return construct->Result();
+        }
+
         TINT_UNREACHABLE() << "missing value for result ID " << id;
     }
 
+    /// Attempts to retrieve the current Tint IR value for `id`. If the value exists and is not in
+    /// scope it will propagate the value up through the control instructions.
+    ///
+    /// @param id a SPIR-V result ID
+    /// @returns a Tint value object
+    core::ir::Value* Value(uint32_t id) {
+        auto v = ValueNoPropagate(id);
+        TINT_ASSERT(v);
+
+        if (v->Is<core::ir::Constant>() || IdIsInScope(id)) {
+            return v;
+        }
+
+        auto* new_v = Propagate(id, v);
+        values_.Replace(id, new_v);
+        return new_v;
+    }
+
+    /// Creates the Tint IR constant for the SPIR-V `constant` value.
+    ///
     /// @param constant a SPIR-V constant object
     /// @returns a Tint constant value
     const core::constant::Value* Constant(const spvtools::opt::analysis::Constant* constant) {
@@ -959,6 +1255,41 @@ class Parser {
 
             // Set the entry point name.
             ir_.SetName(func, entry_point.GetOperand(2).AsString());
+
+            if (func->IsCompute()) {
+                // Search for `WorkgroupSize` decorated Ids
+                for (const spvtools::opt::Instruction& inst :
+                     spirv_context_->module()->annotations()) {
+                    if (inst.opcode() != spv::Op::OpDecorate ||
+                        inst.GetSingleWordInOperand(1) != uint32_t(spv::Decoration::BuiltIn) ||
+                        inst.GetSingleWordInOperand(2) != uint32_t(spv::BuiltIn::WorkgroupSize)) {
+                        continue;
+                    }
+                    uint32_t id = inst.GetSingleWordInOperand(0);
+
+                    Vector<core::ir::Value*, 3> args;
+                    if (auto* c = SpvConstant(id)) {
+                        auto* vals = c->AsVectorConstant();
+                        TINT_ASSERT(vals);
+
+                        for (auto& el : vals->GetComponents()) {
+                            args.Push(b_.Constant(Constant(el)));
+                        }
+                    } else {
+                        TINT_ASSERT(spec_composites_.contains(id));
+
+                        auto info = spec_composites_[id];
+                        TINT_ASSERT(info.args.Length() == 3);
+
+                        for (auto arg : info.args) {
+                            args.Push(Value(arg));
+                        }
+                    }
+                    func->SetWorkgroupSize(args[0], args[1], args[2]);
+
+                    break;
+                }
+            }
         }
 
         // Handle OpExecutionMode declarations.
@@ -984,11 +1315,11 @@ class Parser {
         }
     }
 
-    bool InBlock(core::ir::Block* blk) { return current_blocks_.count(blk) > 0; }
+    bool InBlock(core::ir::Block* blk) { return current_blocks_.contains(blk); }
 
     // A block parent is a container for a scope, like a `{}`d section in code. It controls the
     // block addition to the current blocks and the ID stack entry for the block.
-    void EmitBlockParent(core::ir::Block* dst, const spvtools::opt::BasicBlock& src) {
+    void EmitBlockParent(core::ir::Block* dst, spvtools::opt::BasicBlock& src) {
         TINT_ASSERT(!InBlock(dst));
 
         id_stack_.emplace_back();
@@ -1003,8 +1334,10 @@ class Parser {
     /// Emit the contents of SPIR-V block @p src into Tint IR block @p dst.
     /// @param dst the Tint IR block to append to
     /// @param src the SPIR-V block to emit
-    void EmitBlock(core::ir::Block* dst, const spvtools::opt::BasicBlock& src) {
+    void EmitBlock(core::ir::Block* dst, spvtools::opt::BasicBlock& src) {
         TINT_SCOPED_ASSIGNMENT(current_block_, dst);
+
+        values_to_replace_.push_back({});
 
         auto* loop_merge_inst = src.GetLoopMergeInst();
         // This is a loop merge block, so we need to treat it as a Loop.
@@ -1024,6 +1357,8 @@ class Parser {
             // Now emit the remainder of the block into the loop body.
             current_block_ = loop->Body();
         }
+
+        spirv_id_to_block_.insert({src.id(), current_block_});
 
         for (auto& inst : src) {
             switch (inst.opcode()) {
@@ -1393,6 +1728,12 @@ class Parser {
                 case spv::Op::OpSampledImage:
                     EmitSampledImage(inst);
                     break;
+                case spv::Op::OpImageFetch:
+                    EmitImageFetchOrRead(inst, spirv::BuiltinFn::kImageFetch);
+                    break;
+                case spv::Op::OpImageRead:
+                    EmitImageFetchOrRead(inst, spirv::BuiltinFn::kImageRead);
+                    break;
                 case spv::Op::OpImageGather:
                     EmitImageGather(inst);
                     break;
@@ -1414,8 +1755,17 @@ class Parser {
                 case spv::Op::OpImageSampleImplicitLod:
                     EmitImageSample(inst, spirv::BuiltinFn::kImageSampleImplicitLod);
                     break;
+                case spv::Op::OpImageSampleProjImplicitLod:
+                    EmitImageSample(inst, spirv::BuiltinFn::kImageSampleProjImplicitLod);
+                    break;
+                case spv::Op::OpImageSampleProjExplicitLod:
+                    EmitImageSample(inst, spirv::BuiltinFn::kImageSampleProjExplicitLod);
+                    break;
                 case spv::Op::OpImageWrite:
                     EmitImageWrite(inst);
+                    break;
+                case spv::Op::OpPhi:
+                    EmitPhi(inst);
                     break;
                 default:
                     TINT_UNIMPLEMENTED()
@@ -1429,16 +1779,316 @@ class Parser {
             auto* loop = StopWalkingAt(src.id())->As<core::ir::Loop>();
             TINT_ASSERT(loop);
 
+            // Add the body terminator if necessary
             if (!loop->Body()->Terminator()) {
-                loop->Body()->Append(b_.Continue(loop));
+                loop->Body()->Append(b_.Unreachable());
             }
+
+            // Push id stack entry for the continuing block. We don't use EmitBlockParent to do this
+            // because we need the scope to exist until after we process any `continue_blk_phis_`.
+            id_stack_.emplace_back();
+
+            auto continue_id = loop_merge_inst->GetSingleWordInOperand(1);
+
+            // We only need to emit the continuing block if:
+            //  a) It is not the loop header
+            //  b) It has inbound branches. This works around a case where you can have a continuing
+            //     where uses values which are very difficult to propagate, but the continuing is
+            //     never reached anyway, so the propagation is useless.
+            if (continue_id != src.id() &&
+                !loop->Continuing()->InboundSiblingBranches().IsEmpty()) {
+                const auto& bb_continue = current_spirv_function_->FindBlock(continue_id);
+
+                current_blocks_.insert(loop->Continuing());
+                // Emit the continuing block.
+                EmitBlock(loop->Continuing(), *bb_continue);
+
+                current_blocks_.erase(loop->Continuing());
+            }
+
+            if (!loop->Continuing()->Terminator()) {
+                loop->Continuing()->Append(b_.NextIteration(loop));
+            }
+
+            // If this continue block needs to pass any `phi` instructions back to
+            // the main loop body.
+            //
+            // We have to do this here because we need to have emitted the loop
+            // body before we can get the values used in the continue block.
+            auto phis = continue_blk_phis_.find(continue_id);
+            if (phis != continue_blk_phis_.end()) {
+                for (auto value_id : phis->second) {
+                    auto* value = Value(value_id);
+
+                    tint::Switch(
+                        loop->Continuing()->Terminator(),  //
+                        [&](core::ir::NextIteration* ni) { ni->PushOperand(value); },
+                        [&](core::ir::BreakIf* bi) {
+                            // TODO(dsinclair): Need to change the break-if insertion of there
+                            // happens to be exit values, but those are rare, so leave this for when
+                            // we have test case.
+                            TINT_ASSERT(bi->ExitValues().IsEmpty());
+
+                            auto len = bi->NextIterValues().Length();
+                            bi->PushOperand(value);
+                            bi->SetNumNextIterValues(len + 1);
+                        },
+                        TINT_ICE_ON_NO_MATCH);
+                }
+            }
+
+            id_stack_.pop_back();
+        }
+
+        // For any `OpPhi` values we saw, insert their `Value` now. We do this
+        // at the end of the loop because a phi can refer to instructions
+        // defined after it in the block.
+        auto replace = values_to_replace_.back();
+        for (auto& val : replace) {
+            auto* value = ValueNoPropagate(val.value_id);
+            val.terminator->SetOperand(val.idx, value);
+        }
+        values_to_replace_.pop_back();
+
+        if (loop_merge_inst) {
+            auto* loop = StopWalkingAt(src.id())->As<core::ir::Loop>();
+            TINT_ASSERT(loop);
 
             current_blocks_.erase(loop->Body());
             id_stack_.pop_back();
 
+            // If we added phi's to the continuing block, we may have exits from the body which
+            // aren't valid.
+            auto continuing_param_count = loop->Continuing()->Params().Length();
+            if (continuing_param_count > 0) {
+                for (auto incoming : loop->Continuing()->InboundSiblingBranches()) {
+                    TINT_ASSERT(incoming->Is<core::ir::Continue>());
+
+                    // Check if the block this instruction exists in has default phi result that we
+                    // can append.
+                    auto inst_to_blk_iter = inst_to_spirv_block_.find(incoming);
+                    if (inst_to_blk_iter != inst_to_spirv_block_.end()) {
+                        uint32_t spirv_blk = inst_to_blk_iter->second;
+                        auto phi_values_from_loop_header = block_phi_values_[spirv_blk];
+                        // If there were phi values, push them to this instruction
+                        for (auto value_id : phi_values_from_loop_header) {
+                            auto* value = Value(value_id);
+                            incoming->PushOperand(value);
+                        }
+                    }
+                }
+            }
+
+            // Emit the merge block
             auto merge_id = loop_merge_inst->GetSingleWordInOperand(0);
             const auto& merge_bb = current_spirv_function_->FindBlock(merge_id);
             EmitBlock(dst, *merge_bb);
+        }
+    }
+
+    struct IfBranchValue {
+        core::ir::Value* value;
+        core::ir::If* if_;
+    };
+
+    void EmitPhi(spvtools::opt::Instruction& inst) {
+        auto num_ops = inst.NumInOperands();
+
+        // If there are only 2 arguments, that means we came directly from a block, so just emit the
+        // value directly.
+        if (num_ops == 2) {
+            AddValue(inst.result_id(), Value(inst.GetSingleWordInOperand(0)));
+            return;
+        }
+
+        std::unordered_map<core::ir::ControlInstruction*, const core::type::Type*>
+            ctrl_inst_result_types;
+        std::unordered_map<core::ir::MultiInBlock*, const core::type::Type*> blk_to_param_types;
+
+        std::optional<IfBranchValue> if_to_update_branch;
+
+        auto add_ctrl_inst = [&](core::ir::ControlInstruction* ctrl, const core::type::Type* type) {
+            auto iter = ctrl_inst_result_types.find(ctrl);
+            if (iter != ctrl_inst_result_types.end()) {
+                TINT_ASSERT(iter->second == type);
+                return;
+            }
+            ctrl_inst_result_types.insert({ctrl, type});
+        };
+
+        auto* type = Type(inst.type_id());
+        auto add_blk_inst = [&](core::ir::MultiInBlock* blk) {
+            auto iter = blk_to_param_types.find(blk);
+            if (iter != blk_to_param_types.end()) {
+                TINT_ASSERT(iter->second == type);
+                return;
+            }
+            blk_to_param_types.insert({blk, type});
+        };
+
+        auto* phi_spirv_block = spirv_context_->get_instr_block(&inst);
+        auto* phi_loop_merge_inst = phi_spirv_block->GetLoopMergeInst();
+
+        for (uint32_t i = 0; i < num_ops; i += 2) {
+            auto value_id = inst.GetSingleWordInOperand(i);
+            auto blk_id = inst.GetSingleWordInOperand(i + 1);
+
+            // Store this value away as a default phi value for this loop header.
+            block_phi_values_[blk_id].push_back(value_id);
+
+            auto value_blk_iter = spirv_id_to_block_.find(blk_id);
+
+            // The referenced block hasn't been emitted yet (continue blocks have this
+            // behaviour). So, store the fact that it needs to return a given value away for
+            // when we do emit the block.
+            if (value_blk_iter == spirv_id_to_block_.end()) {
+                auto continue_id = phi_loop_merge_inst->GetSingleWordInOperand(1);
+
+                // Note, we push it to the `continue_id` as the block and not
+                // `blk_id` so that we can emit them into the continuing block as
+                // a group.
+                continue_blk_phis_[continue_id].push_back(value_id);
+
+                // Add the phi to the current block set of input parameters
+                auto* mb = current_block_->As<core::ir::MultiInBlock>();
+                TINT_ASSERT(mb);
+                add_blk_inst(mb);
+                continue;
+            }
+
+            core::ir::Terminator* term = nullptr;
+
+            // The `OpPhi` is part of a loop header block, treat it special as we need to insert
+            // things into the phi's loop initializer/body/continuing block as needed.
+            if (phi_loop_merge_inst) {
+                auto* loop = StopWalkingAt(phi_spirv_block->id())->As<core::ir::Loop>();
+                TINT_ASSERT(loop);
+
+                // A phi from an explicit continue block is handled above as we haven't emitted the
+                // continue block so we wouldn't find it in the `spirv_id_to_block` list.
+
+                // If this loop header is also the continue block
+                if (blk_id == phi_spirv_block->id()) {
+                    if (loop->Continuing()->IsEmpty()) {
+                        b_.Append(loop->Continuing(), [&] { term = b_.NextIteration(loop); });
+                        add_blk_inst(loop->Body());
+                    } else {
+                        // With multiple phis we my have already created the continuing
+                        // block, so just get the terminator.
+                        term = loop->Continuing()->Terminator();
+                        TINT_ASSERT(term->Is<core::ir::NextIteration>());
+                    }
+                } else {
+                    // We know this isn't the continue as it hasn't emitted yet, so this has to be
+                    // coming from the calling block. So, we need to add this item into the
+                    // initializer `NextIteration` and as a parameter to the body.
+                    if (loop->Initializer()->IsEmpty()) {
+                        b_.Append(loop->Initializer(), [&] { term = b_.NextIteration(loop); });
+                        add_blk_inst(loop->Body());
+                    } else {
+                        term = loop->Initializer()->Terminator();
+                        TINT_ASSERT(term->Is<core::ir::NextIteration>());
+                    }
+                }
+
+            } else {
+                auto* value_ir_blk = value_blk_iter->second;
+
+                // We know the phi isn't part of a loop. That means, all of the blocks making up the
+                // phi are known. The one trick is that an `if` may only have a single block (the
+                // true or false). In that case, we have to push the value into the other block
+                // as it has to return something.
+                //
+                // For a `Switch` we will have all the cases already so we can just get the
+                // terminator for the block.
+
+                if (!value_ir_blk->Terminator()) {
+                    auto* if_ = value_ir_blk->Back()->As<core::ir::If>();
+                    TINT_ASSERT(if_);
+                    // No block terminator means the block that the `phi` is referencing
+                    // isn't finished (in IR-land). This can only happen with an `if`
+                    // instruction where you've branched directly to the `phi` as either the
+                    // `then` or `else` clause.
+
+                    TINT_ASSERT(!if_to_update_branch.has_value());
+
+                    auto* value = ValueNoPropagate(value_id);
+                    if_to_update_branch = IfBranchValue{
+                        .value = value,
+                        .if_ = if_,
+                    };
+
+                    continue;
+                }
+                term = value_ir_blk->Terminator();
+            }
+
+            // If we can't get to this part of the control flow, ignore the phi
+            if (term->Is<core::ir::Unreachable>()) {
+                continue;
+            }
+
+            // Push a placeholder for the operand value at this point. We'll
+            // store away the terminator/index pair along with the required
+            // value and then fill it in at the end of the block emission.
+            auto operand_idx = term->PushOperand(nullptr);
+            values_to_replace_.back().push_back(ReplacementValue{
+                .terminator = term,
+                .idx = operand_idx,
+                .value_id = value_id,
+            });
+
+            // For each incoming block to the phi, store either the control
+            // instruction to be updated, or the block to be updated and the
+            // type of result to return.
+            tint::Switch(
+                term,  //
+                [&](core::ir::Exit* exit) { add_ctrl_inst(exit->ControlInstruction(), type); },
+                [&](core::ir::BreakIf* bi) { add_ctrl_inst(bi->Loop(), type); },
+                [&](core::ir::Continue* cont) { add_blk_inst(cont->Loop()->Continuing()); },
+                [&](core::ir::NextIteration* ni) { add_blk_inst(ni->Loop()->Body()); },
+                TINT_ICE_ON_NO_MATCH);
+        }
+
+        // We need to update one of the two `if` branches with the return value.
+        // Find the one where the terminator has less operands and update that
+        // one.
+        if (if_to_update_branch.has_value()) {
+            auto* value = if_to_update_branch->value;
+            auto* if_ = if_to_update_branch->if_;
+
+            core::ir::Terminator* term = nullptr;
+
+            if (if_->True()->Terminator()->Operands().Length() <
+                if_->False()->Terminator()->Operands().Length()) {
+                term = if_->True()->Terminator();
+            } else {
+                term = if_->False()->Terminator();
+            }
+
+            term->PushOperand(value);
+            add_ctrl_inst(if_, value->Type());
+        }
+
+        // Update control instruction results to contain the new type.
+        for (auto info : ctrl_inst_result_types) {
+            auto* ctrl = info.first;
+            auto* res_type = info.second;
+            auto* res = b_.InstructionResult(res_type);
+            ctrl->AddResult(res);
+            values_.Replace(inst.result_id(), res);
+        }
+
+        // Update block params to contain the new type.
+        for (auto info : blk_to_param_types) {
+            auto* blk = info.first;
+            auto* param_type = info.second;
+
+            auto* p = b_.BlockParam(param_type);
+            blk->AddParam(p);
+
+            TINT_ASSERT(blk == current_block_);
+            AddValue(inst.result_id(), p);
         }
     }
 
@@ -1448,6 +2098,26 @@ class Parser {
                                                      spirv::BuiltinFn::kSampledImage,
                                                      Vector{tex->Type()}, Args(inst, 2)),
              inst.result_id());
+    }
+
+    void EmitImageFetchOrRead(const spvtools::opt::Instruction& inst, spirv::BuiltinFn fn) {
+        auto sampled_image = Value(inst.GetSingleWordInOperand(0));
+        auto* coord = Value(inst.GetSingleWordInOperand(1));
+
+        Vector<core::ir::Value*, 4> args = {sampled_image, coord};
+
+        if (inst.NumInOperands() > 2) {
+            uint32_t literal_mask = inst.GetSingleWordInOperand(2);
+            args.Push(b_.Constant(u32(literal_mask)));
+
+            if (literal_mask != 0) {
+                args.Push(Value(inst.GetSingleWordInOperand(3)));
+            }
+        } else {
+            args.Push(b_.Zero(ty_.u32()));
+        }
+
+        Emit(b_.Call<spirv::ir::BuiltinCall>(Type(inst.type_id()), fn, args), inst.result_id());
     }
 
     void EmitImageGather(const spvtools::opt::Instruction& inst) {
@@ -1697,6 +2367,7 @@ class Parser {
         if (auto* ctrl_inst = StopWalkingAt(dest_id)) {
             if (auto* loop = ctrl_inst->As<core::ir::Loop>()) {
                 // Going to the merge in a loop body has to be a break regardless of nesting level.
+
                 if (InBlock(loop->Body()) && !InBlock(loop->Continuing())) {
                     EmitWithoutResult(b_.Exit(ctrl_inst));
                 }
@@ -1774,6 +2445,11 @@ class Parser {
             true_blocks.pop_back();
             false_blocks.pop_back();
         }
+
+        // If this is already a stop block, so it can't be a premerge
+        if (id.has_value() && walk_stop_blocks_.contains(id.value())) {
+            return std::nullopt;
+        }
         return id;
     }
 
@@ -1789,27 +2465,30 @@ class Parser {
         return ctrl;
     }
 
-    void EmitBranchStopBlock(core::ir::ControlInstruction* ctrl,
-                             core::ir::If* if_,
-                             core::ir::Block* blk,
-                             uint32_t target) {
+    core::ir::Instruction* EmitBranchStopBlock(core::ir::ControlInstruction* ctrl,
+                                               core::ir::If* if_,
+                                               core::ir::Block* blk,
+                                               uint32_t target) {
         if (auto* loop = ContinueTarget(target)) {
-            blk->Append(b_.Continue(loop));
-        } else {
-            auto iter = merge_to_premerge_.find(target);
-            if (iter != merge_to_premerge_.end()) {
-                // Branch to a merge block, but skipping over an expected premerge block
-                // so we need a guard.
-                if (!iter->second.condition) {
-                    b_.InsertBefore(iter->second.parent, [&] {
-                        iter->second.condition = b_.Var("execute_premerge", true);
-                    });
-                }
-                b_.Append(blk, [&] { b_.Store(iter->second.condition, false); });
-            }
-
-            blk->Append(b_.Exit(ExitFor(ctrl, if_)));
+            auto* cont = b_.Continue(loop);
+            blk->Append(cont);
+            return cont;
         }
+
+        auto iter = merge_to_premerge_.find(target);
+        if (iter != merge_to_premerge_.end()) {
+            // Branch to a merge block, but skipping over an expected premerge block
+            // so we need a guard.
+            if (!iter->second.condition) {
+                b_.InsertBefore(iter->second.parent,
+                                [&] { iter->second.condition = b_.Var("execute_premerge", true); });
+            }
+            b_.Append(blk, [&] { b_.Store(iter->second.condition, false); });
+        }
+
+        auto* exit = b_.Exit(ExitFor(ctrl, if_));
+        blk->Append(exit);
+        return exit;
     }
 
     bool ProcessBranchAsLoopHeader(core::ir::Value* cond, uint32_t true_id, uint32_t false_id) {
@@ -1944,7 +2623,8 @@ class Parser {
         }
 
         if (auto* ctrl = StopWalkingAt(true_id)) {
-            EmitBranchStopBlock(ctrl, if_, if_->True(), true_id);
+            auto* new_inst = EmitBranchStopBlock(ctrl, if_, if_->True(), true_id);
+            inst_to_spirv_block_[new_inst] = bb.id();
         } else {
             EmitIfBranch(true_id, if_, if_->True());
         }
@@ -1954,7 +2634,8 @@ class Parser {
         if (false_id == true_id) {
             if_->False()->Append(b_.Unreachable());
         } else if (auto* ctrl = StopWalkingAt(false_id)) {
-            EmitBranchStopBlock(ctrl, if_, if_->False(), false_id);
+            auto* new_inst = EmitBranchStopBlock(ctrl, if_, if_->False(), false_id);
+            inst_to_spirv_block_[new_inst] = bb.id();
         } else {
             EmitIfBranch(false_id, if_, if_->False());
         }
@@ -2005,15 +2686,6 @@ class Parser {
         walk_stop_blocks_.insert({merge_id, loop});
         if (continue_id != header_id) {
             walk_stop_blocks_.insert({continue_id, loop});
-
-            const auto& bb_continue = current_spirv_function_->FindBlock(continue_id);
-
-            // Emit the continuing block.
-            EmitBlockParent(loop->Continuing(), *bb_continue);
-        }
-
-        if (!loop->Continuing()->Terminator()) {
-            loop->Continuing()->Append(b_.NextIteration(loop));
         }
 
         // The remainder of the loop body will process when we hit the
@@ -2636,7 +3308,9 @@ class Parser {
             // Create the interpolation field with the default values on first call.
             if (!io_attributes.interpolation.has_value()) {
                 io_attributes.interpolation = core::Interpolation{
-                    core::InterpolationType::kPerspective, core::InterpolationSampling::kCenter};
+                    .type = core::InterpolationType::kPerspective,
+                    .sampling = core::InterpolationSampling::kUndefined,
+                };
             }
             return io_attributes.interpolation.value();
         };
@@ -2685,6 +3359,22 @@ class Parser {
             }
         }
 
+        if (io_attributes.interpolation.has_value()) {
+            // WGSL requires that '@interpolate(flat)' needs to be paired with '@location', however
+            // SPIR-V requires all fragment shader integer Inputs are 'flat'. If the decorations do
+            // not contain a spv::Decoration::Location, then remove the interpolation decoration.
+            //
+            // The `perspective,center` interpolation is the default value if one isn't provided.
+            // Just strip it off. This keeps us from accidentally applying interpolation where it
+            // isn't permitted, and it isn't necessary.
+            if ((io_attributes.interpolation->type == core::InterpolationType::kFlat &&
+                 !io_attributes.location.has_value()) ||
+                (io_attributes.interpolation->type == core::InterpolationType::kPerspective &&
+                 io_attributes.interpolation->sampling == core::InterpolationSampling::kCenter)) {
+                io_attributes.interpolation = std::nullopt;
+            }
+        }
+
         auto* element_ty = Type(inst.type_id(), access_mode)->As<core::type::Pointer>();
         auto* var = b_.Var(element_ty);
         if (inst.NumOperands() > 3) {
@@ -2715,6 +3405,7 @@ class Parser {
             io_attributes.binding_point = {group.value(), binding.value()};
         }
         var->SetAttributes(std::move(io_attributes));
+        var_to_original_access_mode_.insert({var, access_mode});
 
         Emit(var, inst.result_id());
     }
@@ -2782,7 +3473,7 @@ class Parser {
     std::unordered_map<uint32_t, core::ir::ControlInstruction*> walk_stop_blocks_;
     // Map of continue target ID to the controlling IR loop.
     std::unordered_map<uint32_t, core::ir::Loop*> continue_targets_;
-    // Map of continue target ID to the controlling IR loop.
+    // Map of header target ID to the controlling IR loop.
     std::unordered_map<uint32_t, core::ir::Loop*> loop_headers_;
 
     struct PremergeInfo {
@@ -2793,11 +3484,50 @@ class Parser {
     std::unordered_map<uint32_t, PremergeInfo> merge_to_premerge_;
 
     std::unordered_set<core::ir::Block*> current_blocks_;
+
+    // For each block, we keep a set of SPIR-V `id`s which are known in that scope.
     std::vector<std::unordered_set<uint32_t>> id_stack_;
 
     // If we're in a switch, is populated with the IDs of the blocks for each of the switch
     // selectors. This lets us watch for fallthrough when emitting branch instructions.
     std::vector<std::unordered_set<uint32_t>> current_switch_blocks_;
+
+    /// Maps from a spirv-v block id to the corresponding block in the IR
+    std::unordered_map<uint32_t, core::ir::Block*> spirv_id_to_block_;
+
+    // Map of continue block id to the phi types which need to be returned by
+    // the continue target
+    std::unordered_map<uint32_t, std::vector<uint32_t>> continue_blk_phis_;
+
+    // A stack of values which need to be replaced as we finish processing a
+    // block. Used to store `phi` information so we can retrieve values which
+    // are defined after the `OpPhi` instruction.
+    std::vector<std::vector<ReplacementValue>> values_to_replace_;
+
+    // A map of loop header to phi values returned by that loop header
+    std::unordered_map<uint32_t, std::vector<uint32_t>> block_phi_values_;
+
+    // Map of certain instructions back to their originating spirv block
+    std::unordered_map<core::ir::Instruction*, uint32_t> inst_to_spirv_block_;
+
+    // Structure hold spec composite information
+    struct SpecComposite {
+        // The composite type
+        const core::type::Type* type;
+        // The composite arguments
+        Vector<uint32_t, 4> args;
+    };
+
+    // The set of SPIR-V IDs which map to `OpSpecConstantComposite` information
+    std::unordered_map<uint32_t, SpecComposite> spec_composites_;
+
+    // Structures which are marked with `BufferBlock` and need to be reported as `Storage` address
+    // space
+    std::unordered_set<const core::type::Struct*> storage_buffer_types_;
+
+    // Map of `var` to the access mode it was originally created with. This may be different from
+    // the current mode if we needed to set a default mode.
+    std::unordered_map<core::ir::Var*, core::Access> var_to_original_access_mode_;
 };
 
 }  // namespace

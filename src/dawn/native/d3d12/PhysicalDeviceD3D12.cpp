@@ -146,6 +146,7 @@ bool PhysicalDevice::AreTimestampQueriesSupported() const {
 
 void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::TextureCompressionBC);
+    EnableFeature(Feature::TextureCompressionBCSliced3D);
     EnableFeature(Feature::DawnMultiPlanarFormats);
     EnableFeature(Feature::Depth32FloatStencil8);
     EnableFeature(Feature::IndirectFirstInstance);
@@ -167,6 +168,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::MultiDrawIndirect);
     EnableFeature(Feature::ClipDistances);
     EnableFeature(Feature::FlexibleTextureViews);
+    EnableFeature(Feature::TextureFormatsTier1);
 
     if (AreTimestampQueriesSupported()) {
         EnableFeature(Feature::TimestampQuery);
@@ -295,10 +297,10 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // Allocate half of the UAVs to storage buffers, and half to storage textures.
     limits->v1.maxStorageTexturesPerShaderStage = maxUAVsPerStage / 2;
     limits->v1.maxStorageBuffersPerShaderStage = maxUAVsPerStage - maxUAVsPerStage / 2;
-    limits->v1.maxStorageTexturesInFragmentStage = limits->v1.maxStorageTexturesPerShaderStage;
-    limits->v1.maxStorageBuffersInFragmentStage = limits->v1.maxStorageBuffersPerShaderStage;
-    limits->v1.maxStorageTexturesInVertexStage = limits->v1.maxStorageTexturesPerShaderStage;
-    limits->v1.maxStorageBuffersInVertexStage = limits->v1.maxStorageBuffersPerShaderStage;
+    limits->compat.maxStorageTexturesInFragmentStage = limits->v1.maxStorageTexturesPerShaderStage;
+    limits->compat.maxStorageBuffersInFragmentStage = limits->v1.maxStorageBuffersPerShaderStage;
+    limits->compat.maxStorageTexturesInVertexStage = limits->v1.maxStorageTexturesPerShaderStage;
+    limits->compat.maxStorageBuffersInVertexStage = limits->v1.maxStorageBuffersPerShaderStage;
     limits->v1.maxSampledTexturesPerShaderStage = maxSRVsPerStage;
     limits->v1.maxSamplersPerShaderStage = maxSamplersPerStage;
 
@@ -823,15 +825,22 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     }
 
     // Use packed DXGI_FORMAT_D24_UNORM_S8_UINT format on Qualcomm devices to workaround texture
-    // loading/sampling issues for depth24plus-stencil8 texture.
+    // loading/sampling issues for depth24plus-stencil8 texture. Note that Qualcomm D3D12 drivers
+    // only report ACPI ids.
     // See https://crbug.com/411268750 for more information.
-    if (gpu_info::IsQualcomm_ACPI(vendorId) || gpu_info::IsQualcomm_PCI(vendorId)) {
+    if (gpu_info::IsQualcomm_ACPI(vendorId)) {
         deviceToggles->Default(Toggle::UsePackedDepth24UnormStencil8Format, true);
     }
 
     // Use the Tint IR backend by default if the corresponding platform feature is enabled.
     deviceToggles->Default(Toggle::UseTintIR,
                            platform->IsFeatureEnabled(platform::Features::kWebGPUUseTintIR));
+
+    // Enable the integer range analysis for shader robustness by default if the corresponding
+    // platform feature is enabled.
+    deviceToggles->Default(
+        Toggle::EnableIntegerRangeAnalysisInRobustness,
+        platform->IsFeatureEnabled(platform::Features::kWebGPUEnableRangeAnalysisForRobustness));
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
@@ -855,13 +864,6 @@ MaybeError PhysicalDevice::ResetInternalDeviceForTestingImpl() {
 }
 
 void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const {
-    if (auto* subgroupProperties = info.Get<AdapterPropertiesSubgroups>()) {
-        subgroupProperties->subgroupMinSize = mDeviceInfo.waveLaneCountMin;
-        // Currently the WaveLaneCountMax queried from D3D12 API is not reliable and the meaning is
-        // unclear. Use 128 instead, which is the largest possible size. Reference:
-        // https://github.com/Microsoft/DirectXShaderCompiler/wiki/Wave-Intrinsics#:~:text=UINT%20WaveLaneCountMax
-        subgroupProperties->subgroupMaxSize = 128u;
-    }
     if (auto* memoryHeapProperties = info.Get<AdapterPropertiesMemoryHeaps>()) {
         // https://microsoft.github.io/DirectX-Specs/d3d/D3D12GPUUploadHeaps.html describes
         // the properties of D3D12 Default/Upload/Readback heaps.

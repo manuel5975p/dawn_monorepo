@@ -56,7 +56,17 @@
         {{- type.name.CamelCase() }}{{ '?' if optional }}
         {%- if emit_defaults -%}
             {%- if type.has_basic_constructor -%}
-                {{ ' ' }}= {{ type.name.CamelCase() }}()
+                {{ ' ' }}= {{ type.name.CamelCase() }}(
+                    {%- if arg.default_value == 'zero' %}
+                        {%- for member in kotlin_record_members(type.members) %}
+                            {% if member.type.category in ['bitmask', 'enum'] %}
+                                {%- for value in member.type.values if value.value == 0 -%}
+                                    {{ member.name.camelCase() }} =
+                                        {{- member.type.name.CamelCase() }}.{{ as_ktName(value.name.CamelCase()) }},{{ ' ' }}
+                                {%- endfor %}
+                            {%- endif %}
+                        {%- endfor %}
+                    {%- endif %})
             {%- elif optional -%}
                 {{ ' ' }}= null
             {%- endif %}
@@ -81,6 +91,9 @@
         {%- set ns = namespace(type_name='', default_value=default_value) -%}
         {%- if type.name.get() == 'float' -%}
             {%- set ns.type_name = 'Float' -%}
+            {%- if ns.default_value -%}
+                {%- set ns.default_value = "%.1ff"|format(ns.default_value[:-1]|float) -%}
+            {%- endif -%}
         {%- elif type.name.get() == 'double' -%}
             {%- set ns.type_name = 'Double' -%}
         {%- elif type.name.get() in ['int8_t', 'uint8_t'] -%}

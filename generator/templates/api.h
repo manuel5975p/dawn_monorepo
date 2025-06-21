@@ -43,6 +43,8 @@
 #define WGPU_BREAKING_CHANGE_STRING_VIEW_LABELS
 #define WGPU_BREAKING_CHANGE_STRING_VIEW_OUTPUT_STRUCTS
 #define WGPU_BREAKING_CHANGE_STRING_VIEW_CALLBACKS
+#define WGPU_BREAKING_CHANGE_QUEUE_WORK_DONE_CALLBACK_MESSAGE
+#define WGPU_BREAKING_CHANGE_COMPATIBILITY_MODE_LIMITS
 {% macro render_c_default_value(member) -%}
     {%- if member.annotation in ["*", "const*", "const*const*"] -%}
         //* Pointer types should always default to NULL.
@@ -85,8 +87,7 @@
         {%- endif -%}
     {%- elif member.type.category == "native" -%}
         //* Defaults in native types are either directly specified, or
-        //* explicitly defined per type, except for booleans, which we need to
-        //* convert into literals.
+        //* explicitly defined per type.
         {%- if member.default_value != None and member.type.name.get() != "bool" -%}
             //* Check to see if the default value is a known constant.
             {%- set constant = find_by_name(by_category["constant"], member.default_value) -%}
@@ -103,11 +104,10 @@
             {%- elif member.type.name.get() == "double" -%}
                 0.
             {%- elif member.type.name.get() == "bool" -%}
-                //* Explicitly use literals 0 and 1 for booleans.
                 {%- if member.default_value == "true" -%}
-                    1
+                    {{API}}_TRUE
                 {%- else -%}
-                    0
+                    {{API}}_FALSE
                 {%- endif -%}
             {%- elif "void" in member.type.name.get() -%}
                 //* For members, void types are always pointers. We should
@@ -227,6 +227,8 @@
 #  endif
 #endif
 
+#define WGPU_TRUE (UINT32_C(1))
+#define WGPU_FALSE (UINT32_C(0))
 {% for constant in by_category["constant"] %}
     #define {{API}}_{{constant.name.SNAKE_CASE()}} ({{constant.value}})
 {% endfor %}
@@ -243,6 +245,11 @@ typedef uint32_t {{API}}Bool;
 
 // Structure forward declarations
 {% for type in by_category["structure"] if type.name.get() not in SpecialStructures %}
+    struct {{as_cType(type.name)}};
+{% endfor %}
+
+// Callback info structure forward declarations.
+{% for type in by_category["callback info"] %}
     struct {{as_cType(type.name)}};
 {% endfor %}
 
@@ -281,7 +288,7 @@ typedef uint32_t {{API}}Bool;
 {% for type in by_category["callback function"] %}
     typedef {{as_cType(type.return_type.name)}} (*{{as_cType(type.name)}})(
         {%- for arg in type.arguments -%}
-        {% if arg.type.category == "structure" and arg.type.name.get() != "string view"%}struct {% endif %}{{as_annotated_cType(arg)}}{{", "}}
+        {% if arg.type.category == "structure" and arg.type.name.get() != "string view" %}struct {% endif %}{{as_annotated_cType(arg)}}{{", "}}
         {%- endfor -%}
     {{API}}_NULLABLE void* userdata1, {{API}}_NULLABLE void* userdata2) {{API}}_FUNCTION_ATTRIBUTE;
 
@@ -338,15 +345,15 @@ extern "C" {
 {% for function in by_category["function"] %}
     typedef {{as_cType(function.return_type.name)}} (*{{as_cProc(None, function.name)}})(
             {%- for arg in function.arguments -%}
-                {% if not loop.first %}, {% endif %}
+                {% if not loop.first %}, {% endif -%}
                 {{nullable_annotation(arg)}}{{as_annotated_cType(arg)}}
             {%- endfor -%}
         ) {{API}}_FUNCTION_ATTRIBUTE;
 {% endfor %}
 
-{% for type in by_category["object"] if len(c_methods(type)) > 0 %}
+{% for (type, methods) in c_methods_sorted_by_parent %}
     // Procs of {{type.name.CamelCase()}}
-    {% for method in c_methods(type) %}
+    {% for method in methods %}
         typedef {{as_cType(method.return_type.name)}} (*{{as_cProc(type.name, method.name)}})(
             {{-as_cType(type.name)}} {{as_varName(type.name)}}
             {%- for arg in method.arguments -%}
@@ -370,9 +377,9 @@ extern "C" {
         ) {{API}}_FUNCTION_ATTRIBUTE;
 {% endfor %}
 
-{% for type in by_category["object"] if len(c_methods(type)) > 0 %}
+{% for (type, methods) in c_methods_sorted_by_parent %}
     // Methods of {{type.name.CamelCase()}}
-    {% for method in c_methods(type) %}
+    {% for method in methods %}
         {{API}}_EXPORT {{as_cType(method.return_type.name)}} {{as_cMethod(type.name, method.name)}}(
             {{-as_cType(type.name)}} {{as_varName(type.name)}}
             {%- for arg in method.arguments -%}
