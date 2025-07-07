@@ -131,7 +131,6 @@ enum class Toggle {
     ResolveMultipleAttachmentInSeparatePasses,
     D3D12CreateNotZeroedHeap,
     D3D12DontUseNotZeroedHeapFlagOnTexturesAsCommitedResources,
-    UseTintIR,
     D3DDisableIEEEStrictness,
     PolyFillPacked4x8DotProduct,
     PolyfillPackUnpack4x8Norm,
@@ -140,7 +139,7 @@ enum class Toggle {
     ExposeWGSLExperimentalFeatures,
     DisablePolyfillsOnIntegerDivisonAndModulo,
     ScalarizeMaxMinClamp,
-    MetalEnableModuleConstant,
+    MetalDisableModuleConstantF16,
     EnableImmediateErrorHandling,
     VulkanUseStorageInputOutput16,
     D3D12DontUseShaderModel66OrHigher,
@@ -157,6 +156,7 @@ enum class Toggle {
     VulkanDirectVariableAccessTransformHandle,
     VulkanAddWorkToEmptyResolvePass,
     EnableIntegerRangeAnalysisInRobustness,
+    UseSpirv14,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,

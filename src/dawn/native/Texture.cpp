@@ -423,7 +423,8 @@ MaybeError ValidateTextureUsage(const DeviceBase* device,
                     usage, wgpu::TextureUsage::RenderAttachment, textureDimension);
 
     DAWN_INVALID_IF(
-        !format->supportsStorageUsage && (usage & wgpu::TextureUsage::StorageBinding),
+        !(format->supportsReadOnlyStorageUsage || format->supportsWriteOnlyStorageUsage) &&
+            (usage & wgpu::TextureUsage::StorageBinding),
         "The texture usage (%s) includes %s, which is incompatible with the format (%s).", usage,
         wgpu::TextureUsage::StorageBinding, format->format);
 
@@ -479,6 +480,49 @@ wgpu::TextureUsage GetTextureViewUsage(wgpu::TextureUsage sourceTextureUsage,
     // If a view's requested usage is None, inherit usage from the source texture.
     return (requestedViewUsage != wgpu::TextureUsage::None) ? requestedViewUsage
                                                             : sourceTextureUsage;
+}
+
+MaybeError ValidateTextureComponentSwizzle(const DeviceBase* device,
+                                           const TextureBase* texture,
+                                           const UnpackedPtr<TextureViewDescriptor>& descriptor) {
+    auto* swizzleDesc = descriptor.Get<TextureComponentSwizzleDescriptor>();
+    if (!swizzleDesc) {
+        return {};
+    }
+
+    DAWN_INVALID_IF(!device->HasFeature(Feature::TextureComponentSwizzle),
+                    "swizzle used without the %s feature enabled.",
+                    wgpu::FeatureName::TextureComponentSwizzle);
+
+    wgpu::TextureUsage usage = GetTextureViewUsage(texture->GetUsage(), descriptor->usage);
+    if ((usage & (wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::StorageBinding)) ==
+        0) {
+        return {};
+    }
+
+    auto swizzle = swizzleDesc->swizzle.WithTrivialFrontendDefaults();
+    DAWN_INVALID_IF(swizzle.r != wgpu::ComponentSwizzle::R,
+                    "The texture view's component swizzle r (%s) must be %s when usage "
+                    "includes %s or %s.",
+                    swizzle.r, wgpu::ComponentSwizzle::R, wgpu::TextureUsage::RenderAttachment,
+                    wgpu::TextureUsage::StorageBinding);
+    DAWN_INVALID_IF(swizzle.g != wgpu::ComponentSwizzle::G,
+                    "The texture view's component swizzle g (%s) must be %s when usage "
+                    "includes %s or %s.",
+                    swizzle.g, wgpu::ComponentSwizzle::G, wgpu::TextureUsage::RenderAttachment,
+                    wgpu::TextureUsage::StorageBinding);
+    DAWN_INVALID_IF(swizzle.b != wgpu::ComponentSwizzle::B,
+                    "The texture view's component swizzle b (%s) must be %s when usage "
+                    "includes %s or %s.",
+                    swizzle.b, wgpu::ComponentSwizzle::B, wgpu::TextureUsage::RenderAttachment,
+                    wgpu::TextureUsage::StorageBinding);
+    DAWN_INVALID_IF(swizzle.a != wgpu::ComponentSwizzle::A,
+                    "The texture view's component swizzle a (%s) must be %s when usage "
+                    "includes %s or %s.",
+                    swizzle.a, wgpu::ComponentSwizzle::A, wgpu::TextureUsage::RenderAttachment,
+                    wgpu::TextureUsage::StorageBinding);
+
+    return {};
 }
 
 wgpu::TextureUsage RemoveInvalidViewUsages(wgpu::TextureUsage viewUsage, const Format* viewFormat) {
@@ -827,6 +871,7 @@ MaybeError ValidateTextureViewDescriptor(const DeviceBase* device,
 
     DAWN_TRY(ValidateCanViewTextureAs(device, texture, *viewFormat, descriptor->aspect));
     DAWN_TRY(ValidateTextureViewDimensionCompatibility(device, texture, descriptor));
+    DAWN_TRY(ValidateTextureComponentSwizzle(device, texture, descriptor));
 
     return {};
 }
@@ -991,6 +1036,9 @@ void TextureBase::DestroyImpl() {
     // Drop all the cache references to TextureViews.
     mTextureViewCache = nullptr;
 
+    // Clear the default view associated with the texture.
+    mDefaultView = nullptr;
+
     // Destroy all of the views associated with the texture as well.
     mTextureViews.Destroy();
 }
@@ -1029,6 +1077,7 @@ void TextureBase::WillDropLastExternalRef() {
     // Drop all the additional references to TextureViews that we were holding as a part of the
     // cache.
     mTextureViewCache = nullptr;
+    mDefaultView = nullptr;
 }
 
 std::string TextureBase::GetSizeLabel() const {
@@ -1347,6 +1396,9 @@ Extent3D TextureBase::GetMipLevelSubresourceVirtualSize(uint32_t level, Aspect a
 
 ResultOrError<Ref<TextureViewBase>> TextureBase::CreateView(
     const TextureViewDescriptor* descriptor) {
+    if (descriptor == nullptr) {
+        return GetOrCreateDefaultView();
+    }
     return GetDevice()->CreateTextureView(this, descriptor);
 }
 
@@ -1417,6 +1469,20 @@ uint64_t TextureBase::ComputeEstimatedByteSize() const {
     return byteSize;
 }
 
+ResultOrError<Ref<TextureViewBase>> TextureBase::GetOrCreateDefaultView() {
+    // Texture view caching is not enabled, so don't cache the default view.
+    if (!mTextureViewCache) {
+        return GetDevice()->CreateTextureView(this, nullptr);
+    }
+
+    // Lazily initialize and cache a default view when asked for it.
+    if (!mDefaultView) {
+        DAWN_TRY_ASSIGN(mDefaultView, GetDevice()->CreateTextureView(this, nullptr));
+    }
+    DAWN_ASSERT(mDefaultView);
+    return mDefaultView;
+}
+
 void TextureBase::APIDestroy() {
     Destroy();
 }
@@ -1464,6 +1530,14 @@ TextureViewQuery::TextureViewQuery(const UnpackedPtr<TextureViewDescriptor>& des
     arrayLayerCount = desc->arrayLayerCount;
     aspect = desc->aspect;
     usage = desc->usage;
+
+    if (auto* swizzleDesc = desc.Get<TextureComponentSwizzleDescriptor>()) {
+        auto swizzle = swizzleDesc->swizzle.WithTrivialFrontendDefaults();
+        swizzleRed = swizzle.r;
+        swizzleGreen = swizzle.g;
+        swizzleBlue = swizzle.b;
+        swizzleAlpha = swizzle.a;
+    }
 }
 
 // TextureViewCacheFuncs
@@ -1474,6 +1548,7 @@ size_t TextureViewCacheFuncs::operator()(const TextureViewQuery& desc) const {
     HashCombine(&hash, desc.dimension, desc.aspect, desc.usage);
     HashCombine(&hash, desc.baseMipLevel, desc.mipLevelCount, desc.baseArrayLayer,
                 desc.arrayLayerCount);
+    HashCombine(&hash, desc.swizzleRed, desc.swizzleGreen, desc.swizzleBlue, desc.swizzleAlpha);
 
     return hash;
 }

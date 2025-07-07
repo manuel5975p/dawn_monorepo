@@ -34,10 +34,8 @@
 #include "spirv/unified1/GLSL.std.450.h"
 #include "spirv/unified1/spirv.h"
 
-#include "src/tint/lang/core/access.h"
-#include "src/tint/lang/core/address_space.h"
-#include "src/tint/lang/core/builtin_value.h"
 #include "src/tint/lang/core/constant/value.h"
+#include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/access.h"
 #include "src/tint/lang/core/ir/bitcast.h"
@@ -73,7 +71,6 @@
 #include "src/tint/lang/core/ir/user_call.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/ir/var.h"
-#include "src/tint/lang/core/texel_format.h"
 #include "src/tint/lang/core/type/array.h"
 #include "src/tint/lang/core/type/atomic.h"
 #include "src/tint/lang/core/type/binding_array.h"
@@ -1470,6 +1467,12 @@ class Printer {
             case spirv::BuiltinFn::kImageSampleDrefExplicitLod:
                 op = spv::Op::OpImageSampleDrefExplicitLod;
                 break;
+            case spirv::BuiltinFn::kImageSampleProjDrefImplicitLod:
+                op = spv::Op::OpImageSampleProjDrefImplicitLod;
+                break;
+            case spirv::BuiltinFn::kImageSampleProjDrefExplicitLod:
+                op = spv::Op::OpImageSampleProjDrefExplicitLod;
+                break;
             case spirv::BuiltinFn::kImageWrite:
                 op = spv::Op::OpImageWrite;
                 break;
@@ -1508,6 +1511,9 @@ class Printer {
                 break;
             case spirv::BuiltinFn::kNormalize:
                 ext_inst(GLSLstd450Normalize);
+                break;
+            case spirv::BuiltinFn::kImage:
+                op = spv::Op::OpImage;
                 break;
             case spirv::BuiltinFn::kSampledImage:
                 op = spv::Op::OpSampledImage;

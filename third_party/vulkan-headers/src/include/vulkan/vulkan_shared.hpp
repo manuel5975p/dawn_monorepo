@@ -922,6 +922,16 @@ private:
   };
   using SharedPipelineBinaryKHR = SharedHandle<PipelineBinaryKHR>;
 
+  //=== VK_ARM_data_graph ===
+  template <>
+  class SharedHandleTraits<DataGraphPipelineSessionARM>
+  {
+  public:
+    using DestructorType = Device;
+    using deleter = detail::ObjectDestroyShared<DataGraphPipelineSessionARM>;
+  };
+  using SharedDataGraphPipelineSessionARM = SharedHandle<DataGraphPipelineSessionARM>;
+
   //=== VK_NV_external_compute_queue ===
   template <>
   class SharedHandleTraits<ExternalComputeQueueNV>

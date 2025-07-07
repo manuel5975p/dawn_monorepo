@@ -105,6 +105,10 @@ struct TextureViewQuery {
     wgpu::TextureUsage usage;
 
     // Update with fields from relevant chained structs as they are added.
+    wgpu::ComponentSwizzle swizzleRed = wgpu::ComponentSwizzle::R;
+    wgpu::ComponentSwizzle swizzleGreen = wgpu::ComponentSwizzle::G;
+    wgpu::ComponentSwizzle swizzleBlue = wgpu::ComponentSwizzle::B;
+    wgpu::ComponentSwizzle swizzleAlpha = wgpu::ComponentSwizzle::A;
 };
 
 static const size_t kDefaultTextureViewCacheCapacity = 4;
@@ -235,6 +239,8 @@ class TextureBase : public RefCountedWithExternalCount<SharedResource> {
 
     std::string GetSizeLabel() const;
 
+    ResultOrError<Ref<TextureViewBase>> GetOrCreateDefaultView();
+
     void WillAddFirstExternalRef() override;
     void WillDropLastExternalRef() override;
 
@@ -252,6 +258,7 @@ class TextureBase : public RefCountedWithExternalCount<SharedResource> {
     TextureState mState;
     wgpu::TextureFormat mFormatEnumForReflection;
 
+    Ref<TextureViewBase> mDefaultView;
     // Textures track texture views created from them so that they can be destroyed when the texture
     // is destroyed.
     ApiObjectList mTextureViews;

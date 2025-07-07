@@ -4002,9 +4002,11 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixLoad_Storage_ColMajor_I8) 
     auto* expect = R"(
 %foo = func(%p:ptr<storage, array<i32, 256>, read_write>):subgroup_matrix_result<i8, 8, 8> {
   $B1: {
-    %3:ptr<storage, i32, read_write> = access %p, 64u
-    %4:subgroup_matrix_result<i8, 8, 8> = spirv.cooperative_matrix_load<subgroup_matrix_result<i8, 8, 8>> %3, 1u, 32u, 32u
-    ret %4
+    %3:u32 = div 32u, 4u
+    %4:u32 = div 64u, 4u
+    %5:ptr<storage, i32, read_write> = access %p, %4
+    %6:subgroup_matrix_result<i8, 8, 8> = spirv.cooperative_matrix_load<subgroup_matrix_result<i8, 8, 8>> %5, 1u, %3, 32u
+    ret %6
   }
 }
 )";
@@ -4039,9 +4041,11 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixLoad_Workgroup_RowMajor_U8
     auto* expect = R"(
 %foo = func(%p:ptr<workgroup, array<u32, 256>, read_write>):subgroup_matrix_result<u8, 8, 8> {
   $B1: {
-    %3:ptr<workgroup, u32, read_write> = access %p, 64u
-    %4:subgroup_matrix_result<u8, 8, 8> = spirv.cooperative_matrix_load<subgroup_matrix_result<u8, 8, 8>> %3, 0u, 32u, 32u
-    ret %4
+    %3:u32 = div 32u, 4u
+    %4:u32 = div 64u, 4u
+    %5:ptr<workgroup, u32, read_write> = access %p, %4
+    %6:subgroup_matrix_result<u8, 8, 8> = spirv.cooperative_matrix_load<subgroup_matrix_result<u8, 8, 8>> %5, 0u, %3, 32u
+    ret %6
   }
 }
 )";
@@ -4147,8 +4151,10 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixStore_Storage_ColMajor_I8)
     auto* expect = R"(
 %foo = func(%p:ptr<storage, array<i32, 256>, read_write>, %m:subgroup_matrix_result<i8, 8, 8>):void {
   $B1: {
-    %4:ptr<storage, i32, read_write> = access %p, 64u
-    %5:void = spirv.cooperative_matrix_store %4, %m, 1u, 32u, 32u
+    %4:u32 = div 32u, 4u
+    %5:u32 = div 64u, 4u
+    %6:ptr<storage, i32, read_write> = access %p, %5
+    %7:void = spirv.cooperative_matrix_store %6, %m, 1u, %4, 32u
     ret
   }
 }
@@ -4183,8 +4189,10 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupMatrixStore_Workgroup_RowMajor_U
     auto* expect = R"(
 %foo = func(%p:ptr<workgroup, array<u32, 256>, read_write>, %m:subgroup_matrix_result<u8, 8, 8>):void {
   $B1: {
-    %4:ptr<workgroup, u32, read_write> = access %p, 64u
-    %5:void = spirv.cooperative_matrix_store %4, %m, 0u, 32u, 32u
+    %4:u32 = div 32u, 4u
+    %5:u32 = div 64u, 4u
+    %6:ptr<workgroup, u32, read_write> = access %p, %5
+    %7:void = spirv.cooperative_matrix_store %6, %m, 0u, %4, 32u
     ret
   }
 }

@@ -966,6 +966,9 @@ void Disassembler::EmitStructDecl(const core::type::Struct* str) {
     for (auto* member : str->Members()) {
         out_ << "  " << StyleVariable(member->Name().Name()) << ":" << NameOf(member->Type());
         out_ << " " << StyleAttribute("@offset") << "(" << StyleLiteral(member->Offset()) << ")";
+        if (member->Size() != member->Type()->Size()) {
+            out_ << " " << StyleAttribute("@size") << "(" << StyleLiteral(member->Size()) << ")";
+        }
         if (member->Attributes().invariant) {
             out_ << ", " << StyleAttribute("@invariant");
         }
@@ -996,6 +999,13 @@ void Disassembler::EmitStructDecl(const core::type::Struct* str) {
         if (member->Attributes().binding_point.has_value()) {
             out_ << ", ";
             EmitBindingPoint(member->Attributes().binding_point.value());
+        }
+        if (member->RowMajor()) {
+            out_ << ", " << StyleAttribute("@row_major");
+        }
+        if (member->HasMatrixStride()) {
+            out_ << ", " << StyleAttribute("@matrix_stride") << "("
+                 << StyleLiteral(member->MatrixStride()) << ")";
         }
         EmitLine();
     }

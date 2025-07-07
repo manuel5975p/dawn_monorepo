@@ -50,7 +50,7 @@
 #include "dawn/native/Toggles.h"
 #include "dawn/native/dawn_platform.h"
 #include "partition_alloc/pointers/raw_ptr.h"
-#include "tint/lang/wgsl/language_feature.h"
+#include "tint/lang/wgsl/enums.h"
 
 namespace dawn::platform {
 class Platform;
@@ -67,7 +67,9 @@ using BackendsBitset = ityp::bitset<wgpu::BackendType, kEnumCount<wgpu::BackendT
 using BackendsArray = ityp::
     array<wgpu::BackendType, std::unique_ptr<BackendConnection>, kEnumCount<wgpu::BackendType>>;
 
-wgpu::Status APIGetInstanceCapabilities(InstanceCapabilities* capabilities);
+wgpu::Status APIGetInstanceLimits(InstanceLimits* limits);
+bool APIHasInstanceFeature(wgpu::InstanceFeatureName feature);
+void APIGetInstanceFeatures(SupportedInstanceFeatures* features);
 InstanceBase* APICreateInstance(const InstanceDescriptor* descriptor);
 
 // This is called InstanceBase for consistency across the frontend, even if the backends don't

@@ -33,58 +33,99 @@
 
 namespace dawn::native {
 
-// Strong types for texel and block counts
+// Strong types for texel and block counts.
+// These are used to avoid computation errors that occur when using regular integers
+// for texel and block values, and mixing them up in computations, particularly for block
+// sizes greater than 1x1.
+// By using strong types, we cannot mix these two types in computations, and must use
+// conversion functions provided in TypedTexelBlockInfo.
+
 // TexelCount and BlockCount are uint64_t, not uint32_t, because as typed
 // integers, they do not participate in type promotion to uint64_t, which
 // is being relied on for computing buffer offsets and such.
 using TexelCount = dawn::TypedInteger<struct TexelCountTag, uint64_t>;
 using BlockCount = dawn::TypedInteger<struct BlockCountTag, uint64_t>;
 
-// Strong type version of Origin3D
+// Strong type version of Origin3D, which is always in texel space
 struct TexelOrigin3D {
     TexelCount x{0};
     TexelCount y{0};
     TexelCount z{0};
 
-    // Default constructor
-    TexelOrigin3D() = default;
-
     // Construct from input values
-    TexelOrigin3D(TexelCount x, TexelCount y, TexelCount z) : x(x), y(y), z(z) {}
+    // NOLINTNEXTLINE: allow implicit constructor
+    constexpr TexelOrigin3D(TexelCount x = TexelCount{0},
+                            TexelCount y = TexelCount{0},
+                            TexelCount z = TexelCount{0})
+        : x(x), y(y), z(z) {}
 
     // Implicitly convert from Origin3D as Origin3D is always in texel space
     // NOLINTNEXTLINE: allow implicit constructor
-    TexelOrigin3D(const Origin3D& o) : x(o.x), y(o.y), z(o.z) {}
+    constexpr TexelOrigin3D(const Origin3D& o) : x(o.x), y(o.y), z(o.z) {}
 
     // Convert to Origin3D
-    Origin3D ToOrigin3D() const {
+    constexpr Origin3D ToOrigin3D() const {
         return {static_cast<uint32_t>(x), static_cast<uint32_t>(y), static_cast<uint32_t>(z)};
     }
 };
 
-// Strong type version of Extent3D
+// Stores an origin in block space
+struct BlockOrigin3D {
+    BlockCount x{0};
+    BlockCount y{0};
+    BlockCount z{0};
+
+    // Construct from input values
+    // NOLINTNEXTLINE: allow implicit constructor
+    constexpr BlockOrigin3D(BlockCount x = BlockCount{0},
+                            BlockCount y = BlockCount{0},
+                            BlockCount z = BlockCount{0})
+        : x(x), y(y), z(z) {}
+};
+
+// Strong type version of Extent3D.
 struct TexelExtent3D {
     TexelCount width;
     TexelCount height{1};
     TexelCount depthOrArrayLayers{1};
 
     // Default constructor
-    TexelExtent3D() = default;
+    constexpr TexelExtent3D() = default;
 
     // Construct from input values
-    TexelExtent3D(TexelCount width, TexelCount height, TexelCount depthOrArrayLayers)
+    // NOLINTNEXTLINE: allow implicit constructor
+    constexpr TexelExtent3D(TexelCount width,
+                            TexelCount height = TexelCount{1},
+                            TexelCount depthOrArrayLayers = TexelCount{1})
         : width(width), height(height), depthOrArrayLayers(depthOrArrayLayers) {}
 
     // Implicitly convert from Extent3D as Extent3D is always in texel space
     // NOLINTNEXTLINE: allow implicit constructor
-    TexelExtent3D(const Extent3D& e)
+    constexpr TexelExtent3D(const Extent3D& e)
         : width(e.width), height(e.height), depthOrArrayLayers(e.depthOrArrayLayers) {}
 
     // Convert to Extent3D
-    Extent3D ToExtent3D() const {
+    constexpr Extent3D ToExtent3D() const {
         return {static_cast<uint32_t>(width), static_cast<uint32_t>(height),
                 static_cast<uint32_t>(depthOrArrayLayers)};
     }
+};
+
+// Stores an extent in block space
+struct BlockExtent3D {
+    BlockCount width;
+    BlockCount height{1};
+    BlockCount depthOrArrayLayers{1};
+
+    // Default constructor
+    constexpr BlockExtent3D() = default;
+
+    // Construct from input values
+    // NOLINTNEXTLINE: allow implicit constructor
+    constexpr BlockExtent3D(BlockCount width,
+                            BlockCount height = BlockCount{1},
+                            BlockCount depthOrArrayLayers = BlockCount{1})
+        : width(width), height(height), depthOrArrayLayers(depthOrArrayLayers) {}
 };
 
 // Strong type version of TexelBlockInfo that stores the dimensions of the block
@@ -95,59 +136,90 @@ struct TypedTexelBlockInfo {
     TexelCount height;
 
     // Default constructor
-    TypedTexelBlockInfo() = default;
+    constexpr TypedTexelBlockInfo() = default;
+
+    // Construct from input values
+    // NOLINTNEXTLINE: allow implicit constructor
+    constexpr TypedTexelBlockInfo(uint32_t byteSize, TexelCount width, TexelCount height)
+        : byteSize(byteSize), width(width), height(height) {}
 
     // Convert from TexelBlockInfo
     // NOLINTNEXTLINE: allow implicit constructor
-    TypedTexelBlockInfo(const TexelBlockInfo& blockInfo)
+    constexpr TypedTexelBlockInfo(const TexelBlockInfo& blockInfo)
         : byteSize(blockInfo.byteSize), width(blockInfo.width), height(blockInfo.height) {}
 
     // Convert to TexelBlockInfo
-    TexelBlockInfo ToTexelBlockInfo() const {
+    constexpr TexelBlockInfo ToTexelBlockInfo() const {
         return {byteSize, static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
     }
 
     // Convert blocks to bytes
-    uint64_t ToBytes(BlockCount value) const { return static_cast<uint64_t>(value) * byteSize; }
+    constexpr uint64_t ToBytes(BlockCount value) const {
+        return static_cast<uint64_t>(value) * byteSize;
+    }
 
     // Convert bytes to blocks
-    BlockCount BytesToBlocks(uint64_t bytes) const {
+    constexpr BlockCount BytesToBlocks(uint64_t bytes) const {
         DAWN_ASSERT(bytes % byteSize == 0);
         return BlockCount{bytes / byteSize};
     }
 
     // Convert texel height to block height
-    BlockCount ToBlockHeight(TexelCount value) const {
-        return BlockCount{static_cast<uint64_t>((value + height - TexelCount{1}) / height)};
+    constexpr BlockCount ToBlockHeight(TexelCount value) const {
+        DAWN_ASSERT(value % height == TexelCount{0});
+        return BlockCount{static_cast<uint64_t>(value / height)};
     }
 
     // Convert from texel width to block width
-    BlockCount ToBlockWidth(TexelCount value) const {
-        return BlockCount{static_cast<uint64_t>((value + width - TexelCount{1}) / width)};
+    constexpr BlockCount ToBlockWidth(TexelCount value) const {
+        DAWN_ASSERT(value % width == TexelCount{0});
+        return BlockCount{static_cast<uint64_t>(value / width)};
     }
 
     // Convert from texel depth to block depth
-    BlockCount ToBlockDepth(TexelCount value) const {
+    constexpr BlockCount ToBlockDepth(TexelCount value) const {
         // TODO(amaiorano): When we add block 'depth' for 3D block support, divide this value by
         // 'depth'
         return BlockCount{static_cast<uint64_t>(value)};
     }
 
     // Convert from block width to texel width
-    TexelCount ToTexelWidth(BlockCount value) const {
+    constexpr TexelCount ToTexelWidth(BlockCount value) const {
         return TexelCount{static_cast<uint64_t>(value)} * width;
     }
 
     // Convert from block height to texel height
-    TexelCount ToTexelHeight(BlockCount value) const {
+    constexpr TexelCount ToTexelHeight(BlockCount value) const {
         return TexelCount{static_cast<uint64_t>(value)} * height;
     }
 
     // Convert from block depth to texel depth
-    TexelCount ToTexelDepth(BlockCount value) const {
+    constexpr TexelCount ToTexelDepth(BlockCount value) const {
         // TODO(amaiorano): When we add block 'depth' for 3D block support, multiply this value by
         // 'depth'
         return TexelCount{static_cast<uint64_t>(value)};
+    }
+
+    // Convert from TexelOrigin3D to BlockOrigin3D
+    constexpr BlockOrigin3D ToBlock(const TexelOrigin3D& origin) const {
+        return {ToBlockWidth(origin.x), ToBlockHeight(origin.y), ToBlockDepth(origin.z)};
+    }
+
+    // Convert from TexelExtent3D to BlockExtent3D
+    constexpr BlockExtent3D ToBlock(const TexelExtent3D& extent) const {
+        return {ToBlockWidth(extent.width), ToBlockHeight(extent.height),
+                ToBlockDepth(extent.depthOrArrayLayers)};
+    }
+
+    // Convert from BlockOrigin3D to TexelOrigin3D
+    constexpr TexelOrigin3D ToTexel(const BlockOrigin3D& origin) const {
+        return {ToTexelWidth(origin.x), ToTexelHeight(origin.y), ToTexelDepth(origin.z)};
+    }
+
+    // Convert from BlockExtent3D to TexelExtent3D
+    constexpr TexelExtent3D ToTexel(const BlockExtent3D& extent) const {
+        return {ToTexelWidth(extent.width), ToTexelHeight(extent.height),
+                ToTexelDepth(extent.depthOrArrayLayers)};
     }
 };
 

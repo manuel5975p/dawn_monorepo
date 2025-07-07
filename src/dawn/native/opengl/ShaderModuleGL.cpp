@@ -32,6 +32,7 @@
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"
+#include "dawn/common/Enumerator.h"
 #include "dawn/common/MatchVariant.h"
 #include "dawn/native/Adapter.h"
 #include "dawn/native/BindGroupLayoutInternal.h"
@@ -186,47 +187,60 @@ void GenerateCombinedSamplerInfo(
     }
 }
 
-bool GenerateTextureBuiltinFromUniformData(const EntryPointMetadata& metadata,
-                                           const PipelineLayout* layout,
-                                           BindingPointToFunctionAndOffset* bindingPointToData,
-                                           tint::glsl::writer::Bindings& bindings) {
-    auto textureBuiltinsFromUniformData = metadata.textureQueries;
-
-    if (textureBuiltinsFromUniformData.empty()) {
-        return false;
+// Returns whether the stage uses any texture builtin metadata.
+void GenerateTextureBuiltinFromUniformData(
+    const EntryPointMetadata& metadata,
+    const PipelineLayout* layout,
+    const tint::glsl::writer::Bindings& bindings,
+    BindingPointToFunctionAndOffset* bindingPointToData,
+    tint::glsl::writer::TextureBuiltinsFromUniformOptions* textureBuiltinsFromUniform) {
+    // Tell Tint where the uniform containing the builtin data will be (in post-remapping space),
+    // only when this shader stage uses some builtin metadata.
+    if (!metadata.textureQueries.empty()) {
+        textureBuiltinsFromUniform->ubo_binding = {
+            layout->GetInternalTextureBuiltinsUniformBinding()};
     }
 
-    for (size_t i = 0; i < textureBuiltinsFromUniformData.size(); ++i) {
-        const auto& info = textureBuiltinsFromUniformData[i];
+    for (auto [i, query] : Enumerate(metadata.textureQueries)) {
+        const auto* bgl = layout->GetBindGroupLayout(BindGroupIndex{query.group});
+        BindingIndex binding = bgl->GetBindingIndex(BindingNumber{query.binding});
+        tint::BindingPoint wgslBindPoint = {.group = query.group, .binding = query.binding};
 
-        // This is the unmodified binding point from the WGSL shader.
-        tint::BindingPoint srcBindingPoint{info.group, info.binding};
-        bindings.texture_builtins_from_uniform.ubo_bindingpoint_ordering.emplace_back(
-            srcBindingPoint);
+        // Tint uses post-remapping binding points for textureBuiltinFromUniform options.
+        tint::glsl::writer::binding::BindingInfo remappedBinding;
+        if (bindings.texture.contains(wgslBindPoint)) {
+            remappedBinding = bindings.texture.at(wgslBindPoint);
+        } else {
+            remappedBinding = bindings.storage_texture.at(wgslBindPoint);
+        }
+        uint32_t offset = textureBuiltinsFromUniform->ubo_contents.size();
+        textureBuiltinsFromUniform->ubo_contents.push_back(
+            {.offset = offset, .count = 1, .binding = remappedBinding});
 
-        // The remapped binding point is inserted into the Dawn data structure.
-        const BindGroupLayoutInternalBase* bgl =
-            layout->GetBindGroupLayout(BindGroupIndex{info.group});
-        tint::BindingPoint dstBindingPoint = tint::BindingPoint{
-            info.group, static_cast<uint32_t>(bgl->GetBindingIndex(BindingNumber{info.binding}))};
+        // Dawn uses (BindGroupIndex, BindingIndex) to know which builtin data needs to be passed as
+        // uniform. Convert the WGSL bind point to that.
+        tint::BindingPoint dstBindingPoint = {query.group, uint32_t(binding)};
 
-        BindPointFunction type = BindPointFunction::kTextureNumLevels;
-        switch (info.type) {
+        BindPointFunction type;
+        switch (query.type) {
             case EntryPointMetadata::TextureMetadataQuery::TextureQueryType::TextureNumLevels:
                 type = BindPointFunction::kTextureNumLevels;
                 break;
             case EntryPointMetadata::TextureMetadataQuery::TextureQueryType::TextureNumSamples:
                 type = BindPointFunction::kTextureNumSamples;
                 break;
+            default:
+                DAWN_UNREACHABLE();
         }
 
         // Note, the `sizeof(uint32_t)` has to match up with the data type created by the
         // `TextureBuiltinsFromUniform` when it creates the UBO structure.
+        // TODO(https://issues.chromium.org/427409135): Using `i` as the offset could cause
+        // conflicts between bindings in different stages. Use a different way to compute the
+        // offsets.
         bindingPointToData->emplace(dstBindingPoint,
                                     std::pair{type, static_cast<uint32_t>(i * sizeof(uint32_t))});
     }
-
-    return true;
 }
 
 bool GenerateArrayLengthFromuniformData(const BindingInfoArray& moduleBindingInfo,
@@ -425,7 +439,7 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
     VertexAttributeMask bgraSwizzleAttributes,
     std::vector<CombinedSampler>* combinedSamplersOut,
     const PipelineLayout* layout,
-    BindingPointToFunctionAndOffset* bindingPointToTextureBuiltinData,
+    BindingPointToFunctionAndOffset* bindingPointToData,
     bool* needsSSBOLengthUniformBuffer) {
     TRACE_EVENT0(GetDevice()->GetPlatform(), General, "TranslateToGLSL");
 
@@ -461,18 +475,15 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
         *combinedSamplersOut = std::move(combinedSamplers);
     }
 
-    bool needsInternalUBO = GenerateTextureBuiltinFromUniformData(
-        entryPointMetaData, layout, bindingPointToTextureBuiltinData, bindings);
-    if (needsInternalUBO) {
-        DAWN_ASSERT(!bindingPointToTextureBuiltinData->empty());
-        // Some texture builtin functions are unsupported on GLSL ES. These are emulated with
-        // internal uniforms.
-        bindings.texture_builtins_from_uniform.ubo_binding = {kMaxBindGroups + 1, 0};
-
-        // Remap the internal ubo binding as well.
-        bindings.uniform.emplace(bindings.texture_builtins_from_uniform.ubo_binding,
-                                 tint::glsl::writer::binding::Uniform{
-                                     layout->GetInternalTextureBuiltinsUniformBinding()});
+    // Compute the metadata necessary to emulate some of the texture "getter" builtins not present
+    // in GLSL, both for Dawn and for the Tint translation to GLSL.
+    // Note that this mutates the input `bindingPointToData` that may contain already contain
+    // entries.
+    {
+        tint::glsl::writer::TextureBuiltinsFromUniformOptions textureBuiltinsFromUniform;
+        GenerateTextureBuiltinFromUniformData(entryPointMetaData, layout, bindings,
+                                              bindingPointToData, &textureBuiltinsFromUniform);
+        bindings.texture_builtins_from_uniform = std::move(textureBuiltinsFromUniform);
     }
 
     req.stage = stage;

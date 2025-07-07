@@ -480,7 +480,7 @@ MaybeError DeviceBase::Initialize(const UnpackedPtr<DeviceDescriptor>& descripto
     }
 
     if (HasFeature(Feature::ImplicitDeviceSynchronization)) {
-        mMutex = AcquireRef(new Mutex);
+        mMutex = AcquireRef(new RecursiveMutex);
     } else {
         mMutex = nullptr;
     }
@@ -578,6 +578,7 @@ void DeviceBase::DestroyObjects() {
         ObjectType::BindGroupLayout,
         ObjectType::BindGroupLayoutInternal,
         ObjectType::ShaderModule,
+        ObjectType::SharedBufferMemory,
         ObjectType::SharedTextureMemory,
         ObjectType::SharedFence,
         ObjectType::ExternalTexture,
@@ -703,6 +704,7 @@ void DeviceBase::HandleDeviceLost(wgpu::DeviceLostReason reason, std::string_vie
 void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
                              InternalErrorType additionalAllowedErrors,
                              wgpu::DeviceLostReason lostReason) {
+    auto deviceLock(GetScopedLock());
     AppendDebugLayerMessages(error.get());
 
     InternalErrorType type = error->GetType();
@@ -1248,9 +1250,6 @@ BufferBase* DeviceBase::APICreateBuffer(const BufferDescriptor* rawDescriptor) {
     // If there was a deferredError saved from earlier, surface it now.
     if (deferredError) {
         deferredError->AppendContext("calling %s.CreateBuffer(%s).", this, rawDescriptor);
-
-        // TODO(dawn:1662): Make error handling thread-safe.
-        auto deviceLock(GetScopedLock());
         ConsumeError(std::move(deferredError), InternalErrorType::OutOfMemory);
     }
     return ReturnToAPI(std::move(buffer));
@@ -1275,9 +1274,6 @@ ComputePipelineBase* DeviceBase::APICreateComputePipeline(
         return ReturnToAPI(resultOrError.AcquireSuccess());
     }
 
-    // Acquire the device lock for error handling.
-    // TODO(dawn:1662): Make error handling thread-safe.
-    auto deviceLock(GetScopedLock());
     Ref<ComputePipelineBase> result;
     if (ConsumedError(std::move(resultOrError), &result, InternalErrorType::Internal,
                       "calling %s.CreateComputePipeline(%s).", this, descriptor)) {
@@ -1418,9 +1414,6 @@ RenderPipelineBase* DeviceBase::APICreateRenderPipeline(
         return ReturnToAPI(resultOrError.AcquireSuccess());
     }
 
-    // Acquire the device lock for error handling.
-    // TODO(dawn:1662): Make error handling thread-safe.
-    auto deviceLock(GetScopedLock());
     Ref<RenderPipelineBase> result;
     if (ConsumedError(std::move(resultOrError), &result, InternalErrorType::Internal,
                       "calling %s.CreateRenderPipeline(%s).", this, descriptor)) {
@@ -2151,7 +2144,7 @@ ResultOrError<Ref<ShaderModuleBase>> DeviceBase::CreateShaderModule(
                                    Branch<ShaderSourceSPIRV, DawnShaderModuleSPIRVOptionsDescriptor,
                                           ShaderModuleCompilationOptions>>()));
 
-    // Module type specific validation.
+    // Module type specific validation
     switch (moduleType) {
         case wgpu::SType::ShaderSourceSPIRV: {
             DAWN_INVALID_IF(!TINT_BUILD_SPV_READER || IsToggleEnabled(Toggle::DisallowSpirv),
@@ -2167,6 +2160,11 @@ ResultOrError<Ref<ShaderModuleBase>> DeviceBase::CreateShaderModule(
         }
         default:
             DAWN_UNREACHABLE();
+    }
+
+    // Dump shader source code if required.
+    if (IsToggleEnabled(Toggle::DumpShaders)) {
+        DumpShaderFromDescriptor(this, unpacked);
     }
 
     // Check the cache and do actual validation and parsing if cache missed.
@@ -2262,6 +2260,11 @@ ResultOrError<Ref<TextureViewBase>> DeviceBase::CreateTextureView(
 
     TextureViewDescriptor desc;
     DAWN_TRY_ASSIGN(desc, GetTextureViewDescriptorWithDefaults(texture, descriptorOrig));
+    std::string generatedLabel;
+    if (descriptorOrig == nullptr) {
+        generatedLabel = absl::StrFormat("defaulted from %s", texture);
+        desc.label = {generatedLabel.data(), generatedLabel.length()};
+    }
 
     UnpackedPtr<TextureViewDescriptor> descriptor;
     if (IsValidationEnabled()) {
@@ -2428,12 +2431,12 @@ MaybeError DeviceBase::CopyFromStagingToTexture(BufferBase* source,
     return {};
 }
 
-Mutex::AutoLockAndHoldRef DeviceBase::GetScopedLockSafeForDelete() {
-    return Mutex::AutoLockAndHoldRef(mMutex);
+RecursiveMutex::AutoLockAndHoldRef DeviceBase::GetScopedLockSafeForDelete() {
+    return RecursiveMutex::AutoLockAndHoldRef(mMutex);
 }
 
-Mutex::AutoLock DeviceBase::GetScopedLock() {
-    return Mutex::AutoLock(mMutex.Get());
+RecursiveMutex::AutoLock DeviceBase::GetScopedLock() {
+    return RecursiveMutex::AutoLock(mMutex.Get());
 }
 
 bool DeviceBase::IsLockedByCurrentThreadIfNeeded() const {

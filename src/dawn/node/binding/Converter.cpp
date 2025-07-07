@@ -1645,6 +1645,7 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::DawnPartialLoadResolveTexture:
         case wgpu::FeatureName::DawnTexelCopyBufferRowAlignment:
         case wgpu::FeatureName::FlexibleTextureViews:
+        case wgpu::FeatureName::TextureComponentSwizzle:
             return false;
     }
     return false;
@@ -1670,9 +1671,6 @@ bool Converter::Convert(wgpu::WGSLLanguageFeatureName& out, interop::WGSLLanguag
         case interop::WGSLLanguageFeatureName::kTexelBuffers:
             out = wgpu::WGSLLanguageFeatureName::TexelBuffers;
             return true;
-        case interop::WGSLLanguageFeatureName::kTextureSampleLevel1D:
-            out = wgpu::WGSLLanguageFeatureName::TextureSampleLevel1d;
-            return true;
     }
     return false;
 }
@@ -1696,9 +1694,6 @@ bool Converter::Convert(interop::WGSLLanguageFeatureName& out, wgpu::WGSLLanguag
             return true;
         case wgpu::WGSLLanguageFeatureName::TexelBuffers:
             out = interop::WGSLLanguageFeatureName::kTexelBuffers;
-            return true;
-        case wgpu::WGSLLanguageFeatureName::TextureSampleLevel1d:
-            out = interop::WGSLLanguageFeatureName::kTextureSampleLevel1D;
             return true;
 
         case wgpu::WGSLLanguageFeatureName::ChromiumTestingUnimplemented:

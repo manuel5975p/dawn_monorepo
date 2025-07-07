@@ -1,29 +1,29 @@
-//* Copyright 2024 The Dawn & Tint Authors
-//*
-//* Redistribution and use in source and binary forms, with or without
-//* modification, are permitted provided that the following conditions are met:
-//*
-//* 1. Redistributions of source code must retain the above copyright notice, this
-//*    list of conditions and the following disclaimer.
-//*
-//* 2. Redistributions in binary form must reproduce the above copyright notice,
-//*    this list of conditions and the following disclaimer in the documentation
-//*    and/or other materials provided with the distribution.
-//*
-//* 3. Neither the name of the copyright holder nor the names of its
-//*    contributors may be used to endorse or promote products derived from
-//*    this software without specific prior written permission.
-//*
-//* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-//* AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-//* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-//* DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-//* FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-//* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-//* SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-//* CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-//* OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-//* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Copyright 2024 The Dawn & Tint Authors
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 {% from 'art/kotlin_record_conversion.cpp' import define_kotlin_record_structure, define_kotlin_to_struct_conversion with context %}
 {% from 'art/api_jni_types.cpp' import arg_to_jni_type, convert_to_kotlin, jni_signature, to_jni_type with context %}
 #include <jni.h>
@@ -115,7 +115,7 @@ jobject toByteBuffer(JNIEnv *env, const void* address, jlong size) {
     {% endif %}
 
     //* Actually invoke the native version of the method.
-    {% if _kotlin_return.length == 'size_t' %}
+    {% if _kotlin_return and _kotlin_return.length == 'size_t' %}
         //* Methods that return containers are converted from two-call to single call, and the
         //* return type is switched to a Kotlin container.
         size_t size = wgpu{{ object.name.CamelCase() }}{{ method.name.CamelCase() }}(handle
@@ -132,19 +132,19 @@ jobject toByteBuffer(JNIEnv *env, const void* address, jlong size) {
         //* Second call completes the native container
         wgpu{{ object.name.CamelCase() }}{{ method.name.CamelCase() }}(handle
             {% for arg in method.arguments -%}
-               , {{- "args." + as_varName(arg.name) -}}
+                , {{- "args." + as_varName(arg.name) -}}
             {% endfor %}
         );
         if (env->ExceptionCheck()) {  //* Early out if client (Kotlin) callback threw an exception.
             return nullptr;
         }
     {% else %}
-        {% if _kotlin_return.annotation == '*' %}
+        {% if _kotlin_return and _kotlin_return.annotation == '*' %}
             //* Make a native container to accept the data output via parameter.
             {{ as_cType(_kotlin_return.type.name) }} out = {};
             args.{{ as_varName(_kotlin_return.name) }} = &out;
         {% endif %}
-        {{ 'auto result =' if method.return_type.name.get() != 'void' }}
+        {{ 'auto result =' if method.returns }}
         {% if object %}
             wgpu{{ object.name.CamelCase() }}{{ method.name.CamelCase() }}(handle
         {% else %}
@@ -155,17 +155,17 @@ jobject toByteBuffer(JNIEnv *env, const void* address, jlong size) {
             {% endfor %}
         );
         if (env->ExceptionCheck()) {  //* Early out if client (Kotlin) callback threw an exception.
-            return {{ '0' if  _kotlin_return.type.name.get() != 'void' }};
+            return{{ ' 0' if _kotlin_return }};
         }
-        {% if method.return_type.name.canonical_case() == 'status' %}
+        {% if method.returns and method.returns.type.name.canonical_case() == 'status' %}
             if (result != WGPUStatus_Success) {
                 //* TODO(b/344805524): custom exception for Dawn.
                 env->ThrowNew(env->FindClass("java/lang/Error"), "Method failed");
-                return {{ '0' if method.return_type.name.get() != 'void' }};
+                return{{ ' 0' if method.returns }};
             }
         {% endif %}
     {% endif %}
-    {% if _kotlin_return.type.name.get() != 'void' %}
+    {% if _kotlin_return %}
         {% if _kotlin_return.type.name.get() in ['void const *', 'void *'] %}
             size_t size = args.size;
         {% endif %}

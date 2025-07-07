@@ -68,7 +68,6 @@ using SubstituteOverrideConfig = std::unordered_map<tint::OverrideId, double>;
     X(uint32_t, shaderModel)                                                         \
     X(uint32_t, compileFlags)                                                        \
     X(Compiler, compiler)                                                            \
-    X(uint64_t, compilerVersion)                                                     \
     X(std::wstring_view, dxcShaderProfile)                                           \
     X(std::string_view, fxcShaderProfile)                                            \
     X(uint32_t, firstIndexOffsetShaderRegister)                                      \
@@ -79,14 +78,12 @@ using SubstituteOverrideConfig = std::unordered_map<tint::OverrideId, double>;
     X(UnsafeUnserializedValue<LimitsForCompilationRequest>, adapterSupportedLimits)  \
     X(uint32_t, maxSubgroupSize)                                                     \
     X(bool, disableSymbolRenaming)                                                   \
-    X(bool, dumpShaders)                                                             \
-    X(bool, useTintIR)
+    X(bool, dumpShaders)
 
 #define D3D_BYTECODE_COMPILATION_REQUEST_MEMBERS(X)      \
     X(bool, hasShaderF16Feature)                         \
     X(uint32_t, compileFlags)                            \
     X(Compiler, compiler)                                \
-    X(uint64_t, compilerVersion)                         \
     X(std::wstring_view, dxcShaderProfile)               \
     X(std::string_view, fxcShaderProfile)                \
     X(UnsafeUnserializedValue<pD3DCompile>, d3dCompile)  \

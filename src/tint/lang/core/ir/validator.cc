@@ -1843,6 +1843,23 @@ void Validator::CheckType(const core::type::Type* root,
 
         return tint::Switch(
             type,
+            [&](const core::type::Struct* str) {
+                if (capabilities_.Contains(Capability::kAllowStructMatrixDecorations)) {
+                    return true;
+                }
+
+                for (auto* member : str->Members()) {
+                    if (member->RowMajor()) {
+                        diag() << "Row major annotation now allowed on structures";
+                        return false;
+                    }
+                    if (member->HasMatrixStride()) {
+                        diag() << "Matrix stride annotation not allowed on structures";
+                        return false;
+                    }
+                }
+                return true;
+            },
             [&](const core::type::Reference* ref) {
                 if (ref->StoreType()->Is<core::type::Void>()) {
                     diag() << "references to void are not permitted";
@@ -3074,7 +3091,32 @@ void Validator::CheckConstruct(const Construct* construct) {
         return;
     }
 
-    if (auto* str = As<core::type::Struct>(construct->Result()->Type())) {
+    auto* result_type = construct->Result()->Type();
+
+    auto check_args_match_elements = [&] {
+        // Check that type type of each argument matches the expected element type of the composite.
+        for (size_t i = 0; i < args.Length(); i++) {
+            if (args[i]->Is<ir::Unused>()) {
+                continue;
+            }
+            auto* expected_type = result_type->Element(static_cast<uint32_t>(i));
+            if (args[i]->Type() != expected_type) {
+                AddError(construct, Construct::kArgsOperandOffset + i)
+                    << "type " << NameOf(args[i]->Type()) << " of argument " << i
+                    << " does not match expected type " << NameOf(expected_type);
+            }
+        }
+    };
+
+    if (result_type->Is<core::type::Scalar>()) {
+        // TODO(crbug.com/427964608): This needs special handling as Element() produces nullptr.
+    } else if (result_type->Is<core::type::Vector>()) {
+        // TODO(crbug.com/427964205): This needs special handling as there are many cases.
+    } else if (result_type->Is<core::type::Matrix>()) {
+        // TODO(crbug.com/427965903): This needs special handling as there are many cases.
+    } else if (result_type->Is<core::type::Array>()) {
+        check_args_match_elements();
+    } else if (auto* str = As<core::type::Struct>(result_type)) {
         auto members = str->Members();
         if (args.Length() != str->Members().Length()) {
             AddError(construct) << "structure has " << members.Length()
@@ -3082,16 +3124,7 @@ void Validator::CheckConstruct(const Construct* construct) {
                                 << " arguments";
             return;
         }
-        for (size_t i = 0; i < args.Length(); i++) {
-            if (args[i]->Is<ir::Unused>()) {
-                continue;
-            }
-            if (args[i]->Type() != members[i]->Type()) {
-                AddError(construct, Construct::kArgsOperandOffset + i)
-                    << "type " << NameOf(args[i]->Type()) << " of argument " << i
-                    << " does not match type " << NameOf(members[i]->Type()) << " of struct member";
-            }
-        }
+        check_args_match_elements();
     }
 }
 

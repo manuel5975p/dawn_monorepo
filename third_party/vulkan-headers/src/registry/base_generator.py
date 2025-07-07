@@ -9,8 +9,8 @@ import os
 import tempfile
 from vulkan_object import (VulkanObject,
     Extension, Version, Deprecate, Handle, Param, Queues, CommandScope, Command,
-    EnumField, Enum, Flag, Bitmask, Flags, Member, Struct,
-    FormatComponent, FormatPlane, Format,
+    EnumField, Enum, Flag, Bitmask, ExternSync, Flags, Member, Struct,
+    Constant, FormatComponent, FormatPlane, Format,
     SyncSupport, SyncEquivalent, SyncStage, SyncAccess, SyncPipelineStage, SyncPipeline,
     SpirvEnables, Spirv)
 
@@ -35,6 +35,30 @@ def intIfGet(elem, name):
 def boolGet(elem, name) -> bool:
     return elem.get(name) is not None and elem.get(name) == "true"
 
+def externSyncGet(elem):
+    value = elem.get('externsync')
+    if value is None:
+        return (ExternSync.NONE, None)
+    if value == 'true':
+        return (ExternSync.ALWAYS, None)
+    if value == 'maybe':
+        return (ExternSync.MAYBE, None)
+
+    # There are no cases where multiple members of the param are marked as
+    # externsync.  Supporting that with maybe: requires more than
+    # ExternSync.SUBTYPE_MAYBE (which is only one bit of information), which is
+    # not currently done as there are no users.
+    #
+    # If this assert is hit, please consider simplifying the design such that
+    # externsync can move to the struct itself and so external synchronization
+    # requirements do not depend on the context.
+    assert ',' not in value
+
+    if value.startswith('maybe:'):
+        return (ExternSync.SUBTYPE_MAYBE, value.removeprefix('maybe:'))
+    return (ExternSync.SUBTYPE, value)
+
+
 def getQueues(elem) -> Queues:
     queues = 0
     queues_list = splitIfGet(elem, 'queues')
@@ -47,6 +71,7 @@ def getQueues(elem) -> Queues:
         queues |= Queues.OPTICAL_FLOW if 'opticalflow' in queues_list else 0
         queues |= Queues.DECODE if 'decode' in queues_list else 0
         queues |= Queues.ENCODE if 'encode' in queues_list else 0
+        queues |= Queues.DATA_GRAPH if 'data_graph' in queues_list else 0
     return queues
 
 # Shared object used by Sync elements that do not have ones
@@ -138,6 +163,10 @@ class BaseGenerator(OutputGenerator):
         # it will be either the Version or Extension object
         self.currentExtension = None
         self.currentVersion = None
+
+        # We need to flag extensions that we ignore because they are disabled or not
+        # supported in the target API(s)
+        self.unsupportedExtension = False
 
         # Will map alias to promoted name
         #   ex. ['VK_FILTER_CUBIC_IMG' : 'VK_FILTER_CUBIC_EXT']
@@ -363,10 +392,30 @@ class BaseGenerator(OutputGenerator):
             self.vk.handles[self.dealias(value, self.handleAliasMap)].aliases.append(key)
 
 
+    def addConstants(self):
+        for constantName in [k for k,v in self.registry.enumvaluedict.items() if v == 'API Constants']:
+            enumInfo = self.registry.enumdict[constantName]
+            typeName = enumInfo.type
+            valueStr = enumInfo.elem.get('value')
+            # These values are represented in c-style
+            if valueStr.upper().endswith('F'):
+                value = float(valueStr[:-1])
+            elif valueStr.upper().endswith('U)'):
+                inner_number = int(valueStr.removeprefix("(~").removesuffix(")")[:-1])
+                value = (~inner_number) & ((1 << 32) - 1)
+            elif valueStr.upper().endswith('ULL)'):
+                inner_number = int(valueStr.removeprefix("(~").removesuffix(")")[:-3])
+                value = (~0) & ((1 << 64) - 1)
+            else:
+                value = int(valueStr)
+            self.vk.constants[constantName] = Constant(constantName, typeName, value, valueStr)
+
     def endFile(self):
         # This is the point were reg.py has ran, everything is collected
         # We do some post processing now
         self.applyExtensionDependency()
+
+        self.addConstants()
 
         # Use structs and commands to find which things are returnedOnly
         for struct in [x for x in self.vk.structs.values() if not x.returnedOnly]:
@@ -399,7 +448,10 @@ class BaseGenerator(OutputGenerator):
                 handle.device = next_parent.name == 'VkDevice'
                 next_parent = next_parent.parent
 
-        maxSyncSupport.queues = Queues.ALL
+        # This use to be Queues.ALL, but there is no real concept of "all"
+        # Found this just needs to be something non-None
+        maxSyncSupport.queues = Queues.TRANSFER
+
         maxSyncSupport.stages = self.vk.bitmasks['VkPipelineStageFlagBits2'].flags
         maxSyncEquivalent.accesses = self.vk.bitmasks['VkAccessFlagBits2'].flags
         maxSyncEquivalent.stages = self.vk.bitmasks['VkPipelineStageFlagBits2'].flags
@@ -437,6 +489,17 @@ class BaseGenerator(OutputGenerator):
         name = interface.get('name')
 
         if interface.tag == 'extension':
+            # Generator scripts built on BaseGenerator do not handle the `supported` attribute of extensions
+            # therefore historically the `generate_source.py` in individual ecosystem components hacked the
+            # registry by removing non-applicable or disabled extensions from the loaded XML already before
+            # reg.py parsed it. That broke the general behavior of reg.py for certain use cases so we now
+            # filter extensions here instead (after parsing) in order to no longer need the filtering hack
+            # in downstream `generate_source.py` scripts.
+            enabledApiList = [ globalApiName ] + ([] if mergedApiNames is None else mergedApiNames.split(','))
+            if (sup := interface.get('supported')) is not None and all(api not in sup.split(',') for api in enabledApiList):
+                self.unsupportedExtension = True
+                return
+
             instance = interface.get('type') == 'instance'
             device = not instance
             depends = interface.get('depends')
@@ -468,11 +531,16 @@ class BaseGenerator(OutputGenerator):
         OutputGenerator.endFeature(self)
         self.currentExtension = None
         self.currentVersion = None
+        self.unsupportedExtension = False
 
     #
     # All <command> from XML
     def genCmd(self, cmdinfo, name, alias):
         OutputGenerator.genCmd(self, cmdinfo, name, alias)
+
+        # Do not include APIs from unsupported extensions
+        if self.unsupportedExtension:
+            return
 
         params = []
         for param in cmdinfo.elem.findall('param'):
@@ -505,12 +573,8 @@ class BaseGenerator(OutputGenerator):
             optional = optionalValues is not None and optionalValues[0].lower() == "true"
             optionalPointer = optionalValues is not None and len(optionalValues) > 1 and optionalValues[1].lower() == "true"
 
-            # externsync will be 'true' or expression
-            # if expression, it should be same as 'true'
-            externSync = boolGet(param, 'externsync')
-            externSyncPointer = None if externSync else splitIfGet(param, 'externsync')
-            if not externSync and externSyncPointer is not None:
-                externSync = True
+            # externsync will be 'true', 'maybe', '<expression>' or 'maybe:<expression>'
+            (externSync, externSyncPointer) = externSyncGet(param)
 
             params.append(Param(paramName, paramAlias, paramType, paramFullType, paramNoautovalidity,
                                 paramConst, length, nullTerminated, pointer, fixedSizeArray,
@@ -522,6 +586,7 @@ class BaseGenerator(OutputGenerator):
         tasks = splitIfGet(attrib, 'tasks')
 
         queues = getQueues(attrib)
+        allowNoQueues = boolGet(attrib, 'allownoqueues')
         successcodes = splitIfGet(attrib, 'successcodes')
         errorcodes = splitIfGet(attrib, 'errorcodes')
         cmdbufferlevel = attrib.get('cmdbufferlevel')
@@ -558,7 +623,7 @@ class BaseGenerator(OutputGenerator):
 
         self.vk.commands[name] = Command(name, alias, protect, [], self.currentVersion,
                                          returnType, params, instance, device,
-                                         tasks, queues, successcodes, errorcodes,
+                                         tasks, queues, allowNoQueues, successcodes, errorcodes,
                                          primary, secondary, renderpass, videocoding,
                                          implicitExternSyncParams, deprecate, cPrototype, cFunctionPointer)
 
@@ -566,6 +631,10 @@ class BaseGenerator(OutputGenerator):
     # List the enum for the commands
     # TODO - Seems empty groups like `VkDeviceDeviceMemoryReportCreateInfoEXT` do not show up in here
     def genGroup(self, groupinfo, groupName, alias):
+        # Do not include APIs from unsupported extensions
+        if self.unsupportedExtension:
+            return
+
         # There can be case where the Enum/Bitmask is in a protect, but the individual
         # fields also have their own protect
         groupProtect = self.currentExtension.protect if hasattr(self.currentExtension, 'protect') and self.currentExtension.protect is not None else None
@@ -579,6 +648,15 @@ class BaseGenerator(OutputGenerator):
 
             for elem in enumElem.findall('enum'):
                 fieldName = elem.get('name')
+
+                # Do not include non-required enum constants
+                # reg.py emits the enum constants of the entire type, even constants that are part of unsupported
+                # extensions or those that are removed by <remove> elements in a given API. reg.py correctly tracks
+                # down these and also alias dependencies and marks the enum constants that are actually required
+                # with the 'required' attribute. Therefore we also have to verify that here to make sure we only
+                # include enum constants that are actually required in the target API(s).
+                if elem.get('required') is None:
+                    continue
 
                 if elem.get('alias') is not None:
                     self.enumFieldAliasMap[fieldName] = elem.get('alias')
@@ -604,6 +682,15 @@ class BaseGenerator(OutputGenerator):
             for elem in enumElem.findall('enum'):
                 flagName = elem.get('name')
 
+                # Do not include non-required enum constants
+                # reg.py emits the enum constants of the entire type, even constants that are part of unsupported
+                # extensions or those that are removed by <remove> elements in a given API. reg.py correctly tracks
+                # down these and also alias dependencies and marks the enum constants that are actually required
+                # with the 'required' attribute. Therefore we also have to verify that here to make sure we only
+                # include enum constants that are actually required in the target API(s).
+                if elem.get('required') is None:
+                    continue
+
                 if elem.get('alias') is not None:
                     self.flagAliasMap[flagName] = elem.get('alias')
                     continue
@@ -628,6 +715,11 @@ class BaseGenerator(OutputGenerator):
 
     def genType(self, typeInfo, typeName, alias):
         OutputGenerator.genType(self, typeInfo, typeName, alias)
+
+        # Do not include APIs from unsupported extensions
+        if self.unsupportedExtension:
+            return
+
         typeElem = typeInfo.elem
         protect = self.currentExtension.protect if hasattr(self.currentExtension, 'protect') and self.currentExtension.protect is not None else None
         extension = [self.currentExtension] if self.currentExtension is not None else []
@@ -656,9 +748,12 @@ class BaseGenerator(OutputGenerator):
                 name = textIfFind(member, 'name')
                 type = textIfFind(member, 'type')
                 sType = member.get('values') if member.get('values') is not None else sType
-                externSync = boolGet(member, 'externsync')
                 noautovalidity = boolGet(member, 'noautovalidity')
                 limittype = member.get('limittype')
+
+                (externSync, externSyncPointer) = externSyncGet(member)
+                # No cases currently where a subtype of a struct is marked as externally synchronized.
+                assert externSyncPointer is None
 
                 nullTerminated = False
                 length = member.get('altlen') if member.get('altlen') is not None else member.get('len')

@@ -35,6 +35,7 @@
 
 #include "absl/strings/str_format.h"
 #include "dawn/common/Assert.h"
+#include "dawn/common/Atomic.h"
 #include "dawn/common/FutureUtils.h"
 #include "dawn/common/Log.h"
 #include "dawn/native/ChainUtils.h"
@@ -150,7 +151,6 @@ bool PollFutures(std::vector<TrackedFutureWaitInfo>& futures) {
 // source validation.
 using QueueWaitSerialsMap = absl::flat_hash_map<WeakRef<QueueBase>, ExecutionSerial>;
 void WaitQueueSerials(const QueueWaitSerialsMap& queueWaitSerials, Nanoseconds timeout) {
-    // TODO(dawn:1662): Make error handling thread-safe.
     // Poll/wait on queues up to the lowest wait serial, but do this once per queue instead of
     // per event so that events with same serial complete at the same time instead of racing.
     for (const auto& queueAndSerial : queueWaitSerials) {
@@ -208,9 +208,11 @@ wgpu::WaitStatus WaitImpl(const InstanceBase* instance,
         }
         if (const auto* queueAndSerial = future.event->GetIfQueueAndSerial()) {
             auto [it, inserted] = queueLowestWaitSerials.insert(
-                {queueAndSerial->queue, queueAndSerial->completionSerial});
+                {queueAndSerial->queue,
+                 queueAndSerial->completionSerial.load(std::memory_order_acquire)});
             if (!inserted) {
-                it->second = std::min(it->second, queueAndSerial->completionSerial);
+                it->second = std::min(
+                    it->second, queueAndSerial->completionSerial.load(std::memory_order_acquire));
             }
         }
     }
@@ -292,9 +294,18 @@ EventManager::~EventManager() {
 
 MaybeError EventManager::Initialize(const UnpackedPtr<InstanceDescriptor>& descriptor) {
     if (descriptor) {
-        mTimedWaitAnyEnable = descriptor->capabilities.timedWaitAnyEnable;
-        mTimedWaitAnyMaxCount =
-            std::max(kTimedWaitAnyMaxCountDefault, descriptor->capabilities.timedWaitAnyMaxCount);
+        for (auto feature :
+             std::span(descriptor->requiredFeatures, descriptor->requiredFeatureCount)) {
+            switch (feature) {
+                case wgpu::InstanceFeatureName::TimedWaitAny:
+                    mTimedWaitAnyEnable = true;
+                    break;
+            }
+        }
+        if (descriptor->requiredLimits) {
+            mTimedWaitAnyMaxCount = std::max(kTimedWaitAnyMaxCountDefault,
+                                             descriptor->requiredLimits->timedWaitAnyMaxCount);
+        }
     }
     if (mTimedWaitAnyMaxCount > kTimedWaitAnyMaxCountDefault) {
         // We don't yet support a higher timedWaitAnyMaxCount because it would be complicated
@@ -366,11 +377,7 @@ FutureID EventManager::TrackEvent(Ref<TrackedEvent>&& event) {
             return;
         }
         if (event->mCallbackMode != wgpu::CallbackMode::WaitAnyOnly) {
-            FutureID lastProcessedEventID = mLastProcessEventID.load(std::memory_order_acquire);
-            while (lastProcessedEventID < futureID &&
-                   !mLastProcessEventID.compare_exchange_weak(lastProcessedEventID, futureID,
-                                                              std::memory_order_acq_rel)) {
-            }
+            FetchMax(mLastProcessEventID, futureID);
         }
         (*events)->emplace(futureID, std::move(event));
     });
@@ -557,6 +564,9 @@ wgpu::WaitStatus EventManager::WaitAny(size_t count, FutureWaitInfo* infos, Nano
 
 // QueueAndSerial
 
+QueueAndSerial::QueueAndSerial(QueueBase* q, ExecutionSerial serial)
+    : queue(GetWeakRef(q)), completionSerial(serial) {}
+
 ExecutionSerial QueueAndSerial::GetCompletedSerial() const {
     if (auto q = queue.Promote()) {
         return q->GetCompletedCommandSerial();
@@ -578,7 +588,7 @@ EventManager::TrackedEvent::TrackedEvent(wgpu::CallbackMode callbackMode,
                                          QueueBase* queue,
                                          ExecutionSerial completionSerial)
     : mCallbackMode(callbackMode),
-      mCompletionData(QueueAndSerial{GetWeakRef(queue), completionSerial}) {}
+      mCompletionData(std::in_place_type_t<QueueAndSerial>(), queue, completionSerial) {}
 
 EventManager::TrackedEvent::TrackedEvent(wgpu::CallbackMode callbackMode, Completed tag)
     : mCallbackMode(callbackMode), mCompletionData(AcquireRef(new WaitListEvent())) {
@@ -592,7 +602,7 @@ EventManager::TrackedEvent::TrackedEvent(wgpu::CallbackMode callbackMode, NonPro
 
 EventManager::TrackedEvent::~TrackedEvent() {
     DAWN_ASSERT(mFutureID != kNullFutureID);
-    DAWN_ASSERT(mCompleted);
+    DAWN_ASSERT(mCompleted.Use([](auto completed) { return *completed; }));
 }
 
 Future EventManager::TrackedEvent::GetFuture() const {
@@ -620,16 +630,22 @@ void EventManager::TrackedEvent::SetReadyToComplete() {
     if (auto event = GetIfWaitListEvent()) {
         event->Signal();
     }
-    if (auto* queueAndSerial = std::get_if<QueueAndSerial>(&mCompletionData)) {
-        queueAndSerial->completionSerial = queueAndSerial->GetCompletedSerial();
+    if (auto* queueAndSerial = GetIfQueueAndSerial()) {
+        ExecutionSerial current = queueAndSerial->completionSerial.load(std::memory_order_acquire);
+        for (auto completed = queueAndSerial->GetCompletedSerial();
+             current > completed && !queueAndSerial->completionSerial.compare_exchange_weak(
+                                        current, completed, std::memory_order_acq_rel);) {
+        }
     }
 }
 
 void EventManager::TrackedEvent::EnsureComplete(EventCompletionType completionType) {
-    bool alreadyComplete = mCompleted.exchange(true);
-    if (!alreadyComplete) {
-        Complete(completionType);
-    }
+    mCompleted.Use([&](auto completed) {
+        if (!*completed) {
+            Complete(completionType);
+            *completed = true;
+        }
+    });
 }
 
 }  // namespace dawn::native

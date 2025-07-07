@@ -908,6 +908,17 @@ using VULKAN_HPP_DEFAULT_DISPATCHER_TYPE;
   using VULKAN_HPP_NAMESPACE::ScopeKHR;
   using VULKAN_HPP_NAMESPACE::ScopeNV;
 
+  //=== VK_ARM_data_graph ===
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointTypeARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionCreateFlagBitsARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionCreateFlagsARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelinePropertyARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineDispatchFlagBitsARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineDispatchFlagsARM;
+  using VULKAN_HPP_NAMESPACE::PhysicalDeviceDataGraphProcessingEngineTypeARM;
+  using VULKAN_HPP_NAMESPACE::PhysicalDeviceDataGraphOperationTypeARM;
+
   //=== VK_KHR_video_encode_av1 ===
   using VULKAN_HPP_NAMESPACE::VideoEncodeAV1PredictionModeKHR;
   using VULKAN_HPP_NAMESPACE::VideoEncodeAV1RateControlGroupKHR;
@@ -2595,6 +2606,11 @@ using VULKAN_HPP_DEFAULT_DISPATCHER_TYPE;
   //=== VK_KHR_cooperative_matrix ===
   using VULKAN_HPP_NAMESPACE::KHRCooperativeMatrixExtensionName;
   using VULKAN_HPP_NAMESPACE::KHRCooperativeMatrixSpecVersion;
+
+  //=== VK_ARM_data_graph ===
+  using VULKAN_HPP_NAMESPACE::MaxPhysicalDeviceDataGraphOperationSetNameSizeARM;
+  using VULKAN_HPP_NAMESPACE::ARMDataGraphExtensionName;
+  using VULKAN_HPP_NAMESPACE::ARMDataGraphSpecVersion;
 
   //=== VK_QCOM_multiview_per_view_render_areas ===
   using VULKAN_HPP_NAMESPACE::QCOMMultiviewPerViewRenderAreasExtensionName;
@@ -4731,6 +4747,30 @@ using VULKAN_HPP_DEFAULT_DISPATCHER_TYPE;
   using VULKAN_HPP_NAMESPACE::PhysicalDeviceCooperativeMatrixFeaturesKHR;
   using VULKAN_HPP_NAMESPACE::PhysicalDeviceCooperativeMatrixPropertiesKHR;
 
+  //=== VK_ARM_data_graph ===
+  using VULKAN_HPP_NAMESPACE::PhysicalDeviceDataGraphFeaturesARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineConstantARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineResourceInfoARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineCompilerControlCreateInfoARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineCreateInfoARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineShaderModuleCreateInfoARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionCreateInfoARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementsInfoARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionMemoryRequirementsInfoARM;
+  using VULKAN_HPP_NAMESPACE::BindDataGraphPipelineSessionMemoryInfoARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineInfoARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelinePropertyQueryResultARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineIdentifierCreateInfoARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineDispatchInfoARM;
+  using VULKAN_HPP_NAMESPACE::PhysicalDeviceDataGraphProcessingEngineARM;
+  using VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphPropertiesARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphProcessingEngineCreateInfoARM;
+  using VULKAN_HPP_NAMESPACE::PhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM;
+  using VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphProcessingEnginePropertiesARM;
+  using VULKAN_HPP_NAMESPACE::PhysicalDeviceDataGraphOperationSupportARM;
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineConstantTensorSemiStructuredSparsityInfoARM;
+
   //=== VK_QCOM_multiview_per_view_render_areas ===
   using VULKAN_HPP_NAMESPACE::PhysicalDeviceMultiviewPerViewRenderAreasFeaturesQCOM;
   using VULKAN_HPP_NAMESPACE::MultiviewPerViewRenderAreasRenderPassBeginInfoQCOM;
@@ -4895,6 +4935,7 @@ using VULKAN_HPP_DEFAULT_DISPATCHER_TYPE;
   using VULKAN_HPP_NAMESPACE::ClusterAccelerationStructureBuildTriangleClusterInfoNV;
   using VULKAN_HPP_NAMESPACE::ClusterAccelerationStructureBuildTriangleClusterTemplateInfoNV;
   using VULKAN_HPP_NAMESPACE::ClusterAccelerationStructureInstantiateClusterInfoNV;
+  using VULKAN_HPP_NAMESPACE::ClusterAccelerationStructureGetTemplateIndicesInfoNV;
   using VULKAN_HPP_NAMESPACE::RayTracingPipelineClusterAccelerationStructureCreateInfoNV;
 
   //=== VK_NV_partitioned_acceleration_structure ===
@@ -5132,6 +5173,9 @@ using VULKAN_HPP_DEFAULT_DISPATCHER_TYPE;
   //=== VK_KHR_pipeline_binary ===
   using VULKAN_HPP_NAMESPACE::PipelineBinaryKHR;
 
+  //=== VK_ARM_data_graph ===
+  using VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM;
+
   //=== VK_NV_external_compute_queue ===
   using VULKAN_HPP_NAMESPACE::ExternalComputeQueueNV;
 
@@ -5244,6 +5288,9 @@ using VULKAN_HPP_DEFAULT_DISPATCHER_TYPE;
 
   //=== VK_KHR_pipeline_binary ===
   using VULKAN_HPP_NAMESPACE::UniquePipelineBinaryKHR;
+
+  //=== VK_ARM_data_graph ===
+  using VULKAN_HPP_NAMESPACE::UniqueDataGraphPipelineSessionARM;
 
   //=== VK_NV_external_compute_queue ===
   using VULKAN_HPP_NAMESPACE::UniqueExternalComputeQueueNV;
@@ -5363,6 +5410,9 @@ using VULKAN_HPP_DEFAULT_DISPATCHER_TYPE;
 
   //=== VK_KHR_pipeline_binary ===
   using VULKAN_HPP_NAMESPACE::SharedPipelineBinaryKHR;
+
+  //=== VK_ARM_data_graph ===
+  using VULKAN_HPP_NAMESPACE::SharedDataGraphPipelineSessionARM;
 
   //=== VK_NV_external_compute_queue ===
   using VULKAN_HPP_NAMESPACE::SharedExternalComputeQueueNV;
@@ -5573,6 +5623,9 @@ using VULKAN_HPP_DEFAULT_DISPATCHER_TYPE;
     using VULKAN_HPP_RAII_NAMESPACE::PipelineBinaryKHR;
     using VULKAN_HPP_RAII_NAMESPACE::PipelineBinaryKHRs;
 
+  //=== VK_ARM_data_graph ===
+    using VULKAN_HPP_RAII_NAMESPACE::DataGraphPipelineSessionARM;
+
   //=== VK_NV_external_compute_queue ===
     using VULKAN_HPP_RAII_NAMESPACE::ExternalComputeQueueNV;
 
@@ -5702,6 +5755,9 @@ export namespace std
 
   //=== VK_KHR_pipeline_binary ===
   template <> struct hash<VULKAN_HPP_NAMESPACE::PipelineBinaryKHR>;
+
+  //=== VK_ARM_data_graph ===
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM>;
 
   //=== VK_NV_external_compute_queue ===
   template <> struct hash<VULKAN_HPP_NAMESPACE::ExternalComputeQueueNV>;
@@ -7329,6 +7385,30 @@ export namespace std
   template <> struct hash<VULKAN_HPP_NAMESPACE::PhysicalDeviceCooperativeMatrixFeaturesKHR>;
   template <> struct hash<VULKAN_HPP_NAMESPACE::PhysicalDeviceCooperativeMatrixPropertiesKHR>;
 
+  //=== VK_ARM_data_graph ===
+  template <> struct hash<VULKAN_HPP_NAMESPACE::PhysicalDeviceDataGraphFeaturesARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineConstantARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineResourceInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineCompilerControlCreateInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineCreateInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineShaderModuleCreateInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionCreateInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementsInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionMemoryRequirementsInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::BindDataGraphPipelineSessionMemoryInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelinePropertyQueryResultARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineIdentifierCreateInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineDispatchInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::PhysicalDeviceDataGraphProcessingEngineARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphPropertiesARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphProcessingEngineCreateInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::PhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphProcessingEnginePropertiesARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::PhysicalDeviceDataGraphOperationSupportARM>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::DataGraphPipelineConstantTensorSemiStructuredSparsityInfoARM>;
+
   //=== VK_QCOM_multiview_per_view_render_areas ===
   template <> struct hash<VULKAN_HPP_NAMESPACE::PhysicalDeviceMultiviewPerViewRenderAreasFeaturesQCOM>;
   template <> struct hash<VULKAN_HPP_NAMESPACE::MultiviewPerViewRenderAreasRenderPassBeginInfoQCOM>;
@@ -7491,6 +7571,7 @@ export namespace std
   template <> struct hash<VULKAN_HPP_NAMESPACE::ClusterAccelerationStructureBuildTriangleClusterInfoNV>;
   template <> struct hash<VULKAN_HPP_NAMESPACE::ClusterAccelerationStructureBuildTriangleClusterTemplateInfoNV>;
   template <> struct hash<VULKAN_HPP_NAMESPACE::ClusterAccelerationStructureInstantiateClusterInfoNV>;
+  template <> struct hash<VULKAN_HPP_NAMESPACE::ClusterAccelerationStructureGetTemplateIndicesInfoNV>;
   template <> struct hash<VULKAN_HPP_NAMESPACE::RayTracingPipelineClusterAccelerationStructureCreateInfoNV>;
 
   //=== VK_NV_partitioned_acceleration_structure ===
@@ -8707,6 +8788,19 @@ export using ::PFN_vkQueueNotifyOutOfBandNV;
 
   //=== VK_KHR_cooperative_matrix ===
 export using ::PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR;
+
+  //=== VK_ARM_data_graph ===
+export using ::PFN_vkCreateDataGraphPipelinesARM;
+export using ::PFN_vkCreateDataGraphPipelineSessionARM;
+export using ::PFN_vkGetDataGraphPipelineSessionBindPointRequirementsARM;
+export using ::PFN_vkGetDataGraphPipelineSessionMemoryRequirementsARM;
+export using ::PFN_vkBindDataGraphPipelineSessionMemoryARM;
+export using ::PFN_vkDestroyDataGraphPipelineSessionARM;
+export using ::PFN_vkCmdDispatchDataGraphARM;
+export using ::PFN_vkGetDataGraphPipelineAvailablePropertiesARM;
+export using ::PFN_vkGetDataGraphPipelinePropertiesARM;
+export using ::PFN_vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM;
+export using ::PFN_vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM;
 
   //=== VK_EXT_attachment_feedback_loop_dynamic_state ===
 export using ::PFN_vkCmdSetAttachmentFeedbackLoopEnableEXT;

@@ -1856,6 +1856,30 @@ namespace VULKAN_HPP_NAMESPACE
   struct PhysicalDeviceCooperativeMatrixFeaturesKHR;
   struct PhysicalDeviceCooperativeMatrixPropertiesKHR;
 
+  //=== VK_ARM_data_graph ===
+  struct PhysicalDeviceDataGraphFeaturesARM;
+  struct DataGraphPipelineConstantARM;
+  struct DataGraphPipelineResourceInfoARM;
+  struct DataGraphPipelineCompilerControlCreateInfoARM;
+  struct DataGraphPipelineCreateInfoARM;
+  struct DataGraphPipelineShaderModuleCreateInfoARM;
+  struct DataGraphPipelineSessionCreateInfoARM;
+  struct DataGraphPipelineSessionBindPointRequirementsInfoARM;
+  struct DataGraphPipelineSessionBindPointRequirementARM;
+  struct DataGraphPipelineSessionMemoryRequirementsInfoARM;
+  struct BindDataGraphPipelineSessionMemoryInfoARM;
+  struct DataGraphPipelineInfoARM;
+  struct DataGraphPipelinePropertyQueryResultARM;
+  struct DataGraphPipelineIdentifierCreateInfoARM;
+  struct DataGraphPipelineDispatchInfoARM;
+  struct PhysicalDeviceDataGraphProcessingEngineARM;
+  struct QueueFamilyDataGraphPropertiesARM;
+  struct DataGraphProcessingEngineCreateInfoARM;
+  struct PhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM;
+  struct QueueFamilyDataGraphProcessingEnginePropertiesARM;
+  struct PhysicalDeviceDataGraphOperationSupportARM;
+  struct DataGraphPipelineConstantTensorSemiStructuredSparsityInfoARM;
+
   //=== VK_QCOM_multiview_per_view_render_areas ===
   struct PhysicalDeviceMultiviewPerViewRenderAreasFeaturesQCOM;
   struct MultiviewPerViewRenderAreasRenderPassBeginInfoQCOM;
@@ -2020,6 +2044,7 @@ namespace VULKAN_HPP_NAMESPACE
   struct ClusterAccelerationStructureBuildTriangleClusterInfoNV;
   struct ClusterAccelerationStructureBuildTriangleClusterTemplateInfoNV;
   struct ClusterAccelerationStructureInstantiateClusterInfoNV;
+  struct ClusterAccelerationStructureGetTemplateIndicesInfoNV;
   struct RayTracingPipelineClusterAccelerationStructureCreateInfoNV;
 
   //=== VK_NV_partitioned_acceleration_structure ===
@@ -2257,6 +2282,9 @@ class ShaderEXT;
 
   //=== VK_KHR_pipeline_binary ===
 class PipelineBinaryKHR;
+
+  //=== VK_ARM_data_graph ===
+class DataGraphPipelineSessionARM;
 
   //=== VK_NV_external_compute_queue ===
 class ExternalComputeQueueNV;
@@ -2677,6 +2705,15 @@ class IndirectExecutionSetEXT;
   };
   using UniquePipelineBinaryKHR = UniqueHandle<PipelineBinaryKHR, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>;
 
+  //=== VK_ARM_data_graph ===
+  template <typename Dispatch>
+  class UniqueHandleTraits<DataGraphPipelineSessionARM, Dispatch>
+  {
+  public:
+    using deleter = detail::ObjectDestroy<Device, Dispatch>;
+  };
+  using UniqueDataGraphPipelineSessionARM = UniqueHandle<DataGraphPipelineSessionARM, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>;
+
   //=== VK_NV_external_compute_queue ===
   template <typename Dispatch>
   class UniqueHandleTraits<ExternalComputeQueueNV, Dispatch>
@@ -2779,6 +2816,10 @@ class IndirectExecutionSetEXT;
       return m_surfaceKHR == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( SurfaceKHR const & ) const = default;
+#endif
+
   private:
     VkSurfaceKHR m_surfaceKHR = {};
   };
@@ -2875,6 +2916,10 @@ class IndirectExecutionSetEXT;
     {
       return m_debugReportCallbackEXT == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( DebugReportCallbackEXT const & ) const = default;
+#endif
 
   private:
     VkDebugReportCallbackEXT m_debugReportCallbackEXT = {};
@@ -2973,6 +3018,10 @@ class IndirectExecutionSetEXT;
       return m_debugUtilsMessengerEXT == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( DebugUtilsMessengerEXT const & ) const = default;
+#endif
+
   private:
     VkDebugUtilsMessengerEXT m_debugUtilsMessengerEXT = {};
   };
@@ -3063,6 +3112,10 @@ class IndirectExecutionSetEXT;
     {
       return m_displayKHR == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( DisplayKHR const & ) const = default;
+#endif
 
   private:
     VkDisplayKHR m_displayKHR = {};
@@ -3161,6 +3214,10 @@ class IndirectExecutionSetEXT;
       return m_swapchainKHR == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( SwapchainKHR const & ) const = default;
+#endif
+
   private:
     VkSwapchainKHR m_swapchainKHR = {};
   };
@@ -3257,6 +3314,10 @@ class IndirectExecutionSetEXT;
     {
       return m_semaphore == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( Semaphore const & ) const = default;
+#endif
 
   private:
     VkSemaphore m_semaphore = {};
@@ -3355,6 +3416,10 @@ class IndirectExecutionSetEXT;
       return m_fence == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( Fence const & ) const = default;
+#endif
+
   private:
     VkFence m_fence = {};
   };
@@ -3452,6 +3517,10 @@ class IndirectExecutionSetEXT;
       return m_performanceConfigurationINTEL == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PerformanceConfigurationINTEL const & ) const = default;
+#endif
+
   private:
     VkPerformanceConfigurationINTEL m_performanceConfigurationINTEL = {};
   };
@@ -3542,6 +3611,10 @@ class IndirectExecutionSetEXT;
     {
       return m_queryPool == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( QueryPool const & ) const = default;
+#endif
 
   private:
     VkQueryPool m_queryPool = {};
@@ -3640,6 +3713,10 @@ class IndirectExecutionSetEXT;
       return m_buffer == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( Buffer const & ) const = default;
+#endif
+
   private:
     VkBuffer m_buffer = {};
   };
@@ -3736,6 +3813,10 @@ class IndirectExecutionSetEXT;
     {
       return m_pipelineLayout == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PipelineLayout const & ) const = default;
+#endif
 
   private:
     VkPipelineLayout m_pipelineLayout = {};
@@ -3834,6 +3915,10 @@ class IndirectExecutionSetEXT;
       return m_descriptorSet == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( DescriptorSet const & ) const = default;
+#endif
+
   private:
     VkDescriptorSet m_descriptorSet = {};
   };
@@ -3930,6 +4015,10 @@ class IndirectExecutionSetEXT;
     {
       return m_imageView == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( ImageView const & ) const = default;
+#endif
 
   private:
     VkImageView m_imageView = {};
@@ -4028,6 +4117,10 @@ class IndirectExecutionSetEXT;
       return m_pipeline == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( Pipeline const & ) const = default;
+#endif
+
   private:
     VkPipeline m_pipeline = {};
   };
@@ -4125,6 +4218,10 @@ class IndirectExecutionSetEXT;
       return m_shaderEXT == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( ShaderEXT const & ) const = default;
+#endif
+
   private:
     VkShaderEXT m_shaderEXT = {};
   };
@@ -4215,6 +4312,10 @@ class IndirectExecutionSetEXT;
     {
       return m_image == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( Image const & ) const = default;
+#endif
 
   private:
     VkImage m_image = {};
@@ -4313,6 +4414,10 @@ class IndirectExecutionSetEXT;
       return m_accelerationStructureNV == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( AccelerationStructureNV const & ) const = default;
+#endif
+
   private:
     VkAccelerationStructureNV m_accelerationStructureNV = {};
   };
@@ -4341,6 +4446,101 @@ class IndirectExecutionSetEXT;
 
   template <>
   struct isVulkanHandleType<VULKAN_HPP_NAMESPACE::AccelerationStructureNV>
+  {
+    static VULKAN_HPP_CONST_OR_CONSTEXPR bool value = true;
+  };
+
+  // wrapper class for handle VkDataGraphPipelineSessionARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkDataGraphPipelineSessionARM.html
+  class DataGraphPipelineSessionARM
+  {
+  public:
+    using CType = VkDataGraphPipelineSessionARM;
+    using NativeType = VkDataGraphPipelineSessionARM;
+
+    static VULKAN_HPP_CONST_OR_CONSTEXPR VULKAN_HPP_NAMESPACE::ObjectType objectType = VULKAN_HPP_NAMESPACE::ObjectType::eDataGraphPipelineSessionARM;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT debugReportObjectType = VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+
+  public:
+    DataGraphPipelineSessionARM() VULKAN_HPP_NOEXCEPT {}    // = default; - try to workaround a compiler issue
+    DataGraphPipelineSessionARM( DataGraphPipelineSessionARM const & rhs ) = default;
+    DataGraphPipelineSessionARM & operator=( DataGraphPipelineSessionARM const & rhs ) = default;
+
+#if !defined(VULKAN_HPP_HANDLES_MOVE_EXCHANGE)
+    DataGraphPipelineSessionARM( DataGraphPipelineSessionARM && rhs ) = default;
+    DataGraphPipelineSessionARM & operator=( DataGraphPipelineSessionARM && rhs ) = default;
+#else
+    DataGraphPipelineSessionARM( DataGraphPipelineSessionARM && rhs ) VULKAN_HPP_NOEXCEPT
+      : m_dataGraphPipelineSessionARM( VULKAN_HPP_NAMESPACE::exchange( rhs.m_dataGraphPipelineSessionARM, {} ) )
+    {}
+    DataGraphPipelineSessionARM & operator=( DataGraphPipelineSessionARM && rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      m_dataGraphPipelineSessionARM = VULKAN_HPP_NAMESPACE::exchange( rhs.m_dataGraphPipelineSessionARM, {} );
+      return *this;
+    }
+#endif
+
+    VULKAN_HPP_CONSTEXPR DataGraphPipelineSessionARM( std::nullptr_t ) VULKAN_HPP_NOEXCEPT
+    {}
+    VULKAN_HPP_TYPESAFE_EXPLICIT DataGraphPipelineSessionARM( VkDataGraphPipelineSessionARM dataGraphPipelineSessionARM ) VULKAN_HPP_NOEXCEPT
+      : m_dataGraphPipelineSessionARM( dataGraphPipelineSessionARM )
+    {}
+
+#if ( VULKAN_HPP_TYPESAFE_CONVERSION == 1 )
+    DataGraphPipelineSessionARM & operator=(VkDataGraphPipelineSessionARM dataGraphPipelineSessionARM) VULKAN_HPP_NOEXCEPT
+    {
+      m_dataGraphPipelineSessionARM = dataGraphPipelineSessionARM;
+      return *this;
+    }
+#endif
+
+    DataGraphPipelineSessionARM & operator=( std::nullptr_t ) VULKAN_HPP_NOEXCEPT
+    {
+      m_dataGraphPipelineSessionARM = {};
+      return *this;
+    }
+
+    
+    VULKAN_HPP_TYPESAFE_EXPLICIT operator VkDataGraphPipelineSessionARM() const VULKAN_HPP_NOEXCEPT
+    {
+      return m_dataGraphPipelineSessionARM;
+    }
+
+    explicit operator bool() const VULKAN_HPP_NOEXCEPT
+    {
+      return m_dataGraphPipelineSessionARM != VK_NULL_HANDLE;
+    }
+
+    bool operator!() const VULKAN_HPP_NOEXCEPT
+    {
+      return m_dataGraphPipelineSessionARM == VK_NULL_HANDLE;
+    }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( DataGraphPipelineSessionARM const & ) const = default;
+#endif
+
+  private:
+    VkDataGraphPipelineSessionARM m_dataGraphPipelineSessionARM = {};
+  };
+
+  template <>
+  struct CppType<VULKAN_HPP_NAMESPACE::ObjectType, VULKAN_HPP_NAMESPACE::ObjectType::eDataGraphPipelineSessionARM>
+  {
+    using Type = VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM;
+  };
+
+
+
+#if ( VK_USE_64_BIT_PTR_DEFINES == 1 )
+  template <>
+  struct CppType<VkDataGraphPipelineSessionARM, VK_NULL_HANDLE>
+  {
+    using Type = VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM;
+  };
+#endif
+
+  template <>
+  struct isVulkanHandleType<VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM>
   {
     static VULKAN_HPP_CONST_OR_CONSTEXPR bool value = true;
   };
@@ -4409,6 +4609,10 @@ class IndirectExecutionSetEXT;
     {
       return m_opticalFlowSessionNV == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( OpticalFlowSessionNV const & ) const = default;
+#endif
 
   private:
     VkOpticalFlowSessionNV m_opticalFlowSessionNV = {};
@@ -4500,6 +4704,10 @@ class IndirectExecutionSetEXT;
     {
       return m_descriptorUpdateTemplate == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( DescriptorUpdateTemplate const & ) const = default;
+#endif
 
   private:
     VkDescriptorUpdateTemplate m_descriptorUpdateTemplate = {};
@@ -4599,6 +4807,10 @@ class IndirectExecutionSetEXT;
       return m_event == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( Event const & ) const = default;
+#endif
+
   private:
     VkEvent m_event = {};
   };
@@ -4696,6 +4908,10 @@ class IndirectExecutionSetEXT;
       return m_accelerationStructureKHR == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( AccelerationStructureKHR const & ) const = default;
+#endif
+
   private:
     VkAccelerationStructureKHR m_accelerationStructureKHR = {};
   };
@@ -4792,6 +5008,10 @@ class IndirectExecutionSetEXT;
     {
       return m_micromapEXT == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( MicromapEXT const & ) const = default;
+#endif
 
   private:
     VkMicromapEXT m_micromapEXT = {};
@@ -6999,6 +7219,18 @@ class IndirectExecutionSetEXT;
     void convertCooperativeVectorMatrixNV( VULKAN_HPP_NAMESPACE::ArrayProxy<const VULKAN_HPP_NAMESPACE::ConvertCooperativeVectorMatrixInfoNV> const & infos, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
 #endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
 
+  //=== VK_ARM_data_graph ===
+
+
+    // wrapper function for command vkCmdDispatchDataGraphARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCmdDispatchDataGraphARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    void dispatchDataGraphARM( VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM session, const VULKAN_HPP_NAMESPACE::DataGraphPipelineDispatchInfoARM * pInfo, Dispatch const & d  VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+    // wrapper function for command vkCmdDispatchDataGraphARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCmdDispatchDataGraphARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    void dispatchDataGraphARM( VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM session, Optional<const VULKAN_HPP_NAMESPACE::DataGraphPipelineDispatchInfoARM> info VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
   //=== VK_EXT_attachment_feedback_loop_dynamic_state ===
 
 
@@ -7160,6 +7392,10 @@ class IndirectExecutionSetEXT;
       return m_commandBuffer == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( CommandBuffer const & ) const = default;
+#endif
+
   private:
     VkCommandBuffer m_commandBuffer = {};
   };
@@ -7256,6 +7492,10 @@ class IndirectExecutionSetEXT;
     {
       return m_deviceMemory == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( DeviceMemory const & ) const = default;
+#endif
 
   private:
     VkDeviceMemory m_deviceMemory = {};
@@ -7354,6 +7594,10 @@ class IndirectExecutionSetEXT;
       return m_videoSessionKHR == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( VideoSessionKHR const & ) const = default;
+#endif
+
   private:
     VkVideoSessionKHR m_videoSessionKHR = {};
   };
@@ -7444,6 +7688,10 @@ class IndirectExecutionSetEXT;
     {
       return m_deferredOperationKHR == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( DeferredOperationKHR const & ) const = default;
+#endif
 
   private:
     VkDeferredOperationKHR m_deferredOperationKHR = {};
@@ -7536,6 +7784,10 @@ class IndirectExecutionSetEXT;
     {
       return m_bufferCollectionFUCHSIA == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( BufferCollectionFUCHSIA const & ) const = default;
+#endif
 
   private:
     VkBufferCollectionFUCHSIA m_bufferCollectionFUCHSIA = {};
@@ -7635,6 +7887,10 @@ class IndirectExecutionSetEXT;
       return m_bufferView == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( BufferView const & ) const = default;
+#endif
+
   private:
     VkBufferView m_bufferView = {};
   };
@@ -7731,6 +7987,10 @@ class IndirectExecutionSetEXT;
     {
       return m_commandPool == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( CommandPool const & ) const = default;
+#endif
 
   private:
     VkCommandPool m_commandPool = {};
@@ -7829,6 +8089,10 @@ class IndirectExecutionSetEXT;
       return m_pipelineCache == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PipelineCache const & ) const = default;
+#endif
+
   private:
     VkPipelineCache m_pipelineCache = {};
   };
@@ -7925,6 +8189,10 @@ class IndirectExecutionSetEXT;
     {
       return m_cuFunctionNVX == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( CuFunctionNVX const & ) const = default;
+#endif
 
   private:
     VkCuFunctionNVX m_cuFunctionNVX = {};
@@ -8023,6 +8291,10 @@ class IndirectExecutionSetEXT;
       return m_cuModuleNVX == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( CuModuleNVX const & ) const = default;
+#endif
+
   private:
     VkCuModuleNVX m_cuModuleNVX = {};
   };
@@ -8120,6 +8392,10 @@ class IndirectExecutionSetEXT;
     {
       return m_cudaFunctionNV == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( CudaFunctionNV const & ) const = default;
+#endif
 
   private:
     VkCudaFunctionNV m_cudaFunctionNV = {};
@@ -8220,6 +8496,10 @@ class IndirectExecutionSetEXT;
       return m_cudaModuleNV == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( CudaModuleNV const & ) const = default;
+#endif
+
   private:
     VkCudaModuleNV m_cudaModuleNV = {};
   };
@@ -8318,6 +8598,10 @@ class IndirectExecutionSetEXT;
       return m_descriptorPool == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( DescriptorPool const & ) const = default;
+#endif
+
   private:
     VkDescriptorPool m_descriptorPool = {};
   };
@@ -8414,6 +8698,10 @@ class IndirectExecutionSetEXT;
     {
       return m_descriptorSetLayout == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( DescriptorSetLayout const & ) const = default;
+#endif
 
   private:
     VkDescriptorSetLayout m_descriptorSetLayout = {};
@@ -8522,6 +8810,10 @@ class IndirectExecutionSetEXT;
       return m_externalComputeQueueNV == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( ExternalComputeQueueNV const & ) const = default;
+#endif
+
   private:
     VkExternalComputeQueueNV m_externalComputeQueueNV = {};
   };
@@ -8612,6 +8904,10 @@ class IndirectExecutionSetEXT;
     {
       return m_framebuffer == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( Framebuffer const & ) const = default;
+#endif
 
   private:
     VkFramebuffer m_framebuffer = {};
@@ -8710,6 +9006,10 @@ class IndirectExecutionSetEXT;
       return m_indirectCommandsLayoutEXT == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( IndirectCommandsLayoutEXT const & ) const = default;
+#endif
+
   private:
     VkIndirectCommandsLayoutEXT m_indirectCommandsLayoutEXT = {};
   };
@@ -8800,6 +9100,10 @@ class IndirectExecutionSetEXT;
     {
       return m_indirectCommandsLayoutNV == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( IndirectCommandsLayoutNV const & ) const = default;
+#endif
 
   private:
     VkIndirectCommandsLayoutNV m_indirectCommandsLayoutNV = {};
@@ -8892,6 +9196,10 @@ class IndirectExecutionSetEXT;
       return m_indirectExecutionSetEXT == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( IndirectExecutionSetEXT const & ) const = default;
+#endif
+
   private:
     VkIndirectExecutionSetEXT m_indirectExecutionSetEXT = {};
   };
@@ -8982,6 +9290,10 @@ class IndirectExecutionSetEXT;
     {
       return m_privateDataSlot == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PrivateDataSlot const & ) const = default;
+#endif
 
   private:
     VkPrivateDataSlot m_privateDataSlot = {};
@@ -9074,6 +9386,10 @@ class IndirectExecutionSetEXT;
     {
       return m_renderPass == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( RenderPass const & ) const = default;
+#endif
 
   private:
     VkRenderPass m_renderPass = {};
@@ -9172,6 +9488,10 @@ class IndirectExecutionSetEXT;
       return m_sampler == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( Sampler const & ) const = default;
+#endif
+
   private:
     VkSampler m_sampler = {};
   };
@@ -9268,6 +9588,10 @@ class IndirectExecutionSetEXT;
     {
       return m_samplerYcbcrConversion == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( SamplerYcbcrConversion const & ) const = default;
+#endif
 
   private:
     VkSamplerYcbcrConversion m_samplerYcbcrConversion = {};
@@ -9367,6 +9691,10 @@ class IndirectExecutionSetEXT;
       return m_shaderModule == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( ShaderModule const & ) const = default;
+#endif
+
   private:
     VkShaderModule m_shaderModule = {};
   };
@@ -9464,6 +9792,10 @@ class IndirectExecutionSetEXT;
       return m_tensorARM == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( TensorARM const & ) const = default;
+#endif
+
   private:
     VkTensorARM m_tensorARM = {};
   };
@@ -9555,6 +9887,10 @@ class IndirectExecutionSetEXT;
       return m_tensorViewARM == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( TensorViewARM const & ) const = default;
+#endif
+
   private:
     VkTensorViewARM m_tensorViewARM = {};
   };
@@ -9645,6 +9981,10 @@ class IndirectExecutionSetEXT;
     {
       return m_validationCacheEXT == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( ValidationCacheEXT const & ) const = default;
+#endif
 
   private:
     VkValidationCacheEXT m_validationCacheEXT = {};
@@ -9743,6 +10083,10 @@ class IndirectExecutionSetEXT;
       return m_videoSessionParametersKHR == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( VideoSessionParametersKHR const & ) const = default;
+#endif
+
   private:
     VkVideoSessionParametersKHR m_videoSessionParametersKHR = {};
   };
@@ -9833,6 +10177,10 @@ class IndirectExecutionSetEXT;
     {
       return m_pipelineBinaryKHR == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PipelineBinaryKHR const & ) const = default;
+#endif
 
   private:
     VkPipelineBinaryKHR m_pipelineBinaryKHR = {};
@@ -10071,6 +10419,10 @@ class IndirectExecutionSetEXT;
     {
       return m_queue == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( Queue const & ) const = default;
+#endif
 
   private:
     VkQueue m_queue = {};
@@ -14554,6 +14906,124 @@ class IndirectExecutionSetEXT;
     VULKAN_HPP_NODISCARD std::vector<VULKAN_HPP_NAMESPACE::LatencyTimingsFrameReportNV, LatencyTimingsFrameReportNVAllocator> getLatencyTimingsNV( VULKAN_HPP_NAMESPACE::SwapchainKHR swapchain, LatencyTimingsFrameReportNVAllocator & latencyTimingsFrameReportNVAllocator, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
 #endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
 
+  //=== VK_ARM_data_graph ===
+
+
+    // wrapper function for command vkCreateDataGraphPipelinesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCreateDataGraphPipelinesARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD Result createDataGraphPipelinesARM( VULKAN_HPP_NAMESPACE::DeferredOperationKHR deferredOperation, VULKAN_HPP_NAMESPACE::PipelineCache pipelineCache, uint32_t createInfoCount, const VULKAN_HPP_NAMESPACE::DataGraphPipelineCreateInfoARM * pCreateInfos, const VULKAN_HPP_NAMESPACE::AllocationCallbacks * pAllocator, VULKAN_HPP_NAMESPACE::Pipeline * pPipelines, Dispatch const & d  VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+    // wrapper function for command vkCreateDataGraphPipelinesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCreateDataGraphPipelinesARM.html
+    template <typename PipelineAllocator = std::allocator<VULKAN_HPP_NAMESPACE::Pipeline>, typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE, typename std::enable_if<std::is_same<typename PipelineAllocator::value_type, VULKAN_HPP_NAMESPACE::Pipeline > ::value , int>::type = 0>
+    VULKAN_HPP_NODISCARD ResultValue<std::vector<VULKAN_HPP_NAMESPACE::Pipeline, PipelineAllocator>> createDataGraphPipelinesARM( VULKAN_HPP_NAMESPACE::DeferredOperationKHR deferredOperation, VULKAN_HPP_NAMESPACE::PipelineCache pipelineCache, VULKAN_HPP_NAMESPACE::ArrayProxy<const VULKAN_HPP_NAMESPACE::DataGraphPipelineCreateInfoARM> const & createInfos, Optional<const VULKAN_HPP_NAMESPACE::AllocationCallbacks> allocator VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+    // wrapper function for command vkCreateDataGraphPipelinesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCreateDataGraphPipelinesARM.html
+    template <typename PipelineAllocator = std::allocator<VULKAN_HPP_NAMESPACE::Pipeline>, typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE, typename std::enable_if<std::is_same<typename PipelineAllocator::value_type, VULKAN_HPP_NAMESPACE::Pipeline > ::value , int>::type = 0>
+    VULKAN_HPP_NODISCARD ResultValue<std::vector<VULKAN_HPP_NAMESPACE::Pipeline, PipelineAllocator>> createDataGraphPipelinesARM( VULKAN_HPP_NAMESPACE::DeferredOperationKHR deferredOperation, VULKAN_HPP_NAMESPACE::PipelineCache pipelineCache, VULKAN_HPP_NAMESPACE::ArrayProxy<const VULKAN_HPP_NAMESPACE::DataGraphPipelineCreateInfoARM> const & createInfos, Optional<const VULKAN_HPP_NAMESPACE::AllocationCallbacks> allocator, PipelineAllocator & pipelineAllocator, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+    // wrapper function for command vkCreateDataGraphPipelinesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCreateDataGraphPipelinesARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD ResultValue<VULKAN_HPP_NAMESPACE::Pipeline> createDataGraphPipelineARM( VULKAN_HPP_NAMESPACE::DeferredOperationKHR deferredOperation, VULKAN_HPP_NAMESPACE::PipelineCache pipelineCache, const VULKAN_HPP_NAMESPACE::DataGraphPipelineCreateInfoARM & createInfo, Optional<const VULKAN_HPP_NAMESPACE::AllocationCallbacks> allocator VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+#  ifndef VULKAN_HPP_NO_SMART_HANDLE
+    // wrapper function for command vkCreateDataGraphPipelinesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCreateDataGraphPipelinesARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE, typename PipelineAllocator = std::allocator<UniqueHandle<VULKAN_HPP_NAMESPACE::Pipeline, Dispatch>>, typename std::enable_if<std::is_same<typename PipelineAllocator::value_type, UniqueHandle<VULKAN_HPP_NAMESPACE::Pipeline, Dispatch> > ::value , int>::type = 0>
+    VULKAN_HPP_NODISCARD ResultValue<std::vector<UniqueHandle<VULKAN_HPP_NAMESPACE::Pipeline, Dispatch>, PipelineAllocator>> createDataGraphPipelinesARMUnique( VULKAN_HPP_NAMESPACE::DeferredOperationKHR deferredOperation, VULKAN_HPP_NAMESPACE::PipelineCache pipelineCache, VULKAN_HPP_NAMESPACE::ArrayProxy<const VULKAN_HPP_NAMESPACE::DataGraphPipelineCreateInfoARM> const & createInfos, Optional<const VULKAN_HPP_NAMESPACE::AllocationCallbacks> allocator VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+    // wrapper function for command vkCreateDataGraphPipelinesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCreateDataGraphPipelinesARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE, typename PipelineAllocator = std::allocator<UniqueHandle<VULKAN_HPP_NAMESPACE::Pipeline, Dispatch>>, typename std::enable_if<std::is_same<typename PipelineAllocator::value_type, UniqueHandle<VULKAN_HPP_NAMESPACE::Pipeline, Dispatch> > ::value , int>::type = 0>
+    VULKAN_HPP_NODISCARD ResultValue<std::vector<UniqueHandle<VULKAN_HPP_NAMESPACE::Pipeline, Dispatch>, PipelineAllocator>> createDataGraphPipelinesARMUnique( VULKAN_HPP_NAMESPACE::DeferredOperationKHR deferredOperation, VULKAN_HPP_NAMESPACE::PipelineCache pipelineCache, VULKAN_HPP_NAMESPACE::ArrayProxy<const VULKAN_HPP_NAMESPACE::DataGraphPipelineCreateInfoARM> const & createInfos, Optional<const VULKAN_HPP_NAMESPACE::AllocationCallbacks> allocator, PipelineAllocator & pipelineAllocator, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+    // wrapper function for command vkCreateDataGraphPipelinesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCreateDataGraphPipelinesARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD ResultValue<UniqueHandle<VULKAN_HPP_NAMESPACE::Pipeline, Dispatch>> createDataGraphPipelineARMUnique( VULKAN_HPP_NAMESPACE::DeferredOperationKHR deferredOperation, VULKAN_HPP_NAMESPACE::PipelineCache pipelineCache, const VULKAN_HPP_NAMESPACE::DataGraphPipelineCreateInfoARM & createInfo, Optional<const VULKAN_HPP_NAMESPACE::AllocationCallbacks> allocator VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+#  endif /* VULKAN_HPP_NO_SMART_HANDLE */
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
+
+    // wrapper function for command vkCreateDataGraphPipelineSessionARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCreateDataGraphPipelineSessionARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD Result createDataGraphPipelineSessionARM( const VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionCreateInfoARM * pCreateInfo, const VULKAN_HPP_NAMESPACE::AllocationCallbacks * pAllocator, VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM * pSession, Dispatch const & d  VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+    // wrapper function for command vkCreateDataGraphPipelineSessionARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCreateDataGraphPipelineSessionARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD typename ResultValueType<VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM>::type createDataGraphPipelineSessionARM( const VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionCreateInfoARM & createInfo, Optional<const VULKAN_HPP_NAMESPACE::AllocationCallbacks> allocator VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+#  ifndef VULKAN_HPP_NO_SMART_HANDLE
+    // wrapper function for command vkCreateDataGraphPipelineSessionARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCreateDataGraphPipelineSessionARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD typename ResultValueType<UniqueHandle<VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM, Dispatch>>::type createDataGraphPipelineSessionARMUnique( const VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionCreateInfoARM & createInfo, Optional<const VULKAN_HPP_NAMESPACE::AllocationCallbacks> allocator VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+#  endif /* VULKAN_HPP_NO_SMART_HANDLE */
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
+
+    // wrapper function for command vkGetDataGraphPipelineSessionBindPointRequirementsARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetDataGraphPipelineSessionBindPointRequirementsARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD Result getDataGraphPipelineSessionBindPointRequirementsARM( const VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementsInfoARM * pInfo, uint32_t * pBindPointRequirementCount, VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementARM * pBindPointRequirements, Dispatch const & d  VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+    // wrapper function for command vkGetDataGraphPipelineSessionBindPointRequirementsARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetDataGraphPipelineSessionBindPointRequirementsARM.html
+    template <typename DataGraphPipelineSessionBindPointRequirementARMAllocator = std::allocator<VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementARM>, typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE, typename std::enable_if<std::is_same<typename DataGraphPipelineSessionBindPointRequirementARMAllocator::value_type, VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementARM > ::value , int>::type = 0>
+    VULKAN_HPP_NODISCARD typename ResultValueType<std::vector<VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementARM, DataGraphPipelineSessionBindPointRequirementARMAllocator>>::type getDataGraphPipelineSessionBindPointRequirementsARM( const VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementsInfoARM & info, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+    // wrapper function for command vkGetDataGraphPipelineSessionBindPointRequirementsARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetDataGraphPipelineSessionBindPointRequirementsARM.html
+    template <typename DataGraphPipelineSessionBindPointRequirementARMAllocator = std::allocator<VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementARM>, typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE, typename std::enable_if<std::is_same<typename DataGraphPipelineSessionBindPointRequirementARMAllocator::value_type, VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementARM > ::value , int>::type = 0>
+    VULKAN_HPP_NODISCARD typename ResultValueType<std::vector<VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementARM, DataGraphPipelineSessionBindPointRequirementARMAllocator>>::type getDataGraphPipelineSessionBindPointRequirementsARM( const VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionBindPointRequirementsInfoARM & info, DataGraphPipelineSessionBindPointRequirementARMAllocator & dataGraphPipelineSessionBindPointRequirementARMAllocator, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
+
+    // wrapper function for command vkGetDataGraphPipelineSessionMemoryRequirementsARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetDataGraphPipelineSessionMemoryRequirementsARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    void getDataGraphPipelineSessionMemoryRequirementsARM( const VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionMemoryRequirementsInfoARM * pInfo, VULKAN_HPP_NAMESPACE::MemoryRequirements2 * pMemoryRequirements, Dispatch const & d  VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+    // wrapper function for command vkGetDataGraphPipelineSessionMemoryRequirementsARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetDataGraphPipelineSessionMemoryRequirementsARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD VULKAN_HPP_NAMESPACE::MemoryRequirements2 getDataGraphPipelineSessionMemoryRequirementsARM( const VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionMemoryRequirementsInfoARM & info, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+    // wrapper function for command vkGetDataGraphPipelineSessionMemoryRequirementsARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetDataGraphPipelineSessionMemoryRequirementsARM.html
+    template <typename X, typename Y, typename... Z, typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD VULKAN_HPP_NAMESPACE::StructureChain<X, Y, Z...> getDataGraphPipelineSessionMemoryRequirementsARM( const VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionMemoryRequirementsInfoARM & info, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
+
+    // wrapper function for command vkBindDataGraphPipelineSessionMemoryARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkBindDataGraphPipelineSessionMemoryARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD Result bindDataGraphPipelineSessionMemoryARM( uint32_t bindInfoCount, const VULKAN_HPP_NAMESPACE::BindDataGraphPipelineSessionMemoryInfoARM * pBindInfos, Dispatch const & d  VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+    // wrapper function for command vkBindDataGraphPipelineSessionMemoryARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkBindDataGraphPipelineSessionMemoryARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD_WHEN_NO_EXCEPTIONS typename ResultValueType<void>::type bindDataGraphPipelineSessionMemoryARM( VULKAN_HPP_NAMESPACE::ArrayProxy<const VULKAN_HPP_NAMESPACE::BindDataGraphPipelineSessionMemoryInfoARM> const & bindInfos, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
+
+    // wrapper function for command vkDestroyDataGraphPipelineSessionARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkDestroyDataGraphPipelineSessionARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    void destroyDataGraphPipelineSessionARM( VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM session, const VULKAN_HPP_NAMESPACE::AllocationCallbacks * pAllocator, Dispatch const & d  VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+    // wrapper function for command vkDestroyDataGraphPipelineSessionARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkDestroyDataGraphPipelineSessionARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    void destroyDataGraphPipelineSessionARM( VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM session, Optional<const VULKAN_HPP_NAMESPACE::AllocationCallbacks> allocator VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
+
+    // wrapper function for command vkDestroyDataGraphPipelineSessionARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkDestroyDataGraphPipelineSessionARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    void destroy( VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM session, const VULKAN_HPP_NAMESPACE::AllocationCallbacks * pAllocator, Dispatch const & d  VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+    // wrapper function for command vkDestroyDataGraphPipelineSessionARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkDestroyDataGraphPipelineSessionARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    void destroy( VULKAN_HPP_NAMESPACE::DataGraphPipelineSessionARM session, Optional<const VULKAN_HPP_NAMESPACE::AllocationCallbacks> allocator VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
+
+    // wrapper function for command vkGetDataGraphPipelineAvailablePropertiesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetDataGraphPipelineAvailablePropertiesARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD Result getDataGraphPipelineAvailablePropertiesARM( const VULKAN_HPP_NAMESPACE::DataGraphPipelineInfoARM * pPipelineInfo, uint32_t * pPropertiesCount, VULKAN_HPP_NAMESPACE::DataGraphPipelinePropertyARM * pProperties, Dispatch const & d  VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+    // wrapper function for command vkGetDataGraphPipelineAvailablePropertiesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetDataGraphPipelineAvailablePropertiesARM.html
+    template <typename DataGraphPipelinePropertyARMAllocator = std::allocator<VULKAN_HPP_NAMESPACE::DataGraphPipelinePropertyARM>, typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE, typename std::enable_if<std::is_same<typename DataGraphPipelinePropertyARMAllocator::value_type, VULKAN_HPP_NAMESPACE::DataGraphPipelinePropertyARM > ::value , int>::type = 0>
+    VULKAN_HPP_NODISCARD typename ResultValueType<std::vector<VULKAN_HPP_NAMESPACE::DataGraphPipelinePropertyARM, DataGraphPipelinePropertyARMAllocator>>::type getDataGraphPipelineAvailablePropertiesARM( const VULKAN_HPP_NAMESPACE::DataGraphPipelineInfoARM & pipelineInfo, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+    // wrapper function for command vkGetDataGraphPipelineAvailablePropertiesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetDataGraphPipelineAvailablePropertiesARM.html
+    template <typename DataGraphPipelinePropertyARMAllocator = std::allocator<VULKAN_HPP_NAMESPACE::DataGraphPipelinePropertyARM>, typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE, typename std::enable_if<std::is_same<typename DataGraphPipelinePropertyARMAllocator::value_type, VULKAN_HPP_NAMESPACE::DataGraphPipelinePropertyARM > ::value , int>::type = 0>
+    VULKAN_HPP_NODISCARD typename ResultValueType<std::vector<VULKAN_HPP_NAMESPACE::DataGraphPipelinePropertyARM, DataGraphPipelinePropertyARMAllocator>>::type getDataGraphPipelineAvailablePropertiesARM( const VULKAN_HPP_NAMESPACE::DataGraphPipelineInfoARM & pipelineInfo, DataGraphPipelinePropertyARMAllocator & dataGraphPipelinePropertyARMAllocator, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
+
+    // wrapper function for command vkGetDataGraphPipelinePropertiesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetDataGraphPipelinePropertiesARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD Result getDataGraphPipelinePropertiesARM( const VULKAN_HPP_NAMESPACE::DataGraphPipelineInfoARM * pPipelineInfo, uint32_t propertiesCount, VULKAN_HPP_NAMESPACE::DataGraphPipelinePropertyQueryResultARM * pProperties, Dispatch const & d  VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+
 #if defined( VK_USE_PLATFORM_SCREEN_QNX )
   //=== VK_QNX_external_memory_screen_buffer ===
 
@@ -14794,6 +15264,10 @@ class IndirectExecutionSetEXT;
       return m_device == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( Device const & ) const = default;
+#endif
+
   private:
     VkDevice m_device = {};
   };
@@ -14890,6 +15364,10 @@ class IndirectExecutionSetEXT;
     {
       return m_displayModeKHR == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( DisplayModeKHR const & ) const = default;
+#endif
 
   private:
     VkDisplayModeKHR m_displayModeKHR = {};
@@ -16040,6 +16518,31 @@ class IndirectExecutionSetEXT;
     VULKAN_HPP_NODISCARD typename ResultValueType<std::vector<VULKAN_HPP_NAMESPACE::CooperativeMatrixPropertiesKHR, CooperativeMatrixPropertiesKHRAllocator>>::type getCooperativeMatrixPropertiesKHR( CooperativeMatrixPropertiesKHRAllocator & cooperativeMatrixPropertiesKHRAllocator, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
 #endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
 
+  //=== VK_ARM_data_graph ===
+
+
+    // wrapper function for command vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD Result getQueueFamilyDataGraphPropertiesARM( uint32_t queueFamilyIndex, uint32_t * pQueueFamilyDataGraphPropertyCount, VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphPropertiesARM * pQueueFamilyDataGraphProperties, Dispatch const & d  VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+    // wrapper function for command vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM.html
+    template <typename QueueFamilyDataGraphPropertiesARMAllocator = std::allocator<VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphPropertiesARM>, typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE, typename std::enable_if<std::is_same<typename QueueFamilyDataGraphPropertiesARMAllocator::value_type, VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphPropertiesARM > ::value , int>::type = 0>
+    VULKAN_HPP_NODISCARD typename ResultValueType<std::vector<VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphPropertiesARM, QueueFamilyDataGraphPropertiesARMAllocator>>::type getQueueFamilyDataGraphPropertiesARM( uint32_t queueFamilyIndex, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+    // wrapper function for command vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM.html
+    template <typename QueueFamilyDataGraphPropertiesARMAllocator = std::allocator<VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphPropertiesARM>, typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE, typename std::enable_if<std::is_same<typename QueueFamilyDataGraphPropertiesARMAllocator::value_type, VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphPropertiesARM > ::value , int>::type = 0>
+    VULKAN_HPP_NODISCARD typename ResultValueType<std::vector<VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphPropertiesARM, QueueFamilyDataGraphPropertiesARMAllocator>>::type getQueueFamilyDataGraphPropertiesARM( uint32_t queueFamilyIndex, QueueFamilyDataGraphPropertiesARMAllocator & queueFamilyDataGraphPropertiesARMAllocator, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const;
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
+
+    // wrapper function for command vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    void getQueueFamilyDataGraphProcessingEnginePropertiesARM( const VULKAN_HPP_NAMESPACE::PhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM * pQueueFamilyDataGraphProcessingEngineInfo, VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphProcessingEnginePropertiesARM * pQueueFamilyDataGraphProcessingEngineProperties, Dispatch const & d  VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+    // wrapper function for command vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM.html
+    template <typename Dispatch = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>
+    VULKAN_HPP_NODISCARD VULKAN_HPP_NAMESPACE::QueueFamilyDataGraphProcessingEnginePropertiesARM getQueueFamilyDataGraphProcessingEnginePropertiesARM( const VULKAN_HPP_NAMESPACE::PhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM & queueFamilyDataGraphProcessingEngineInfo, Dispatch const & d VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT ) const VULKAN_HPP_NOEXCEPT;
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
   //=== VK_KHR_calibrated_timestamps ===
 
 
@@ -16084,6 +16587,10 @@ class IndirectExecutionSetEXT;
     {
       return m_physicalDevice == VK_NULL_HANDLE;
     }
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PhysicalDevice const & ) const = default;
+#endif
 
   private:
     VkPhysicalDevice m_physicalDevice = {};
@@ -16661,6 +17168,10 @@ class IndirectExecutionSetEXT;
       return m_instance == VK_NULL_HANDLE;
     }
 
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( Instance const & ) const = default;
+#endif
+
   private:
     VkInstance m_instance = {};
   };
@@ -16750,13 +17261,7 @@ class IndirectExecutionSetEXT;
 
 
   // operators to compare VULKAN_HPP_NAMESPACE::-handles
-#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
-  template <typename T, typename std::enable_if<VULKAN_HPP_NAMESPACE::isVulkanHandleType<T>::value, int>::type = 0>
-  auto operator<=>( T const & lhs, T const & rhs )
-  {
-    return static_cast<typename T::NativeType>( lhs ) <=> static_cast<typename T::NativeType>( rhs );
-  }
-#else
+#if !defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
   template <typename T, typename std::enable_if<VULKAN_HPP_NAMESPACE::isVulkanHandleType<T>::value, int>::type = 0>
   bool operator==( T const & lhs, T const & rhs )
   {
@@ -16773,6 +17278,24 @@ class IndirectExecutionSetEXT;
   bool operator<( T const & lhs, T const & rhs )
   {
     return static_cast<typename T::NativeType>( lhs ) < static_cast<typename T::NativeType>( rhs );
+  }
+
+  template <typename T, typename std::enable_if<VULKAN_HPP_NAMESPACE::isVulkanHandleType<T>::value, int>::type = 0>
+  bool operator<=( T const & lhs, T const & rhs )
+  {
+    return static_cast<typename T::NativeType>( lhs ) <= static_cast<typename T::NativeType>( rhs );
+  }
+
+  template <typename T, typename std::enable_if<VULKAN_HPP_NAMESPACE::isVulkanHandleType<T>::value, int>::type = 0>
+  bool operator>( T const & lhs, T const & rhs )
+  {
+    return static_cast<typename T::NativeType>( lhs ) > static_cast<typename T::NativeType>( rhs );
+  }
+
+  template <typename T, typename std::enable_if<VULKAN_HPP_NAMESPACE::isVulkanHandleType<T>::value, int>::type = 0>
+  bool operator>=( T const & lhs, T const & rhs )
+  {
+    return static_cast<typename T::NativeType>( lhs ) >= static_cast<typename T::NativeType>( rhs );
   }
 #endif
 

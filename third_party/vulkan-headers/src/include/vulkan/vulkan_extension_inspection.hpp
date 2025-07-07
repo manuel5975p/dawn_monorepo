@@ -432,6 +432,7 @@ namespace VULKAN_HPP_NAMESPACE
 "VK_EXT_dynamic_rendering_unused_attachments", 
 "VK_NV_low_latency2", 
 "VK_KHR_cooperative_matrix", 
+"VK_ARM_data_graph", 
 "VK_QCOM_multiview_per_view_render_areas", 
 "VK_KHR_compute_shader_derivatives", 
 "VK_KHR_video_decode_av1", 
@@ -908,6 +909,7 @@ namespace VULKAN_HPP_NAMESPACE
 { "VK_EXT_dynamic_rendering_unused_attachments", { { "VK_VERSION_1_0", { { "VK_KHR_dynamic_rendering", "VK_KHR_get_physical_device_properties2",  } } }, { "VK_VERSION_1_1", { { "VK_KHR_dynamic_rendering",  } } }, { "VK_VERSION_1_3", { {  } } } } }, 
 { "VK_NV_low_latency2", { { "VK_VERSION_1_0", { { "VK_KHR_present_id", "VK_KHR_timeline_semaphore",  }, { "VK_KHR_present_id2", "VK_KHR_timeline_semaphore",  } } }, { "VK_VERSION_1_2", { { "VK_KHR_present_id",  }, { "VK_KHR_present_id2",  } } } } }, 
 { "VK_KHR_cooperative_matrix", { { "VK_VERSION_1_0", { { "VK_KHR_get_physical_device_properties2",  } } }, { "VK_VERSION_1_1", { {  } } } } }, 
+{ "VK_ARM_data_graph", { { "VK_VERSION_1_3", { { "VK_KHR_deferred_host_operations", "VK_KHR_maintenance5",  } } } } }, 
 { "VK_KHR_compute_shader_derivatives", { { "VK_VERSION_1_0", { { "VK_KHR_get_physical_device_properties2",  } } }, { "VK_VERSION_1_1", { {  } } } } }, 
 { "VK_KHR_video_decode_av1", { { "VK_VERSION_1_0", { { "VK_KHR_video_decode_queue",  } } } } }, 
 { "VK_KHR_video_encode_av1", { { "VK_VERSION_1_0", { { "VK_KHR_video_encode_queue",  } } } } }, 
@@ -1650,6 +1652,7 @@ false;
  || ( extension == "VK_EXT_dynamic_rendering_unused_attachments" )
  || ( extension == "VK_NV_low_latency2" )
  || ( extension == "VK_KHR_cooperative_matrix" )
+ || ( extension == "VK_ARM_data_graph" )
  || ( extension == "VK_QCOM_multiview_per_view_render_areas" )
  || ( extension == "VK_KHR_compute_shader_derivatives" )
  || ( extension == "VK_KHR_video_decode_av1" )

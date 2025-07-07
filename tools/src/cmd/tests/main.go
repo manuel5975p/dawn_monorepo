@@ -63,18 +63,16 @@ type outputFormat string
 const (
 	testTimeout = 2 * time.Minute
 
-	glsl      = outputFormat("glsl")
-	hlslFXC   = outputFormat("hlsl-fxc")
-	hlslFXCIR = outputFormat("hlsl-fxc-ir")
-	hlslDXC   = outputFormat("hlsl-dxc")
-	hlslDXCIR = outputFormat("hlsl-dxc-ir")
-	msl       = outputFormat("msl")
-	spvasm    = outputFormat("spvasm")
-	wgsl      = outputFormat("wgsl")
+	glsl    = outputFormat("glsl")
+	hlslFXC = outputFormat("hlsl-fxc")
+	hlslDXC = outputFormat("hlsl-dxc")
+	msl     = outputFormat("msl")
+	spvasm  = outputFormat("spvasm")
+	wgsl    = outputFormat("wgsl")
 )
 
 // allOutputFormats holds all the supported outputFormats
-var allOutputFormats = []outputFormat{wgsl, spvasm, msl, hlslDXC, hlslDXCIR, hlslFXC, hlslFXCIR, glsl}
+var allOutputFormats = []outputFormat{wgsl, spvasm, msl, hlslDXC, hlslFXC, glsl}
 
 // The default non-flag arguments to the command
 var defaultArgs = []string{"test/tint"}
@@ -144,7 +142,7 @@ func run(fsReaderWriter oswrapper.FilesystemReaderWriter) error {
 	var server, useIrReader bool
 	numCPU := runtime.NumCPU()
 	verbose, generateExpected, generateSkip := false, false, false
-	flag.StringVar(&formatList, "format", "all", "comma separated list of formats to emit. Possible values are: all, wgsl, spvasm, msl, msl-ir, hlsl, hlsl-ir, hlsl-dxc, hlsl-dxc-ir, hlsl-fxc, hlsl-fxc-ir, glsl")
+	flag.StringVar(&formatList, "format", "all", "comma separated list of formats to emit. Possible values are: all, wgsl, spvasm, msl, hlsl, hlsl-dxc, hlsl-fxc, glsl")
 	flag.StringVar(&ignore, "ignore", "**.expected.*", "files to ignore in globs")
 	flag.StringVar(&dxcPath, "dxcompiler", "", "path to DXC DLL for validating HLSL output")
 	flag.StringVar(&fxcPath, "fxc", "", "path to FXC DLL for validating HLSL output")
@@ -699,17 +697,11 @@ func (j job) run(cfg runConfig, fsReaderWriter oswrapper.FilesystemReaderWriter,
 			return status{code: skip, timeTaken: 0}
 		}
 
-		useIr := j.format == hlslDXCIR || j.format == hlslFXCIR
-
 		switch j.format {
 		case hlslDXC:
 			expectedFilePath += "dxc.hlsl"
-		case hlslDXCIR:
-			expectedFilePath += "ir.dxc.hlsl"
 		case hlslFXC:
 			expectedFilePath += "fxc.hlsl"
-		case hlslFXCIR:
-			expectedFilePath += "ir.fxc.hlsl"
 		default:
 			expectedFilePath += string(j.format)
 		}
@@ -746,8 +738,8 @@ func (j job) run(cfg runConfig, fsReaderWriter oswrapper.FilesystemReaderWriter,
 
 		expected = strings.ReplaceAll(expected, "\r\n", "\n")
 
-		outputFormat := strings.Split(string(j.format), "-")[0] // 'hlsl-fxc-ir' -> 'hlsl', etc.
-		if j.format == hlslFXC || j.format == hlslFXCIR {
+		outputFormat := strings.Split(string(j.format), "-")[0] // 'hlsl-fxc' -> 'hlsl', etc.
+		if j.format == hlslFXC {
 			// Emit HLSL specifically for FXC
 			outputFormat += "-fxc"
 		}
@@ -756,10 +748,6 @@ func (j job) run(cfg runConfig, fsReaderWriter oswrapper.FilesystemReaderWriter,
 			j.file,
 			"--format", outputFormat,
 			"--print-hash",
-		}
-
-		if useIr {
-			args = append(args, "--use-ir")
 		}
 
 		if cfg.useIrReader {
@@ -782,12 +770,12 @@ func (j job) run(cfg runConfig, fsReaderWriter oswrapper.FilesystemReaderWriter,
 		case spvasm, glsl:
 			args = append(args, "--validate") // spirv-val and glslang are statically linked, always available
 			validate = true
-		case hlslDXC, hlslDXCIR:
+		case hlslDXC:
 			if cfg.dxcPath != "" {
 				args = append(args, "--dxc", cfg.dxcPath)
 				validate = true
 			}
-		case hlslFXC, hlslFXCIR:
+		case hlslFXC:
 			if cfg.fxcPath != "" {
 				args = append(args, "--fxc", cfg.fxcPath)
 				validate = true
@@ -857,7 +845,7 @@ func (j job) run(cfg runConfig, fsReaderWriter oswrapper.FilesystemReaderWriter,
 
 		passed := ok && (matched || isSkipTimeoutTest)
 		if !passed {
-			if j.format == hlslFXC || j.format == hlslFXCIR {
+			if j.format == hlslFXC {
 				out = reFXCErrorStringHash.ReplaceAllString(out, `<scrubbed_path>${1}`)
 			}
 		}
@@ -1142,12 +1130,6 @@ func parseFlags(path string, fsReader oswrapper.FilesystemReader) ([]cmdLineFlag
 					return nil, err
 				}
 				formats = fmts
-
-				// Apply the same flags to "-ir" format, if it exists
-				fmts, err = parseOutputFormat(matchedFormat + "-ir")
-				if err == nil {
-					formats = append(formats, fmts...)
-				}
 			}
 			out = append(out, cmdLineFlags{
 				formats: container.NewSet(formats...),
@@ -1178,12 +1160,6 @@ func parseOutputFormat(s string) ([]outputFormat, error) {
 		return []outputFormat{hlslDXC}, nil
 	case "hlsl-fxc":
 		return []outputFormat{hlslFXC}, nil
-	case "hlsl-ir":
-		return []outputFormat{hlslDXCIR, hlslFXCIR}, nil
-	case "hlsl-dxc-ir":
-		return []outputFormat{hlslDXCIR}, nil
-	case "hlsl-fxc-ir":
-		return []outputFormat{hlslFXCIR}, nil
 	case "glsl":
 		return []outputFormat{glsl}, nil
 	default:

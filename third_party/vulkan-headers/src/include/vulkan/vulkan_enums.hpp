@@ -1507,6 +1507,26 @@ namespace VULKAN_HPP_NAMESPACE
     ePhysicalDeviceCooperativeMatrixFeaturesKHR = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
     eCooperativeMatrixPropertiesKHR = VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR,
     ePhysicalDeviceCooperativeMatrixPropertiesKHR = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_PROPERTIES_KHR,
+    eDataGraphPipelineCreateInfoARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CREATE_INFO_ARM,
+    eDataGraphPipelineSessionCreateInfoARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_CREATE_INFO_ARM,
+    eDataGraphPipelineResourceInfoARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_RESOURCE_INFO_ARM,
+    eDataGraphPipelineConstantARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CONSTANT_ARM,
+    eDataGraphPipelineSessionMemoryRequirementsInfoARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_MEMORY_REQUIREMENTS_INFO_ARM,
+    eBindDataGraphPipelineSessionMemoryInfoARM = VK_STRUCTURE_TYPE_BIND_DATA_GRAPH_PIPELINE_SESSION_MEMORY_INFO_ARM,
+    ePhysicalDeviceDataGraphFeaturesARM = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM,
+    eDataGraphPipelineShaderModuleCreateInfoARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM,
+    eDataGraphPipelinePropertyQueryResultARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_PROPERTY_QUERY_RESULT_ARM,
+    eDataGraphPipelineInfoARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_INFO_ARM,
+    eDataGraphPipelineCompilerControlCreateInfoARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_COMPILER_CONTROL_CREATE_INFO_ARM,
+    eDataGraphPipelineSessionBindPointRequirementsInfoARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENTS_INFO_ARM,
+    eDataGraphPipelineSessionBindPointRequirementARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM,
+    eDataGraphPipelineIdentifierCreateInfoARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_IDENTIFIER_CREATE_INFO_ARM,
+    eDataGraphPipelineDispatchInfoARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_DISPATCH_INFO_ARM,
+    eDataGraphProcessingEngineCreateInfoARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PROCESSING_ENGINE_CREATE_INFO_ARM,
+    eQueueFamilyDataGraphProcessingEnginePropertiesARM = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROCESSING_ENGINE_PROPERTIES_ARM,
+    eQueueFamilyDataGraphPropertiesARM = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM,
+    ePhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_QUEUE_FAMILY_DATA_GRAPH_PROCESSING_ENGINE_INFO_ARM,
+    eDataGraphPipelineConstantTensorSemiStructuredSparsityInfoARM = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CONSTANT_TENSOR_SEMI_STRUCTURED_SPARSITY_INFO_ARM,
     ePhysicalDeviceMultiviewPerViewRenderAreasFeaturesQCOM = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_RENDER_AREAS_FEATURES_QCOM,
     eMultiviewPerViewRenderAreasRenderPassBeginInfoQCOM = VK_STRUCTURE_TYPE_MULTIVIEW_PER_VIEW_RENDER_AREAS_RENDER_PASS_BEGIN_INFO_QCOM,
     ePhysicalDeviceComputeShaderDerivativesFeaturesKHR = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_FEATURES_KHR,
@@ -1746,6 +1766,7 @@ namespace VULKAN_HPP_NAMESPACE
     eOpticalFlowSessionNV = VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV,
     eShaderEXT = VK_OBJECT_TYPE_SHADER_EXT,
     ePipelineBinaryKHR = VK_OBJECT_TYPE_PIPELINE_BINARY_KHR,
+    eDataGraphPipelineSessionARM = VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM,
     eExternalComputeQueueNV = VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV,
     eIndirectCommandsLayoutEXT = VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT,
     eIndirectExecutionSetEXT = VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT
@@ -2441,7 +2462,8 @@ namespace VULKAN_HPP_NAMESPACE
     eProtected = VK_QUEUE_PROTECTED_BIT,
     eVideoDecodeKHR = VK_QUEUE_VIDEO_DECODE_BIT_KHR,
     eVideoEncodeKHR = VK_QUEUE_VIDEO_ENCODE_BIT_KHR,
-    eOpticalFlowNV = VK_QUEUE_OPTICAL_FLOW_BIT_NV
+    eOpticalFlowNV = VK_QUEUE_OPTICAL_FLOW_BIT_NV,
+    eDataGraphARM = VK_QUEUE_DATA_GRAPH_BIT_ARM
   };
   
   
@@ -2462,7 +2484,8 @@ namespace VULKAN_HPP_NAMESPACE
         | QueueFlagBits::eProtected
         | QueueFlagBits::eVideoDecodeKHR
         | QueueFlagBits::eVideoEncodeKHR
-        | QueueFlagBits::eOpticalFlowNV;
+        | QueueFlagBits::eOpticalFlowNV
+        | QueueFlagBits::eDataGraphARM;
   };
 
   // wrapper class for enum VkSampleCountFlagBits, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkSampleCountFlagBits.html
@@ -4197,7 +4220,8 @@ namespace VULKAN_HPP_NAMESPACE
 #endif /*VK_ENABLE_BETA_EXTENSIONS*/
     eRayTracingKHR = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
     eRayTracingNV = VK_PIPELINE_BIND_POINT_RAY_TRACING_NV,
-    eSubpassShadingHUAWEI = VK_PIPELINE_BIND_POINT_SUBPASS_SHADING_HUAWEI
+    eSubpassShadingHUAWEI = VK_PIPELINE_BIND_POINT_SUBPASS_SHADING_HUAWEI,
+    eDataGraphARM = VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM
   };
   
   
@@ -5177,7 +5201,8 @@ namespace VULKAN_HPP_NAMESPACE
     eMicromapBuildEXT = VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT,
     eClusterCullingShaderHUAWEI = VK_PIPELINE_STAGE_2_CLUSTER_CULLING_SHADER_BIT_HUAWEI,
     eOpticalFlowNV = VK_PIPELINE_STAGE_2_OPTICAL_FLOW_BIT_NV,
-    eConvertCooperativeVectorMatrixNV = VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV
+    eConvertCooperativeVectorMatrixNV = VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV,
+    eDataGraphARM = VK_PIPELINE_STAGE_2_DATA_GRAPH_BIT_ARM
   };
   
     using PipelineStageFlagBits2KHR = PipelineStageFlagBits2;
@@ -5235,7 +5260,8 @@ namespace VULKAN_HPP_NAMESPACE
         | PipelineStageFlagBits2::eMicromapBuildEXT
         | PipelineStageFlagBits2::eClusterCullingShaderHUAWEI
         | PipelineStageFlagBits2::eOpticalFlowNV
-        | PipelineStageFlagBits2::eConvertCooperativeVectorMatrixNV;
+        | PipelineStageFlagBits2::eConvertCooperativeVectorMatrixNV
+        | PipelineStageFlagBits2::eDataGraphARM;
   };
 
   // wrapper class for enum VkAccessFlagBits2, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkAccessFlagBits2.html
@@ -5289,7 +5315,9 @@ namespace VULKAN_HPP_NAMESPACE
     eMicromapReadEXT = VK_ACCESS_2_MICROMAP_READ_BIT_EXT,
     eMicromapWriteEXT = VK_ACCESS_2_MICROMAP_WRITE_BIT_EXT,
     eOpticalFlowReadNV = VK_ACCESS_2_OPTICAL_FLOW_READ_BIT_NV,
-    eOpticalFlowWriteNV = VK_ACCESS_2_OPTICAL_FLOW_WRITE_BIT_NV
+    eOpticalFlowWriteNV = VK_ACCESS_2_OPTICAL_FLOW_WRITE_BIT_NV,
+    eDataGraphReadARM = VK_ACCESS_2_DATA_GRAPH_READ_BIT_ARM,
+    eDataGraphWriteARM = VK_ACCESS_2_DATA_GRAPH_WRITE_BIT_ARM
   };
   
     using AccessFlagBits2KHR = AccessFlagBits2;
@@ -5349,7 +5377,9 @@ namespace VULKAN_HPP_NAMESPACE
         | AccessFlagBits2::eMicromapReadEXT
         | AccessFlagBits2::eMicromapWriteEXT
         | AccessFlagBits2::eOpticalFlowReadNV
-        | AccessFlagBits2::eOpticalFlowWriteNV;
+        | AccessFlagBits2::eOpticalFlowWriteNV
+        | AccessFlagBits2::eDataGraphReadARM
+        | AccessFlagBits2::eDataGraphWriteARM;
   };
 
   // wrapper class for enum VkSubmitFlagBits, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkSubmitFlagBits.html
@@ -5455,6 +5485,7 @@ namespace VULKAN_HPP_NAMESPACE
     eOpticalFlowImageNV = VK_FORMAT_FEATURE_2_OPTICAL_FLOW_IMAGE_BIT_NV,
     eOpticalFlowVectorNV = VK_FORMAT_FEATURE_2_OPTICAL_FLOW_VECTOR_BIT_NV,
     eOpticalFlowCostNV = VK_FORMAT_FEATURE_2_OPTICAL_FLOW_COST_BIT_NV,
+    eTensorDataGraphARM = VK_FORMAT_FEATURE_2_TENSOR_DATA_GRAPH_BIT_ARM,
     eVideoEncodeQuantizationDeltaMapKHR = VK_FORMAT_FEATURE_2_VIDEO_ENCODE_QUANTIZATION_DELTA_MAP_BIT_KHR,
     eVideoEncodeEmphasisMapKHR = VK_FORMAT_FEATURE_2_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR
   };
@@ -5518,6 +5549,7 @@ namespace VULKAN_HPP_NAMESPACE
         | FormatFeatureFlagBits2::eOpticalFlowImageNV
         | FormatFeatureFlagBits2::eOpticalFlowVectorNV
         | FormatFeatureFlagBits2::eOpticalFlowCostNV
+        | FormatFeatureFlagBits2::eTensorDataGraphARM
         | FormatFeatureFlagBits2::eVideoEncodeQuantizationDeltaMapKHR
         | FormatFeatureFlagBits2::eVideoEncodeEmphasisMapKHR;
   };
@@ -5710,6 +5742,7 @@ namespace VULKAN_HPP_NAMESPACE
     ePushDescriptorsDescriptorBufferEXT = VK_BUFFER_USAGE_2_PUSH_DESCRIPTORS_DESCRIPTOR_BUFFER_BIT_EXT,
     eMicromapBuildInputReadOnlyEXT = VK_BUFFER_USAGE_2_MICROMAP_BUILD_INPUT_READ_ONLY_BIT_EXT,
     eMicromapStorageEXT = VK_BUFFER_USAGE_2_MICROMAP_STORAGE_BIT_EXT,
+    eDataGraphForeignDescriptorARM = VK_BUFFER_USAGE_2_DATA_GRAPH_FOREIGN_DESCRIPTOR_BIT_ARM,
     eTileMemoryQCOM = VK_BUFFER_USAGE_2_TILE_MEMORY_BIT_QCOM,
     ePreprocessBufferEXT = VK_BUFFER_USAGE_2_PREPROCESS_BUFFER_BIT_EXT
   };
@@ -5755,6 +5788,7 @@ namespace VULKAN_HPP_NAMESPACE
         | BufferUsageFlagBits2::ePushDescriptorsDescriptorBufferEXT
         | BufferUsageFlagBits2::eMicromapBuildInputReadOnlyEXT
         | BufferUsageFlagBits2::eMicromapStorageEXT
+        | BufferUsageFlagBits2::eDataGraphForeignDescriptorARM
         | BufferUsageFlagBits2::eTileMemoryQCOM
         | BufferUsageFlagBits2::ePreprocessBufferEXT;
   };
@@ -8919,7 +8953,8 @@ namespace VULKAN_HPP_NAMESPACE
     eShader = VK_TENSOR_USAGE_SHADER_BIT_ARM,
     eTransferSrc = VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM,
     eTransferDst = VK_TENSOR_USAGE_TRANSFER_DST_BIT_ARM,
-    eImageAliasing = VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM
+    eImageAliasing = VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM,
+    eDataGraph = VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM
   };
   
   
@@ -8936,7 +8971,8 @@ namespace VULKAN_HPP_NAMESPACE
           TensorUsageFlagBitsARM::eShader
         | TensorUsageFlagBitsARM::eTransferSrc
         | TensorUsageFlagBitsARM::eTransferDst
-        | TensorUsageFlagBitsARM::eImageAliasing;
+        | TensorUsageFlagBitsARM::eImageAliasing
+        | TensorUsageFlagBitsARM::eDataGraph;
   };
 
   // wrapper class for enum VkTensorTilingARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkTensorTilingARM.html
@@ -9206,7 +9242,7 @@ namespace VULKAN_HPP_NAMESPACE
   template <>
   struct CppType<LayerSettingTypeEXT, LayerSettingTypeEXT::eBool32>
   {
-    using Type = VULKAN_HPP_NAMESPACE::Bool32;
+    using Type = Bool32;
   };
 
   template <>
@@ -9256,7 +9292,7 @@ namespace VULKAN_HPP_NAMESPACE
   {
     switch ( layerSettingType )
     {
-      case LayerSettingTypeEXT::eBool32: return std::is_same<T, VULKAN_HPP_NAMESPACE::Bool32>::value;
+      case LayerSettingTypeEXT::eBool32: return std::is_same<T, Bool32>::value;
       case LayerSettingTypeEXT::eInt32: return std::is_same<T, int32_t>::value;
       case LayerSettingTypeEXT::eInt64: return std::is_same<T, int64_t>::value;
       case LayerSettingTypeEXT::eUint32: return std::is_same<T, uint32_t>::value;
@@ -9310,6 +9346,79 @@ namespace VULKAN_HPP_NAMESPACE
   
     using ScopeNV = ScopeKHR;
 
+  
+  //=== VK_ARM_data_graph ===
+
+  // wrapper class for enum VkDataGraphPipelineSessionBindPointARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkDataGraphPipelineSessionBindPointARM.html
+  enum class DataGraphPipelineSessionBindPointARM{
+    eTransient = VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM
+  };
+  
+  
+  
+  // wrapper class for enum VkDataGraphPipelineSessionBindPointTypeARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkDataGraphPipelineSessionBindPointTypeARM.html
+  enum class DataGraphPipelineSessionBindPointTypeARM{
+    eMemory = VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM
+  };
+  
+  
+  
+  // wrapper class for enum VkDataGraphPipelineSessionCreateFlagBitsARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkDataGraphPipelineSessionCreateFlagBitsARM.html
+  enum class DataGraphPipelineSessionCreateFlagBitsARM : VkDataGraphPipelineSessionCreateFlagsARM{
+    eProtected = VK_DATA_GRAPH_PIPELINE_SESSION_CREATE_PROTECTED_BIT_ARM
+  };
+  
+  
+  
+  // wrapper using for bitmask VkDataGraphPipelineSessionCreateFlagsARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkDataGraphPipelineSessionCreateFlagsARM.html
+  using DataGraphPipelineSessionCreateFlagsARM = Flags<DataGraphPipelineSessionCreateFlagBitsARM>;
+
+
+  template <> struct FlagTraits<DataGraphPipelineSessionCreateFlagBitsARM>
+  {
+    using WrappedType = VkDataGraphPipelineSessionCreateFlagBitsARM;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR bool isBitmask = true;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR DataGraphPipelineSessionCreateFlagsARM allFlags = 
+          DataGraphPipelineSessionCreateFlagBitsARM::eProtected;
+  };
+
+  // wrapper class for enum VkDataGraphPipelinePropertyARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkDataGraphPipelinePropertyARM.html
+  enum class DataGraphPipelinePropertyARM{
+    eCreationLog = VK_DATA_GRAPH_PIPELINE_PROPERTY_CREATION_LOG_ARM,
+    eIdentifier = VK_DATA_GRAPH_PIPELINE_PROPERTY_IDENTIFIER_ARM
+  };
+  
+  
+  
+  
+  enum class DataGraphPipelineDispatchFlagBitsARM : VkDataGraphPipelineDispatchFlagsARM{};
+  
+  
+  
+  // wrapper using for bitmask VkDataGraphPipelineDispatchFlagsARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkDataGraphPipelineDispatchFlagsARM.html
+  using DataGraphPipelineDispatchFlagsARM = Flags<DataGraphPipelineDispatchFlagBitsARM>;
+
+
+  template <> struct FlagTraits<DataGraphPipelineDispatchFlagBitsARM>
+  {
+    
+    static VULKAN_HPP_CONST_OR_CONSTEXPR bool isBitmask = true;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR DataGraphPipelineDispatchFlagsARM allFlags =  {};
+  };
+
+  // wrapper class for enum VkPhysicalDeviceDataGraphProcessingEngineTypeARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkPhysicalDeviceDataGraphProcessingEngineTypeARM.html
+  enum class PhysicalDeviceDataGraphProcessingEngineTypeARM{
+    eDefault = VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_DEFAULT_ARM
+  };
+  
+  
+  
+  // wrapper class for enum VkPhysicalDeviceDataGraphOperationTypeARM, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkPhysicalDeviceDataGraphOperationTypeARM.html
+  enum class PhysicalDeviceDataGraphOperationTypeARM{
+    eSpirvExtendedInstructionSet = VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_SPIRV_EXTENDED_INSTRUCTION_SET_ARM
+  };
+  
+  
   
   //=== VK_KHR_video_encode_av1 ===
 
@@ -9546,6 +9655,7 @@ namespace VULKAN_HPP_NAMESPACE
 
   // wrapper class for enum VkClusterAccelerationStructureAddressResolutionFlagBitsNV, see https://registry.khronos.org/vulkan/specs/latest/man/html/VkClusterAccelerationStructureAddressResolutionFlagBitsNV.html
   enum class ClusterAccelerationStructureAddressResolutionFlagBitsNV : VkClusterAccelerationStructureAddressResolutionFlagsNV{
+    eNone = VK_CLUSTER_ACCELERATION_STRUCTURE_ADDRESS_RESOLUTION_NONE_NV,
     eIndirectedDstImplicitData = VK_CLUSTER_ACCELERATION_STRUCTURE_ADDRESS_RESOLUTION_INDIRECTED_DST_IMPLICIT_DATA_BIT_NV,
     eIndirectedScratchData = VK_CLUSTER_ACCELERATION_STRUCTURE_ADDRESS_RESOLUTION_INDIRECTED_SCRATCH_DATA_BIT_NV,
     eIndirectedDstAddressArray = VK_CLUSTER_ACCELERATION_STRUCTURE_ADDRESS_RESOLUTION_INDIRECTED_DST_ADDRESS_ARRAY_BIT_NV,
@@ -9565,7 +9675,8 @@ namespace VULKAN_HPP_NAMESPACE
     using WrappedType = VkClusterAccelerationStructureAddressResolutionFlagBitsNV;
     static VULKAN_HPP_CONST_OR_CONSTEXPR bool isBitmask = true;
     static VULKAN_HPP_CONST_OR_CONSTEXPR ClusterAccelerationStructureAddressResolutionFlagsNV allFlags = 
-          ClusterAccelerationStructureAddressResolutionFlagBitsNV::eIndirectedDstImplicitData
+          ClusterAccelerationStructureAddressResolutionFlagBitsNV::eNone
+        | ClusterAccelerationStructureAddressResolutionFlagBitsNV::eIndirectedDstImplicitData
         | ClusterAccelerationStructureAddressResolutionFlagBitsNV::eIndirectedScratchData
         | ClusterAccelerationStructureAddressResolutionFlagBitsNV::eIndirectedDstAddressArray
         | ClusterAccelerationStructureAddressResolutionFlagBitsNV::eIndirectedDstSizesArray
@@ -9611,7 +9722,8 @@ namespace VULKAN_HPP_NAMESPACE
     eBuildClustersBottomLevel = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_CLUSTERS_BOTTOM_LEVEL_NV,
     eBuildTriangleCluster = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER_NV,
     eBuildTriangleClusterTemplate = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER_TEMPLATE_NV,
-    eInstantiateTriangleCluster = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_INSTANTIATE_TRIANGLE_CLUSTER_NV
+    eInstantiateTriangleCluster = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_INSTANTIATE_TRIANGLE_CLUSTER_NV,
+    eGetClusterTemplateIndices = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_GET_CLUSTER_TEMPLATE_INDICES_NV
   };
   
   
@@ -9803,124 +9915,127 @@ namespace VULKAN_HPP_NAMESPACE
   //=== Mapping from ObjectType to DebugReportObjectTypeEXT ===
   //===========================================================
 
-  VULKAN_HPP_INLINE VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT debugReportObjectType( VULKAN_HPP_NAMESPACE::ObjectType objectType )
+  VULKAN_HPP_INLINE DebugReportObjectTypeEXT debugReportObjectType( ObjectType objectType )
   {
     switch( objectType )
     {
 
   //=== VK_VERSION_1_0 ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eInstance : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eInstance;
-      case VULKAN_HPP_NAMESPACE::ObjectType::ePhysicalDevice : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::ePhysicalDevice;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eDevice : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eDevice;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eQueue : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eQueue;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eDeviceMemory : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eDeviceMemory;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eFence : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eFence;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eSemaphore : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eSemaphore;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eEvent : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eEvent;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eQueryPool : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eQueryPool;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eBuffer : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eBuffer;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eBufferView : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eBufferView;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eImage : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eImage;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eImageView : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eImageView;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eShaderModule : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eShaderModule;
-      case VULKAN_HPP_NAMESPACE::ObjectType::ePipelineCache : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::ePipelineCache;
-      case VULKAN_HPP_NAMESPACE::ObjectType::ePipeline : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::ePipeline;
-      case VULKAN_HPP_NAMESPACE::ObjectType::ePipelineLayout : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::ePipelineLayout;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eSampler : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eSampler;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eDescriptorPool : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eDescriptorPool;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eDescriptorSet : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eDescriptorSet;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eDescriptorSetLayout : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eDescriptorSetLayout;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eFramebuffer : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eFramebuffer;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eRenderPass : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eRenderPass;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eCommandPool : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eCommandPool;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eCommandBuffer : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eCommandBuffer;
+      case ObjectType::eInstance : return DebugReportObjectTypeEXT::eInstance;
+      case ObjectType::ePhysicalDevice : return DebugReportObjectTypeEXT::ePhysicalDevice;
+      case ObjectType::eDevice : return DebugReportObjectTypeEXT::eDevice;
+      case ObjectType::eQueue : return DebugReportObjectTypeEXT::eQueue;
+      case ObjectType::eDeviceMemory : return DebugReportObjectTypeEXT::eDeviceMemory;
+      case ObjectType::eFence : return DebugReportObjectTypeEXT::eFence;
+      case ObjectType::eSemaphore : return DebugReportObjectTypeEXT::eSemaphore;
+      case ObjectType::eEvent : return DebugReportObjectTypeEXT::eEvent;
+      case ObjectType::eQueryPool : return DebugReportObjectTypeEXT::eQueryPool;
+      case ObjectType::eBuffer : return DebugReportObjectTypeEXT::eBuffer;
+      case ObjectType::eBufferView : return DebugReportObjectTypeEXT::eBufferView;
+      case ObjectType::eImage : return DebugReportObjectTypeEXT::eImage;
+      case ObjectType::eImageView : return DebugReportObjectTypeEXT::eImageView;
+      case ObjectType::eShaderModule : return DebugReportObjectTypeEXT::eShaderModule;
+      case ObjectType::ePipelineCache : return DebugReportObjectTypeEXT::ePipelineCache;
+      case ObjectType::ePipeline : return DebugReportObjectTypeEXT::ePipeline;
+      case ObjectType::ePipelineLayout : return DebugReportObjectTypeEXT::ePipelineLayout;
+      case ObjectType::eSampler : return DebugReportObjectTypeEXT::eSampler;
+      case ObjectType::eDescriptorPool : return DebugReportObjectTypeEXT::eDescriptorPool;
+      case ObjectType::eDescriptorSet : return DebugReportObjectTypeEXT::eDescriptorSet;
+      case ObjectType::eDescriptorSetLayout : return DebugReportObjectTypeEXT::eDescriptorSetLayout;
+      case ObjectType::eFramebuffer : return DebugReportObjectTypeEXT::eFramebuffer;
+      case ObjectType::eRenderPass : return DebugReportObjectTypeEXT::eRenderPass;
+      case ObjectType::eCommandPool : return DebugReportObjectTypeEXT::eCommandPool;
+      case ObjectType::eCommandBuffer : return DebugReportObjectTypeEXT::eCommandBuffer;
 
   //=== VK_VERSION_1_1 ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eSamplerYcbcrConversion : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eSamplerYcbcrConversion;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eDescriptorUpdateTemplate : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eDescriptorUpdateTemplate;
+      case ObjectType::eSamplerYcbcrConversion : return DebugReportObjectTypeEXT::eSamplerYcbcrConversion;
+      case ObjectType::eDescriptorUpdateTemplate : return DebugReportObjectTypeEXT::eDescriptorUpdateTemplate;
 
   //=== VK_VERSION_1_3 ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::ePrivateDataSlot : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::ePrivateDataSlot : return DebugReportObjectTypeEXT::eUnknown;
 
   //=== VK_KHR_surface ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eSurfaceKHR : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eSurfaceKHR;
+      case ObjectType::eSurfaceKHR : return DebugReportObjectTypeEXT::eSurfaceKHR;
 
   //=== VK_KHR_swapchain ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eSwapchainKHR : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eSwapchainKHR;
+      case ObjectType::eSwapchainKHR : return DebugReportObjectTypeEXT::eSwapchainKHR;
 
   //=== VK_KHR_display ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eDisplayKHR : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eDisplayKHR;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eDisplayModeKHR : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eDisplayModeKHR;
+      case ObjectType::eDisplayKHR : return DebugReportObjectTypeEXT::eDisplayKHR;
+      case ObjectType::eDisplayModeKHR : return DebugReportObjectTypeEXT::eDisplayModeKHR;
 
   //=== VK_EXT_debug_report ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eDebugReportCallbackEXT : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eDebugReportCallbackEXT;
+      case ObjectType::eDebugReportCallbackEXT : return DebugReportObjectTypeEXT::eDebugReportCallbackEXT;
 
   //=== VK_KHR_video_queue ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eVideoSessionKHR : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eVideoSessionParametersKHR : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eVideoSessionKHR : return DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eVideoSessionParametersKHR : return DebugReportObjectTypeEXT::eUnknown;
 
   //=== VK_NVX_binary_import ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eCuModuleNVX : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eCuModuleNVX;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eCuFunctionNVX : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eCuFunctionNVX;
+      case ObjectType::eCuModuleNVX : return DebugReportObjectTypeEXT::eCuModuleNVX;
+      case ObjectType::eCuFunctionNVX : return DebugReportObjectTypeEXT::eCuFunctionNVX;
 
   //=== VK_EXT_debug_utils ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eDebugUtilsMessengerEXT : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eDebugUtilsMessengerEXT : return DebugReportObjectTypeEXT::eUnknown;
 
   //=== VK_KHR_acceleration_structure ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eAccelerationStructureKHR : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eAccelerationStructureKHR;
+      case ObjectType::eAccelerationStructureKHR : return DebugReportObjectTypeEXT::eAccelerationStructureKHR;
 
   //=== VK_EXT_validation_cache ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eValidationCacheEXT : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eValidationCacheEXT;
+      case ObjectType::eValidationCacheEXT : return DebugReportObjectTypeEXT::eValidationCacheEXT;
 
   //=== VK_NV_ray_tracing ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eAccelerationStructureNV : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eAccelerationStructureNV;
+      case ObjectType::eAccelerationStructureNV : return DebugReportObjectTypeEXT::eAccelerationStructureNV;
 
   //=== VK_INTEL_performance_query ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::ePerformanceConfigurationINTEL : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::ePerformanceConfigurationINTEL : return DebugReportObjectTypeEXT::eUnknown;
 
   //=== VK_KHR_deferred_host_operations ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eDeferredOperationKHR : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eDeferredOperationKHR : return DebugReportObjectTypeEXT::eUnknown;
 
   //=== VK_NV_device_generated_commands ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eIndirectCommandsLayoutNV : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eIndirectCommandsLayoutNV : return DebugReportObjectTypeEXT::eUnknown;
 
 #if defined( VK_ENABLE_BETA_EXTENSIONS )
   //=== VK_NV_cuda_kernel_launch ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eCudaModuleNV : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eCudaModuleNV;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eCudaFunctionNV : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eCudaFunctionNV;
+      case ObjectType::eCudaModuleNV : return DebugReportObjectTypeEXT::eCudaModuleNV;
+      case ObjectType::eCudaFunctionNV : return DebugReportObjectTypeEXT::eCudaFunctionNV;
 #endif /*VK_ENABLE_BETA_EXTENSIONS*/
 
 #if defined( VK_USE_PLATFORM_FUCHSIA )
   //=== VK_FUCHSIA_buffer_collection ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eBufferCollectionFUCHSIA : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eBufferCollectionFUCHSIA;
+      case ObjectType::eBufferCollectionFUCHSIA : return DebugReportObjectTypeEXT::eBufferCollectionFUCHSIA;
 #endif /*VK_USE_PLATFORM_FUCHSIA*/
 
   //=== VK_EXT_opacity_micromap ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eMicromapEXT : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eMicromapEXT : return DebugReportObjectTypeEXT::eUnknown;
 
   //=== VK_ARM_tensors ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eTensorARM : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eTensorViewARM : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eTensorARM : return DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eTensorViewARM : return DebugReportObjectTypeEXT::eUnknown;
 
   //=== VK_NV_optical_flow ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eOpticalFlowSessionNV : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eOpticalFlowSessionNV : return DebugReportObjectTypeEXT::eUnknown;
 
   //=== VK_EXT_shader_object ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eShaderEXT : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eShaderEXT : return DebugReportObjectTypeEXT::eUnknown;
 
   //=== VK_KHR_pipeline_binary ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::ePipelineBinaryKHR : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::ePipelineBinaryKHR : return DebugReportObjectTypeEXT::eUnknown;
+
+  //=== VK_ARM_data_graph ===
+      case ObjectType::eDataGraphPipelineSessionARM : return DebugReportObjectTypeEXT::eUnknown;
 
   //=== VK_NV_external_compute_queue ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eExternalComputeQueueNV : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eExternalComputeQueueNV : return DebugReportObjectTypeEXT::eUnknown;
 
   //=== VK_EXT_device_generated_commands ===
-      case VULKAN_HPP_NAMESPACE::ObjectType::eIndirectCommandsLayoutEXT : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
-      case VULKAN_HPP_NAMESPACE::ObjectType::eIndirectExecutionSetEXT : return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eIndirectCommandsLayoutEXT : return DebugReportObjectTypeEXT::eUnknown;
+      case ObjectType::eIndirectExecutionSetEXT : return DebugReportObjectTypeEXT::eUnknown;
 
       default:
         VULKAN_HPP_ASSERT( false && "unknown ObjectType" );
-        return VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::eUnknown;
+        return DebugReportObjectTypeEXT::eUnknown;
     }
   }
 

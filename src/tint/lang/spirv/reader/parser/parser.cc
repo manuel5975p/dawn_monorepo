@@ -119,7 +119,11 @@ class Parser {
         for (const auto& ext : spirv_context_->extensions()) {
             auto name = ext.GetOperand(0).AsString();
             if (name != "SPV_KHR_storage_buffer_storage_class" &&
-                name != "SPV_KHR_non_semantic_info") {
+                name != "SPV_KHR_non_semantic_info" &&  //
+                // TODO(423644565): We assume the barriers are correct. We should check for any
+                // operation that makes barrier assumptions that aren't consistent with WGSL and
+                // generate the needed barriers.
+                name != "SPV_KHR_vulkan_memory_model") {
                 return Failure("SPIR-V extension '" + name + "' is not supported");
             }
         }
@@ -359,6 +363,20 @@ class Parser {
                             break;
                         case spv::Op::OpNot:
                             EmitSpirvExplicitBuiltinCall(inst, spirv::BuiltinFn::kNot, 3);
+                            break;
+                        case spv::Op::OpSConvert:
+                            TINT_ICE() << "can't translate SConvert: WGSL does not have concrete "
+                                          "integer types of different widths";
+                        case spv::Op::OpUConvert:
+                            TINT_ICE() << "can't translate UConvert: WGSL does not have concrete "
+                                          "integer types of different widths";
+                        case spv::Op::OpFConvert:
+                            Emit(b_.Convert(Type(inst.type_id()),
+                                            Value(inst.GetSingleWordInOperand(1))),
+                                 inst.result_id());
+                            break;
+                        case spv::Op::OpSNegate:
+                            EmitSpirvExplicitBuiltinCall(inst, spirv::BuiltinFn::kSNegate, 3);
                             break;
                         default:
                             TINT_ICE() << "Unknown spec constant operation: " << op;
@@ -603,7 +621,16 @@ class Parser {
                 }
                 case spvtools::opt::analysis::Type::kRuntimeArray: {
                     auto* arr_ty = type->AsRuntimeArray();
-                    return ty_.runtime_array(Type(arr_ty->element_type()));
+
+                    auto* elem_ty = Type(arr_ty->element_type());
+                    uint32_t implicit_stride = tint::RoundUp(elem_ty->Align(), elem_ty->Size());
+                    if (array_stride == 0 || array_stride == implicit_stride) {
+                        return ty_.runtime_array(elem_ty);
+                    }
+
+                    return ty_.Get<spirv::type::ExplicitLayoutArray>(
+                        elem_ty, ty_.Get<core::type::RuntimeArrayCount>(), elem_ty->Align(),
+                        static_cast<uint32_t>(array_stride), array_stride);
                 }
                 case spvtools::opt::analysis::Type::kStruct: {
                     const core::type::Struct* str_ty = EmitStruct(type->AsStruct());
@@ -782,10 +809,23 @@ class Parser {
                 return attributes.interpolation.value();
             };
 
+            bool is_row_major = false;
+            uint32_t matrix_stride = 0;
             // Handle member decorations that affect layout or attributes.
             if (struct_ty->element_decorations().count(i)) {
                 for (auto& deco : struct_ty->element_decorations().at(i)) {
                     switch (spv::Decoration(deco[0])) {
+                        case spv::Decoration::ColMajor:          // Do nothing, WGSL is column major
+                        case spv::Decoration::NonReadable:       // Not supported in WGSL
+                        case spv::Decoration::NonWritable:       // Not supported in WGSL
+                        case spv::Decoration::RelaxedPrecision:  // Not supported in WGSL
+                            break;
+                        case spv::Decoration::RowMajor:
+                            is_row_major = true;
+                            break;
+                        case spv::Decoration::MatrixStride:
+                            matrix_stride = deco[1];
+                            break;
                         case spv::Decoration::Offset:
                             offset = deco[1];
                             break;
@@ -828,8 +868,16 @@ class Parser {
                 name = ir_.symbols.New();
             }
 
-            members.Push(ty_.Get<core::type::StructMember>(
-                name, member_ty, i, offset, align, member_ty->Size(), std::move(attributes)));
+            core::type::StructMember* member = ty_.Get<core::type::StructMember>(
+                name, member_ty, i, offset, align, member_ty->Size(), std::move(attributes));
+            if (is_row_major) {
+                member->SetRowMajor();
+            }
+            if (matrix_stride > 0) {
+                member->SetMatrixStride(matrix_stride);
+            }
+
+            members.Push(member);
 
             current_size = offset + member_ty->Size();
         }
@@ -1194,6 +1242,9 @@ class Parser {
 
     /// Emit the functions.
     void EmitFunctions() {
+        // Add all the functions in a first pass and then fill in the function bodies. This means
+        // the function will exist fixing an issues where calling a function that hasn't been seen
+        // generates the wrong signature.
         for (auto& func : *spirv_context_->module()) {
             current_spirv_function_ = &func;
 
@@ -1220,6 +1271,13 @@ class Parser {
             }
 
             functions_.Add(func.result_id(), current_function_);
+            current_spirv_function_ = nullptr;
+        }
+
+        for (auto& func : *spirv_context_->module()) {
+            current_spirv_function_ = &func;
+
+            current_function_ = Function(func.result_id());
             EmitBlockParent(current_function_->Block(), *func.entry());
 
             // No terminator was emitted, that means then end of block is
@@ -1227,8 +1285,8 @@ class Parser {
             if (!current_function_->Block()->Terminator()) {
                 current_function_->Block()->Append(b_.Unreachable());
             }
+            current_spirv_function_ = nullptr;
         }
-        current_spirv_function_ = nullptr;
     }
 
     /// Emit entry point attributes.
@@ -1728,6 +1786,9 @@ class Parser {
                 case spv::Op::OpSampledImage:
                     EmitSampledImage(inst);
                     break;
+                case spv::Op::OpImage:
+                    EmitImage(inst);
+                    break;
                 case spv::Op::OpImageFetch:
                     EmitImageFetchOrRead(inst, spirv::BuiltinFn::kImageFetch);
                     break;
@@ -1763,6 +1824,21 @@ class Parser {
                     break;
                 case spv::Op::OpImageWrite:
                     EmitImageWrite(inst);
+                    break;
+                case spv::Op::OpImageSampleDrefImplicitLod:
+                    EmitImageSampleDepth(inst, spirv::BuiltinFn::kImageSampleDrefImplicitLod);
+                    break;
+                case spv::Op::OpImageSampleDrefExplicitLod:
+                    EmitImageSampleDepth(inst, spirv::BuiltinFn::kImageSampleDrefExplicitLod);
+                    break;
+                case spv::Op::OpImageSampleProjDrefImplicitLod:
+                    EmitImageSampleDepth(inst, spirv::BuiltinFn::kImageSampleProjDrefImplicitLod);
+                    break;
+                case spv::Op::OpImageSampleProjDrefExplicitLod:
+                    EmitImageSampleDepth(inst, spirv::BuiltinFn::kImageSampleProjDrefExplicitLod);
+                    break;
+                case spv::Op::OpImageDrefGather:
+                    EmitImageGatherDref(inst);
                     break;
                 case spv::Op::OpPhi:
                     EmitPhi(inst);
@@ -2092,6 +2168,14 @@ class Parser {
         }
     }
 
+    void EmitImage(const spvtools::opt::Instruction& inst) {
+        auto* si = Value(inst.GetSingleWordInOperand(0));
+        Emit(b_.CallExplicit<spirv::ir::BuiltinCall>(
+                 Type(inst.type_id()), spirv::BuiltinFn::kImage,
+                 Vector{si->Type()->As<spirv::type::SampledImage>()->Image()}, Args(inst, 2)),
+             inst.result_id());
+    }
+
     void EmitSampledImage(const spvtools::opt::Instruction& inst) {
         auto* tex = Value(inst.GetSingleWordInOperand(0));
         Emit(b_.CallExplicit<spirv::ir::BuiltinCall>(Type(inst.type_id()),
@@ -2118,6 +2202,32 @@ class Parser {
         }
 
         Emit(b_.Call<spirv::ir::BuiltinCall>(Type(inst.type_id()), fn, args), inst.result_id());
+    }
+
+    void EmitImageGatherDref(const spvtools::opt::Instruction& inst) {
+        auto sampled_image = Value(inst.GetSingleWordInOperand(0));
+        auto* coord = Value(inst.GetSingleWordInOperand(1));
+        auto* dref = Value(inst.GetSingleWordInOperand(2));
+
+        Vector<core::ir::Value*, 4> args = {sampled_image, coord, dref};
+
+        if (inst.NumInOperands() > 3) {
+            uint32_t literal_mask = inst.GetSingleWordInOperand(3);
+            args.Push(b_.Constant(u32(literal_mask)));
+
+            if (literal_mask != 0) {
+                TINT_ASSERT(static_cast<spv::ImageOperandsMask>(literal_mask) ==
+                            spv::ImageOperandsMask::ConstOffset);
+                TINT_ASSERT(inst.NumInOperands() > 4);
+                args.Push(Value(inst.GetSingleWordInOperand(4)));
+            }
+        } else {
+            args.Push(b_.Zero(ty_.u32()));
+        }
+
+        Emit(b_.Call<spirv::ir::BuiltinCall>(Type(inst.type_id()),
+                                             spirv::BuiltinFn::kImageDrefGather, args),
+             inst.result_id());
     }
 
     void EmitImageGather(const spvtools::opt::Instruction& inst) {
@@ -2161,6 +2271,31 @@ class Parser {
             }
 
             for (uint32_t i = 3; i < inst.NumInOperands(); ++i) {
+                args.Push(Value(inst.GetSingleWordInOperand(i)));
+            }
+        } else {
+            args.Push(b_.Zero(ty_.u32()));
+        }
+
+        Emit(b_.Call<spirv::ir::BuiltinCall>(Type(inst.type_id()), fn, args), inst.result_id());
+    }
+
+    void EmitImageSampleDepth(const spvtools::opt::Instruction& inst, spirv::BuiltinFn fn) {
+        auto sampled_image = Value(inst.GetSingleWordInOperand(0));
+        auto* coord = Value(inst.GetSingleWordInOperand(1));
+        auto* dref = Value(inst.GetSingleWordInOperand(2));
+
+        Vector<core::ir::Value*, 4> args = {sampled_image, coord, dref};
+
+        if (inst.NumInOperands() > 3) {
+            uint32_t literal_mask = inst.GetSingleWordInOperand(3);
+            args.Push(b_.Constant(u32(literal_mask)));
+
+            if (literal_mask != 0) {
+                TINT_ASSERT(inst.NumInOperands() > 4);
+            }
+
+            for (uint32_t i = 4; i < inst.NumInOperands(); ++i) {
                 args.Push(Value(inst.GetSingleWordInOperand(i)));
             }
         } else {
@@ -3318,6 +3453,8 @@ class Parser {
              spirv_context_->get_decoration_mgr()->GetDecorationsFor(inst.result_id(), false)) {
             auto d = deco->GetSingleWordOperand(1);
             switch (spv::Decoration(d)) {
+                case spv::Decoration::RelaxedPrecision:  // WGSL is relaxed precision by default
+                    break;
                 case spv::Decoration::NonReadable:
                     access_mode = core::Access::kWrite;
                     break;
@@ -3353,6 +3490,9 @@ class Parser {
                     break;
                 case spv::Decoration::Index:
                     io_attributes.blend_src = deco->GetSingleWordOperand(2);
+                    break;
+                case spv::Decoration::Coherent:
+                    // Tint has coherent memory semantics, so this is a no-op.
                     break;
                 default:
                     TINT_UNIMPLEMENTED() << "unhandled decoration " << d;
