@@ -53,11 +53,16 @@ class StorageTextureTests : public DawnTest {
     }
 
   public:
+    // Stores an expected value into the given pointer, assumed to be storage
+    // for the texel of the given format.  The value is some varying function
+    //   f(x,y,depthOrArrayLayer) + alsoAdd, for the x component
+    //   f(x,y,depthOrArrayLayer),            for other components
     static void FillExpectedData(void* pixelValuePtr,
                                  wgpu::TextureFormat format,
                                  uint32_t x,
                                  uint32_t y,
-                                 uint32_t depthOrArrayLayer) {
+                                 uint32_t depthOrArrayLayer,
+                                 int alsoAdd = 0) {
         const uint32_t pixelValue = 1 + x + kWidth * (y + kHeight * depthOrArrayLayer);
         DAWN_ASSERT(pixelValue <= 255u / 4);
 
@@ -65,20 +70,20 @@ class StorageTextureTests : public DawnTest {
             // 32-bit unsigned integer formats
             case wgpu::TextureFormat::R32Uint: {
                 uint32_t* valuePtr = static_cast<uint32_t*>(pixelValuePtr);
-                *valuePtr = pixelValue;
+                *valuePtr = pixelValue + alsoAdd;
                 break;
             }
 
             case wgpu::TextureFormat::RG32Uint: {
                 uint32_t* valuePtr = static_cast<uint32_t*>(pixelValuePtr);
-                valuePtr[0] = pixelValue;
+                valuePtr[0] = pixelValue + alsoAdd;
                 valuePtr[1] = pixelValue * 2;
                 break;
             }
 
             case wgpu::TextureFormat::RGBA32Uint: {
                 uint32_t* valuePtr = static_cast<uint32_t*>(pixelValuePtr);
-                valuePtr[0] = pixelValue;
+                valuePtr[0] = pixelValue + alsoAdd;
                 valuePtr[1] = pixelValue * 2;
                 valuePtr[2] = pixelValue * 3;
                 valuePtr[3] = pixelValue * 4;
@@ -88,20 +93,20 @@ class StorageTextureTests : public DawnTest {
             // 32-bit signed integer formats
             case wgpu::TextureFormat::R32Sint: {
                 int32_t* valuePtr = static_cast<int32_t*>(pixelValuePtr);
-                *valuePtr = static_cast<int32_t>(pixelValue);
+                *valuePtr = static_cast<int32_t>(pixelValue) + alsoAdd;
                 break;
             }
 
             case wgpu::TextureFormat::RG32Sint: {
                 int32_t* valuePtr = static_cast<int32_t*>(pixelValuePtr);
-                valuePtr[0] = static_cast<int32_t>(pixelValue);
+                valuePtr[0] = static_cast<int32_t>(pixelValue) + alsoAdd;
                 valuePtr[1] = -static_cast<int32_t>(pixelValue);
                 break;
             }
 
             case wgpu::TextureFormat::RGBA32Sint: {
                 int32_t* valuePtr = static_cast<int32_t*>(pixelValuePtr);
-                valuePtr[0] = static_cast<int32_t>(pixelValue);
+                valuePtr[0] = static_cast<int32_t>(pixelValue) + alsoAdd;
                 valuePtr[1] = -static_cast<int32_t>(pixelValue);
                 valuePtr[2] = static_cast<int32_t>(pixelValue * 2);
                 valuePtr[3] = -static_cast<int32_t>(pixelValue * 2);
@@ -111,47 +116,43 @@ class StorageTextureTests : public DawnTest {
             // 32-bit float formats
             case wgpu::TextureFormat::R32Float: {
                 float_t* valuePtr = static_cast<float_t*>(pixelValuePtr);
-                *valuePtr = static_cast<float_t>(pixelValue * 1.1f);
+                *valuePtr = static_cast<float_t>(pixelValue * 1.1f) + alsoAdd;
                 break;
             }
 
             case wgpu::TextureFormat::RG32Float: {
                 float_t* valuePtr = static_cast<float_t*>(pixelValuePtr);
-                valuePtr[0] = static_cast<float_t>(pixelValue * 1.1f);
+                valuePtr[0] = static_cast<float_t>(pixelValue * 1.1f) + alsoAdd;
                 valuePtr[1] = -static_cast<float_t>(pixelValue * 2.2f);
                 break;
             }
 
             case wgpu::TextureFormat::RGBA32Float: {
                 float_t* valuePtr = static_cast<float_t*>(pixelValuePtr);
-                valuePtr[0] = static_cast<float_t>(pixelValue * 1.1f);
+                valuePtr[0] = static_cast<float_t>(pixelValue * 1.1f) + alsoAdd;
                 valuePtr[1] = -static_cast<float_t>(pixelValue * 1.1f);
                 valuePtr[2] = static_cast<float_t>(pixelValue * 2.2f);
                 valuePtr[3] = -static_cast<float_t>(pixelValue * 2.2f);
                 break;
             }
 
-            // 16-bit (unsigned integer, signed integer and float) 4-component formats
-            case wgpu::TextureFormat::RGBA16Uint: {
-                uint16_t* valuePtr = static_cast<uint16_t*>(pixelValuePtr);
-                valuePtr[0] = static_cast<uint16_t>(pixelValue);
-                valuePtr[1] = static_cast<uint16_t>(pixelValue * 2);
-                valuePtr[2] = static_cast<uint16_t>(pixelValue * 3);
-                valuePtr[3] = static_cast<uint16_t>(pixelValue * 4);
+            // 16-bit float formats
+            case wgpu::TextureFormat::R16Float: {
+                uint16_t* valuePtr = static_cast<uint16_t*>(pixelValuePtr) + alsoAdd;
+                *valuePtr = Float32ToFloat16(static_cast<float_t>(pixelValue));
                 break;
             }
-            case wgpu::TextureFormat::RGBA16Sint: {
-                int16_t* valuePtr = static_cast<int16_t*>(pixelValuePtr);
-                valuePtr[0] = static_cast<int16_t>(pixelValue);
-                valuePtr[1] = -static_cast<int16_t>(pixelValue);
-                valuePtr[2] = static_cast<int16_t>(pixelValue * 2);
-                valuePtr[3] = -static_cast<int16_t>(pixelValue * 2);
+
+            case wgpu::TextureFormat::RG16Float: {
+                uint16_t* valuePtr = static_cast<uint16_t*>(pixelValuePtr);
+                valuePtr[0] = Float32ToFloat16(static_cast<float_t>(pixelValue)) + alsoAdd;
+                valuePtr[1] = Float32ToFloat16(-static_cast<float_t>(pixelValue));
                 break;
             }
 
             case wgpu::TextureFormat::RGBA16Float: {
                 uint16_t* valuePtr = static_cast<uint16_t*>(pixelValuePtr);
-                valuePtr[0] = Float32ToFloat16(static_cast<float_t>(pixelValue));
+                valuePtr[0] = Float32ToFloat16(static_cast<float_t>(pixelValue)) + alsoAdd;
                 valuePtr[1] = Float32ToFloat16(-static_cast<float_t>(pixelValue));
                 valuePtr[2] = Float32ToFloat16(static_cast<float_t>(pixelValue * 2));
                 valuePtr[3] = Float32ToFloat16(-static_cast<float_t>(pixelValue * 2));
@@ -162,31 +163,144 @@ class StorageTextureTests : public DawnTest {
             case wgpu::TextureFormat::RGBA8Unorm:
             case wgpu::TextureFormat::RGBA8Uint: {
                 utils::RGBA8* valuePtr = static_cast<utils::RGBA8*>(pixelValuePtr);
-                *valuePtr =
-                    utils::RGBA8(pixelValue, pixelValue * 2, pixelValue * 3, pixelValue * 4);
+                *valuePtr = utils::RGBA8(pixelValue + alsoAdd, pixelValue * 2, pixelValue * 3,
+                                         pixelValue * 4);
                 break;
             }
 
             case wgpu::TextureFormat::BGRA8Unorm: {
                 utils::RGBA8* valuePtr = static_cast<utils::RGBA8*>(pixelValuePtr);
-                *valuePtr =
-                    utils::RGBA8(pixelValue * 3, pixelValue * 2, pixelValue, pixelValue * 4);
+                *valuePtr = utils::RGBA8(pixelValue * 3 + alsoAdd, pixelValue * 2, pixelValue,
+                                         pixelValue * 4);
                 break;
             }
 
             case wgpu::TextureFormat::RGBA8Snorm:
             case wgpu::TextureFormat::RGBA8Sint: {
                 int8_t* valuePtr = static_cast<int8_t*>(pixelValuePtr);
-                valuePtr[0] = static_cast<int8_t>(pixelValue);
+                valuePtr[0] = static_cast<int8_t>(pixelValue) + alsoAdd;
                 valuePtr[1] = -static_cast<int8_t>(pixelValue);
                 valuePtr[2] = static_cast<int8_t>(pixelValue) * 2;
                 valuePtr[3] = -static_cast<int8_t>(pixelValue) * 2;
                 break;
             }
 
-            case wgpu::TextureFormat::R8Unorm: {
+            // 16-bit normalized/non-normalized unsigned/signed integer formats
+            case wgpu::TextureFormat::R16Unorm:
+            case wgpu::TextureFormat::R16Uint: {
+                uint16_t* valuePtr = static_cast<uint16_t*>(pixelValuePtr);
+                *valuePtr = static_cast<uint16_t>(pixelValue) + alsoAdd;
+                break;
+            }
+
+            case wgpu::TextureFormat::RG16Unorm:
+            case wgpu::TextureFormat::RG16Uint: {
+                uint16_t* valuePtr = static_cast<uint16_t*>(pixelValuePtr);
+                valuePtr[0] = static_cast<uint16_t>(pixelValue) + alsoAdd;
+                valuePtr[1] = static_cast<uint16_t>(pixelValue * 2);
+                break;
+            }
+
+            case wgpu::TextureFormat::R16Snorm:
+            case wgpu::TextureFormat::R16Sint: {
+                int16_t* valuePtr = static_cast<int16_t*>(pixelValuePtr);
+                *valuePtr = static_cast<int16_t>(pixelValue) + alsoAdd;
+                break;
+            }
+
+            case wgpu::TextureFormat::RG16Snorm:
+            case wgpu::TextureFormat::RG16Sint: {
+                int16_t* valuePtr = static_cast<int16_t*>(pixelValuePtr);
+                valuePtr[0] = static_cast<int16_t>(pixelValue) + alsoAdd;
+                valuePtr[1] = -static_cast<int16_t>(pixelValue);
+                break;
+            }
+
+            case wgpu::TextureFormat::RGBA16Unorm:
+            case wgpu::TextureFormat::RGBA16Uint: {
+                uint16_t* valuePtr = static_cast<uint16_t*>(pixelValuePtr);
+                valuePtr[0] = static_cast<uint16_t>(pixelValue) + alsoAdd;
+                valuePtr[1] = static_cast<uint16_t>(pixelValue * 2);
+                valuePtr[2] = static_cast<uint16_t>(pixelValue * 3);
+                valuePtr[3] = static_cast<uint16_t>(pixelValue * 4);
+                break;
+            }
+
+            case wgpu::TextureFormat::RGBA16Snorm:
+            case wgpu::TextureFormat::RGBA16Sint: {
+                int16_t* valuePtr = static_cast<int16_t*>(pixelValuePtr);
+                valuePtr[0] = static_cast<int16_t>(pixelValue) + alsoAdd;
+                valuePtr[1] = -static_cast<int16_t>(pixelValue);
+                valuePtr[2] = static_cast<int16_t>(pixelValue * 2);
+                valuePtr[3] = -static_cast<int16_t>(pixelValue * 2);
+                break;
+            }
+
+            // 8-bit normalized/non-normalized unsigned/signed integer formats
+            case wgpu::TextureFormat::R8Unorm:
+            case wgpu::TextureFormat::R8Uint: {
                 uint8_t* valuePtr = static_cast<uint8_t*>(pixelValuePtr);
-                *valuePtr = pixelValue;
+                *valuePtr = pixelValue + alsoAdd;
+                break;
+            }
+
+            case wgpu::TextureFormat::RG8Unorm:
+            case wgpu::TextureFormat::RG8Uint: {
+                uint8_t* valuePtr = static_cast<uint8_t*>(pixelValuePtr);
+                valuePtr[0] = static_cast<uint8_t>(pixelValue) + alsoAdd;
+                valuePtr[1] = static_cast<uint8_t>(pixelValue * 2);
+                break;
+            }
+
+            case wgpu::TextureFormat::R8Snorm:
+            case wgpu::TextureFormat::R8Sint: {
+                int8_t* valuePtr = static_cast<int8_t*>(pixelValuePtr);
+                *valuePtr = static_cast<int8_t>(pixelValue) + alsoAdd;
+                break;
+            }
+
+            case wgpu::TextureFormat::RG8Snorm:
+            case wgpu::TextureFormat::RG8Sint: {
+                int8_t* valuePtr = static_cast<int8_t*>(pixelValuePtr);
+                valuePtr[0] = static_cast<int8_t>(pixelValue) + alsoAdd;
+                valuePtr[1] = -static_cast<int8_t>(pixelValue);
+                break;
+            }
+
+            case wgpu::TextureFormat::RGB10A2Uint: {
+                uint32_t* valuePtr = static_cast<uint32_t*>(pixelValuePtr);
+                uint32_t r = static_cast<uint32_t>(pixelValue + alsoAdd) % 1024;
+                uint32_t g = static_cast<uint32_t>(pixelValue * 2) % 1024;
+                uint32_t b = static_cast<uint32_t>(pixelValue * 3) % 1024;
+                uint32_t a = static_cast<uint32_t>(3) % 4;
+                *valuePtr = (a << 30) | (b << 20) | (g << 10) | r;
+                break;
+            }
+
+            case wgpu::TextureFormat::RGB10A2Unorm: {
+                uint32_t* valuePtr = static_cast<uint32_t*>(pixelValuePtr);
+                uint32_t r = static_cast<uint32_t>(pixelValue + alsoAdd) % 1024;
+                uint32_t g = static_cast<uint32_t>(pixelValue * 2) % 1024;
+                uint32_t b = static_cast<uint32_t>(pixelValue * 3) % 1024;
+                uint32_t a = static_cast<uint32_t>(3);
+                *valuePtr = (a << 30) | (b << 20) | (g << 10) | r;
+                break;
+            }
+
+            case wgpu::TextureFormat::RG11B10Ufloat: {
+                uint32_t* valuePtr = static_cast<uint32_t*>(pixelValuePtr);
+
+                auto MakeRG11B10 = [](uint32_t r, uint32_t g, uint32_t b) {
+                    DAWN_ASSERT((r & 0x7FF) == r);
+                    DAWN_ASSERT((g & 0x7FF) == g);
+                    DAWN_ASSERT((b & 0x3FF) == b);
+                    return r | g << 11 | b << 22;
+                };
+
+                constexpr uint32_t kFloat11One = 0x3C0;
+                constexpr uint32_t kFloat10Zero = 0;
+
+                *valuePtr = MakeRG11B10(kFloat11One + alsoAdd, kFloat11One, kFloat10Zero);
                 break;
             }
 
@@ -228,11 +342,18 @@ class StorageTextureTests : public DawnTest {
     const char* GetExpectedPixelValue(wgpu::TextureFormat format) {
         switch (format) {
             // non-normalized unsigned integer formats
+            case wgpu::TextureFormat::R8Uint:
+            case wgpu::TextureFormat::R16Uint:
             case wgpu::TextureFormat::R32Uint:
                 return "vec4u(u32(value), 0u, 0u, 1u)";
 
+            case wgpu::TextureFormat::RG8Uint:
+            case wgpu::TextureFormat::RG16Uint:
             case wgpu::TextureFormat::RG32Uint:
                 return "vec4u(u32(value), u32(value) * 2u, 0u, 1u)";
+
+            case wgpu::TextureFormat::RGB10A2Uint:
+                return "vec4u(u32(value), u32(value) * 2u, u32(value) * 3u, 3u)";
 
             case wgpu::TextureFormat::RGBA8Uint:
             case wgpu::TextureFormat::RGBA16Uint:
@@ -241,9 +362,13 @@ class StorageTextureTests : public DawnTest {
                        "u32(value) * 3u, u32(value) * 4u)";
 
             // non-normalized signed integer formats
+            case wgpu::TextureFormat::R8Sint:
+            case wgpu::TextureFormat::R16Sint:
             case wgpu::TextureFormat::R32Sint:
                 return "vec4i(i32(value), 0, 0, 1)";
 
+            case wgpu::TextureFormat::RG8Sint:
+            case wgpu::TextureFormat::RG16Sint:
             case wgpu::TextureFormat::RG32Sint:
                 return "vec4i(i32(value), -i32(value), 0, 1)";
 
@@ -253,6 +378,12 @@ class StorageTextureTests : public DawnTest {
                 return "vec4i(i32(value), -i32(value), i32(value) * 2, -i32(value) * 2)";
 
             // float formats
+            case wgpu::TextureFormat::R16Float:
+                return "vec4f(f32(value), 0.0, 0.0, 1.0)";
+
+            case wgpu::TextureFormat::RG16Float:
+                return "vec4f(f32(value), -f32(value), 0.0, 1.0)";
+
             case wgpu::TextureFormat::R32Float:
                 return "vec4f(f32(value) * 1.1, 0.0, 0.0, 1.0)";
 
@@ -279,6 +410,42 @@ class StorageTextureTests : public DawnTest {
 
             case wgpu::TextureFormat::R8Unorm:
                 return "vec4f(f32(value) / 255.0, 0.0, 0.0, 1.0)";
+
+            case wgpu::TextureFormat::R8Snorm:
+                return "vec4f(f32(value) / 127.0, 0.0, 0.0, 1.0)";
+
+            case wgpu::TextureFormat::RG8Unorm:
+                return "vec4f(f32(value) / 255.0, f32(value) * 2.0 / 255.0, 0.0, 1.0)";
+
+            case wgpu::TextureFormat::RG8Snorm:
+                return "vec4f(f32(value) / 127.0, -f32(value) / 127.0, 0.0, 1.0)";
+
+            case wgpu::TextureFormat::R16Unorm:
+                return "vec4f(f32(value) / 65535.0, 0.0, 0.0, 1.0)";
+
+            case wgpu::TextureFormat::R16Snorm:
+                return "vec4f(f32(value) / 32767.0, 0.0, 0.0, 1.0)";
+
+            case wgpu::TextureFormat::RG16Unorm:
+                return "vec4f(f32(value) / 65535.0, f32(value) * 2.0 / 65535.0, 0.0, 1.0)";
+
+            case wgpu::TextureFormat::RG16Snorm:
+                return "vec4f(f32(value) / 32767.0, -f32(value) / 32767.0, 0.0, 1.0)";
+
+            case wgpu::TextureFormat::RGBA16Unorm:
+                return "vec4f(f32(value) / 65535.0, f32(value) * 2.0 / 65535.0, "
+                       "f32(value) * 3.0 / 65535.0, f32(value) * 4.0 / 65535.0)";
+
+            case wgpu::TextureFormat::RGBA16Snorm:
+                return "vec4f(f32(value) / 32767.0, -f32(value) / 32767.0, "
+                       "f32(value) * 2.0 / 32767.0, -f32(value) * 2.0 / 32767.0)";
+
+            case wgpu::TextureFormat::RGB10A2Unorm:
+                return "vec4f(f32(value) / 1023.0, f32(value) * 2.0 / 1023.0, "
+                       "f32(value) * 3.0 / 1023.0, 1.0)";
+
+            case wgpu::TextureFormat::RG11B10Ufloat:
+                return "vec4f(1.0, 1.0, 0.0, 1.0)";
 
             default:
                 DAWN_UNREACHABLE();
@@ -350,7 +517,7 @@ fn IsEqualTo(pixel : vec4f, expected : vec4f) -> bool {
         const char* stage,
         wgpu::TextureFormat format,
         wgpu::TextureViewDimension dimension = wgpu::TextureViewDimension::e2D) {
-        std::string componentFmt = utils::GetWGSLColorTextureComponentType(format);
+        std::string componentFmt = utils::GetWGSLColorTextureComponentTypeStr(format);
         auto texelType = "vec4<" + componentFmt + ">";
         std::string sliceCount;
         std::string textureStore;
@@ -404,6 +571,43 @@ fn IsEqualTo(pixel : vec4f, expected : vec4f) -> bool {
         if (isFragment) {
             ostream << "return vec4f();\n";
         }
+        ostream << "}\n";
+
+        return ostream.str();
+    }
+
+    std::string CommonReadOnlyTestCode(const char* stage, wgpu::TextureFormat format) {
+        wgpu::TextureViewDimension dimension = wgpu::TextureViewDimension::e2D;
+        utils::WGSLComponentType componentType = utils::GetWGSLColorTextureComponentType(format);
+        const bool isFragment = strcmp(stage, "fragment") == 0;
+        std::string textureSize = "textureDimensions(storageImage0).xy";
+
+        bool isIntegerComponent = (componentType == utils::WGSLComponentType::Int32 ||
+                                   componentType == utils::WGSLComponentType::Uint32);
+        std::string comparisonCode = isIntegerComponent
+                                         ? "any(pixel != expected)"
+                                         : "any(abs(pixel - expected) > vec4<f32>(0.001))";
+
+        std::ostringstream ostream;
+        ostream << GetEnable(format) << "\n";
+        ostream << GetImageDeclaration(format, "read", dimension, 0) << "\n";
+        ostream << "@" << stage << " fn main() ";
+        if (isFragment) {
+            ostream << "-> @location(0) vec4f ";
+        }
+        ostream << "{\n";
+        ostream << "  let size = vec2i(" << textureSize << ");\n";
+        ostream << "  for (var y = 0; y < size.y; y += 1) {\n";
+        ostream << "    for (var x = 0; x < size.x; x += 1) {\n";
+        ostream << "      let value = 1 + x + size.x * y;\n";
+        ostream << "      let expected = " << GetExpectedPixelValue(format) << ";\n";
+        ostream << "      let pixel = textureLoad(storageImage0, vec2i(x, y));\n";
+        ostream << "      if (" << comparisonCode << ") {\n";
+        ostream << "        return vec4f(1, 0, 0, 1);\n";
+        ostream << "      }\n";
+        ostream << "    }\n";
+        ostream << "  }\n";
+        ostream << "  return vec4f(0, 1, 0, 1);\n";
         ostream << "}\n";
 
         return ostream.str();
@@ -1123,50 +1327,68 @@ DAWN_INSTANTIATE_TEST(StorageTextureZeroInitTests,
                       MetalBackend({"nonzero_clear_resources_on_creation_for_testing"}),
                       VulkanBackend({"nonzero_clear_resources_on_creation_for_testing"}));
 
-class ReadWriteStorageTextureTests : public StorageTextureTests {};
+class ReadWriteStorageTextureTests : public StorageTextureTests {
+  protected:
+    void RunReadWriteStorageTextureTest(wgpu::TextureFormat format) {
+        SCOPED_TRACE(
+            absl::StrFormat("Test format: %s", utils::GetWGSLImageFormatQualifier(format)));
 
-// Verify read-write storage texture can work correctly in compute shaders.
-TEST_P(ReadWriteStorageTextureTests, ReadWriteStorageTextureInComputeShader) {
-    std::array<uint32_t, kWidth * kHeight> inputData;
-    std::array<uint32_t, kWidth * kHeight> expectedData;
-    for (size_t i = 0; i < inputData.size(); ++i) {
-        inputData[i] = i + 1;
-        expectedData[i] = inputData[i] * 2;
-    }
+        const std::vector<uint8_t> initialTextureData = GetExpectedData(format);
 
-    wgpu::Texture readWriteStorageTexture = CreateTextureWithTestData(
-        reinterpret_cast<const uint8_t*>(inputData.data()), inputData.size() * sizeof(uint32_t),
-        wgpu::TextureFormat::R32Uint);
+        wgpu::Texture readWriteStorageTexture =
+            CreateTextureWithTestData(initialTextureData.data(), initialTextureData.size(), format);
 
-    std::ostringstream sstream;
-    sstream << R"(
-@group(0) @binding(0) var rwImage : texture_storage_2d<r32uint, read_write>;
+        // The shader will add this to the .x component of the texel,
+        // to prove that it both read and wrote the texel.
+        const int alsoAdd = 2;
+
+        std::ostringstream sstream;
+
+        sstream << R"(
+@group(0) @binding(0) var rwImage : texture_storage_2d<)"
+                << utils::GetWGSLImageFormatQualifier(format) << R"(, read_write>;
 
 @compute @workgroup_size()"
-            << kWidth << ", " << kHeight << R"()
-fn main(@builtin(local_invocation_id) local_id: vec3<u32>,) {
+                << kWidth << ", " << kHeight << R"()
+fn main(@builtin(local_invocation_id) local_id: vec3<u32>) {
   var data1 = textureLoad(rwImage, vec2i(local_id.xy));
-  data1.x = data1.x * 2;
+  data1.x += )" << alsoAdd
+                << R"(; // Abstract integers automatically convert
   textureStore(rwImage, vec2i(local_id.xy), data1);
 })";
 
-    wgpu::ComputePipeline pipeline = CreateComputePipeline(sstream.str().c_str());
-    wgpu::BindGroup bindGroup = utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0),
-                                                     {{0, readWriteStorageTexture.CreateView()}});
+        wgpu::ComputePipeline pipeline = CreateComputePipeline(sstream.str().c_str());
+        wgpu::BindGroup bindGroup = utils::MakeBindGroup(
+            device, pipeline.GetBindGroupLayout(0), {{0, readWriteStorageTexture.CreateView()}});
 
-    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
-    wgpu::ComputePassEncoder computePassEncoder = encoder.BeginComputePass();
-    computePassEncoder.SetBindGroup(0, bindGroup);
-    computePassEncoder.SetPipeline(pipeline);
-    computePassEncoder.DispatchWorkgroups(1);
-    computePassEncoder.End();
-    wgpu::CommandBuffer commandBuffer = encoder.Finish();
-    queue.Submit(1, &commandBuffer);
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::ComputePassEncoder computePassEncoder = encoder.BeginComputePass();
+        computePassEncoder.SetBindGroup(0, bindGroup);
+        computePassEncoder.SetPipeline(pipeline);
+        computePassEncoder.DispatchWorkgroups(1);
+        computePassEncoder.End();
+        wgpu::CommandBuffer commandBuffer = encoder.Finish();
+        queue.Submit(1, &commandBuffer);
 
-    CheckOutputStorageTexture(readWriteStorageTexture, wgpu::TextureFormat::R32Uint,
-                              {kWidth, kHeight},
-                              reinterpret_cast<const uint8_t*>(expectedData.data()),
-                              expectedData.size() * sizeof(uint32_t));
+        std::vector<uint8_t> expectedModifiedData(initialTextureData.size());
+        const uint32_t texelSizeInBytes = utils::GetTexelBlockSizeInBytes(format);
+
+        for (uint32_t i = 0; i < kWidth * kHeight; ++i) {
+            uint8_t* pixelValuePtr = &expectedModifiedData[i * texelSizeInBytes];
+            const uint32_t x = i % kWidth;
+            const uint32_t y = i / kWidth;
+            FillExpectedData(pixelValuePtr, format, x, y, 0, alsoAdd);
+        }
+
+        CheckOutputStorageTexture(readWriteStorageTexture, format, {kWidth, kHeight},
+                                  reinterpret_cast<const uint8_t*>(expectedModifiedData.data()),
+                                  expectedModifiedData.size() * sizeof(uint32_t));
+    }
+};
+
+// Verify read-write storage texture can work correctly in compute shaders.
+TEST_P(ReadWriteStorageTextureTests, ReadWriteStorageTextureInComputeShader) {
+    RunReadWriteStorageTextureTest(wgpu::TextureFormat::R32Uint);
 }
 
 // Verify read-write storage texture can work correctly in fragment shaders.
@@ -1847,5 +2069,97 @@ DAWN_INSTANTIATE_TEST(ReadWriteStorageTextureTests,
                       MetalBackend(),
                       VulkanBackend());
 
+class Tier1StorageValidationTests : public StorageTextureTests {
+  public:
+    void SetUp() override {
+        StorageTextureTests::SetUp();
+        DAWN_TEST_UNSUPPORTED_IF(!SupportsFeatures({wgpu::FeatureName::TextureFormatsTier1}));
+    }
+    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
+        if (SupportsFeatures({wgpu::FeatureName::TextureFormatsTier1})) {
+            return {wgpu::FeatureName::TextureFormatsTier1};
+        }
+        return {};
+    }
+};
+
+// Test that kTier1AdditionalStorageFormats formats have the "write-only" GPUStorageTextureAccess
+//  capability if 'texture-formats-tier1' is enabled.
+TEST_P(Tier1StorageValidationTests, WriteonlyStorageTextureInFragmentShader) {
+    for (const auto format : utils::kTier1AdditionalStorageFormats) {
+        SCOPED_TRACE(
+            absl::StrFormat("Test format: %s", utils::GetWGSLImageFormatQualifier(format)));
+        // Prepare the write-only storage texture.
+        wgpu::Texture writeonlyStorageTexture =
+            CreateTexture(format, wgpu::TextureUsage::StorageBinding | wgpu::TextureUsage::CopySrc,
+                          {kWidth, kHeight});
+
+        // Write the expected pixel values into the write-only storage texture.
+        const std::string fragmentShader = CommonWriteOnlyTestCode("fragment", format);
+        WriteIntoStorageTextureInRenderPass(writeonlyStorageTexture, kSimpleVertexShader,
+                                            fragmentShader.c_str());
+
+        // Verify the pixel data in the write-only storage texture is expected.
+        CheckOutputStorageTexture(writeonlyStorageTexture, format, {kWidth, kHeight});
+    }
+}
+
+// Test that kTier1AdditionalStorageFormats formats have the "read-only" GPUStorageTextureAccess
+//  capability if 'texture-formats-tier1' is enabled.
+TEST_P(Tier1StorageValidationTests, ReadOnlyStorageTextureInFragmentShader) {
+    for (const auto format : utils::kTier1AdditionalStorageFormats) {
+        SCOPED_TRACE(
+            absl::StrFormat("Test format: %s", utils::GetWGSLImageFormatQualifier(format)));
+        wgpu::TextureFormat kStorageTextureFormat = format;
+        const std::vector<uint8_t> kInitialTextureData = GetExpectedData(kStorageTextureFormat);
+        wgpu::Texture readonlyStorageTexture = CreateTextureWithTestData(
+            kInitialTextureData.data(), kInitialTextureData.size(), kStorageTextureFormat);
+
+        const std::string fragmentShader = CommonReadOnlyTestCode("fragment", format);
+
+        CheckDrawsGreen(kSimpleVertexShader, fragmentShader.c_str(), readonlyStorageTexture);
+    }
+}
+
+DAWN_INSTANTIATE_TEST(Tier1StorageValidationTests,
+                      D3D11Backend(),
+                      D3D12Backend(),
+                      OpenGLBackend(),
+                      OpenGLESBackend(),
+                      MetalBackend(),
+                      VulkanBackend());
+
+class Tier2StorageValidationTests : public ReadWriteStorageTextureTests {
+  public:
+    void SetUp() override {
+        StorageTextureTests::SetUp();
+        DAWN_TEST_UNSUPPORTED_IF(!SupportsFeatures({wgpu::FeatureName::TextureFormatsTier2}));
+    }
+    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
+        if (SupportsFeatures({wgpu::FeatureName::TextureFormatsTier2})) {
+            return {wgpu::FeatureName::TextureFormatsTier2};
+        }
+        return {};
+    }
+};
+
+// Test that kTier2AdditionalIntStorageFormats support "read_write" GPUStorageTextureAccess
+// in compute shaders when 'texture-formats-tier2' is enabled.
+// TODO: Tests for r8unorm/rgba8unorm/r16float/rgba16float/rgba32float.
+TEST_P(Tier2StorageValidationTests, ReadWriteStorageTextureInComputeShader) {
+    for (const auto format : utils::kTier2AdditionalIntStorageFormats) {
+        SCOPED_TRACE(
+            absl::StrFormat("Test format: %s", utils::GetWGSLImageFormatQualifier(format)));
+        RunReadWriteStorageTextureTest(format);
+    }
+}
+
+DAWN_INSTANTIATE_TEST(Tier2StorageValidationTests,
+                      D3D11Backend(),
+                      D3D12Backend(),
+                      MetalBackend(),
+                      OpenGLBackend(),
+                      OpenGLESBackend(),
+                      VulkanBackend());
 }  // anonymous namespace
 }  // namespace dawn

@@ -1199,6 +1199,19 @@ TEST_F(TransientAttachmentValidationTest, FlagsBeyondRenderAttachment) {
     ASSERT_DEVICE_ERROR(device.CreateTexture(&desc));
 }
 
+// Test that kTier1AdditionalRenderableFormats formats are invalid as renderable texture without
+// TextureFormatsTier1.
+TEST_F(TextureValidationTest, NoRenderableSupport) {
+    for (const auto format : utils::kTier1AdditionalRenderableFormats) {
+        SCOPED_TRACE(absl::StrFormat("Test format: %s", format));
+        wgpu::TextureDescriptor descriptor;
+        descriptor.size = {1, 1, 1};
+        descriptor.usage = wgpu::TextureUsage::RenderAttachment;
+        descriptor.format = format;
+        ASSERT_DEVICE_ERROR(device.CreateTexture(&descriptor));
+    }
+}
+
 class TextureFormatsTier1TextureTest : public TextureValidationTest {
   protected:
     std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
@@ -1206,17 +1219,50 @@ class TextureFormatsTier1TextureTest : public TextureValidationTest {
     }
 };
 
-// Test that
-// r8snorm/rg8snorm/rgba8snorm/r16unorm/r16snorm/rg16unorm/rg16snorm/rgba16unorm/rgba16snorm formats
-// are valid as renderable texture if 'texture-formats-tier1' is enabled.
-TEST_F(TextureFormatsTier1TextureTest, SNORMFormatsAreRenderableWithFeatureEnabled) {
+// Test that kTier1AdditionalRenderableFormats formats are valid as renderable texture and they also
+// allow multisampling with TextureFormatsTier1.
+TEST_F(TextureFormatsTier1TextureTest, RenderableAndMultisampleSupport) {
     for (const auto format : utils::kTier1AdditionalRenderableFormats) {
+        SCOPED_TRACE(absl::StrFormat("Test format: %s", format));
         wgpu::TextureDescriptor descriptor;
         descriptor.size = {1, 1, 1};
         descriptor.usage = wgpu::TextureUsage::RenderAttachment;
         descriptor.format = format;
+        descriptor.sampleCount = 4;
+        device.CreateTexture(&descriptor);
+    }
+}
 
-        wgpu::Texture texture = device.CreateTexture(&descriptor);
+// Test that creating a storage texture using kTier1AdditionalStorageFormats succeeds when
+// TextureFormatsTier1 feature is enabled.
+TEST_F(TextureFormatsTier1TextureTest, StorageBindingSuppport) {
+    for (wgpu::TextureFormat format : utils::kTier1AdditionalStorageFormats) {
+        wgpu::TextureDescriptor descriptor;
+        descriptor.size = {1, 1, 1};
+        descriptor.usage = wgpu::TextureUsage::StorageBinding;
+        SCOPED_TRACE(absl::StrFormat("Test format: %s", format));
+        descriptor.format = format;
+        device.CreateTexture(&descriptor);
+    }
+}
+
+class TextureFormatsTier2TextureTest : public TextureValidationTest {
+  protected:
+    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
+        return {wgpu::FeatureName::TextureFormatsTier2};
+    }
+};
+
+// Test that creating a storage texture using kTier2AdditionalStorageFormats succeeds when
+// TextureFormatsTier2 feature is enabled.
+TEST_F(TextureFormatsTier2TextureTest, StorageBindingSuppport) {
+    for (wgpu::TextureFormat format : utils::kTier2AdditionalStorageFormats) {
+        wgpu::TextureDescriptor descriptor;
+        descriptor.size = {1, 1, 1};
+        descriptor.usage = wgpu::TextureUsage::StorageBinding;
+        SCOPED_TRACE(absl::StrFormat("Test format: %s", format));
+        descriptor.format = format;
+        device.CreateTexture(&descriptor);
     }
 }
 

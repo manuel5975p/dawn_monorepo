@@ -161,7 +161,7 @@ MaybeError Queue::WaitForSerial(ExecutionSerial serial) {
         return {};
     }
     DAWN_TRY_ASSIGN(std::ignore,
-                    WaitForQueueSerial(serial, std::numeric_limits<Nanoseconds>::max()));
+                    WaitForQueueSerialImpl(serial, std::numeric_limits<Nanoseconds>::max()));
     return CheckPassedSerials();
 }
 
@@ -170,6 +170,9 @@ bool Queue::HasPendingCommands() const {
 }
 
 ResultOrError<ExecutionSerial> Queue::CheckAndUpdateCompletedSerials() {
+    // TODO(crbug.com/40643114): Revisit whether this lock is needed for this backend.
+    auto deviceGuard = GetDevice()->GetGuard();
+
     ExecutionSerial completedSerial = ExecutionSerial(mFence->GetCompletedValue());
     if (completedSerial == ExecutionSerial(UINT64_MAX)) [[unlikely]] {
         // GetCompletedValue returns UINT64_MAX if the device was removed.
@@ -194,7 +197,7 @@ void Queue::ForceEventualFlushOfCommands() {
     mPendingCommands.SetNeedsSubmit();
 }
 
-MaybeError Queue::WaitForIdleForDestruction() {
+MaybeError Queue::WaitForIdleForDestructionImpl() {
     // Immediately forget about all pending commands
     mPendingCommands.Release();
 

@@ -113,10 +113,11 @@ class ErrorQueue : public QueueBase {
     MaybeError SubmitPendingCommandsImpl() override { DAWN_UNREACHABLE(); }
     ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override { DAWN_UNREACHABLE(); }
     void ForceEventualFlushOfCommands() override { DAWN_UNREACHABLE(); }
-    ResultOrError<bool> WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) override {
+    ResultOrError<ExecutionSerial> WaitForQueueSerialImpl(ExecutionSerial waitSerial,
+                                                          Nanoseconds timeout) override {
         DAWN_UNREACHABLE();
     }
-    MaybeError WaitForIdleForDestruction() override { DAWN_UNREACHABLE(); }
+    MaybeError WaitForIdleForDestructionImpl() override { DAWN_UNREACHABLE(); }
 };
 
 }  // namespace
@@ -228,7 +229,7 @@ Future QueueBase::APIOnSubmittedWorkDone(const WGPUQueueWorkDoneCallbackInfo& ca
     {
         // TODO(crbug.com/dawn/831) Manually acquire device lock instead of relying on code-gen for
         // re-entrancy.
-        auto deviceLock(GetDevice()->GetScopedLock());
+        auto deviceGuard = GetDevice()->GetGuard();
         if (GetDevice()->ConsumedError(GetDevice()->ValidateIsAlive())) {
             event = AcquireRef(
                 new WorkDoneEvent(callbackInfo, this, wgpu::QueueWorkDoneStatus::Success));

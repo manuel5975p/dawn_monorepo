@@ -7,24 +7,29 @@
 import pickle
 import os
 import tempfile
+import copy
 from vulkan_object import (VulkanObject,
     Extension, Version, Deprecate, Handle, Param, Queues, CommandScope, Command,
     EnumField, Enum, Flag, Bitmask, ExternSync, Flags, Member, Struct,
     Constant, FormatComponent, FormatPlane, Format,
     SyncSupport, SyncEquivalent, SyncStage, SyncAccess, SyncPipelineStage, SyncPipeline,
-    SpirvEnables, Spirv)
+    SpirvEnables, Spirv,
+    VideoCodec, VideoFormat, VideoProfiles, VideoProfileMember, VideoRequiredCapabilities,
+    VideoStd, VideoStdHeader)
 
 # These live in the Vulkan-Docs repo, but are pulled in via the
 # Vulkan-Headers/registry folder
 from generator import OutputGenerator, GeneratorOptions, write
 from vkconventions import VulkanConventions
+from reg import Registry
+from xml.etree import ElementTree
 
 # An API style convention object
 vulkanConventions = VulkanConventions()
 
 # Helpers to keep things cleaner
 def splitIfGet(elem, name):
-    return elem.get(name).split(',') if elem.get(name) is not None and elem.get(name) != '' else None
+    return elem.get(name).split(',') if elem.get(name) is not None and elem.get(name) != '' else []
 
 def textIfFind(elem, name):
     return elem.find(name).text if elem.find(name) is not None else None
@@ -62,7 +67,7 @@ def externSyncGet(elem):
 def getQueues(elem) -> Queues:
     queues = 0
     queues_list = splitIfGet(elem, 'queues')
-    if queues_list is not None:
+    if len(queues_list) > 0:
         queues |= Queues.TRANSFER if 'transfer' in queues_list else 0
         queues |= Queues.GRAPHICS if 'graphics' in queues_list else 0
         queues |= Queues.COMPUTE if 'compute' in queues_list else 0
@@ -125,6 +130,19 @@ class APISpecific:
                 nameString = f'"{name}"'
                 return Version(name, nameString, nameApi)
 
+    # TODO - Currently genType in reg.py does not provide a good way to get this string to apply the C-macro
+    # We do our best to emulate the answer here the way the spec/headers will with goal to have a proper fix before these assumptions break
+    @staticmethod
+    def createHeaderVersion(targetApiName: str, vk: VulkanObject) -> str:
+        match targetApiName:
+            case 'vulkan':
+                major_version = 1
+                minor_version = 4
+            case 'vulkansc':
+                major_version = 1
+                minor_version = 0
+        return  f'{major_version}.{minor_version}.{vk.headerVersion}'
+
 
 # This Generator Option is used across all generators.
 # After years of use, it has shown that most the options are unified across each generator (file)
@@ -133,7 +151,8 @@ class BaseGeneratorOptions(GeneratorOptions):
     def __init__(self,
                  customFileName = None,
                  customDirectory = None,
-                 customApiName = None):
+                 customApiName = None,
+                 videoXmlPath = None):
         GeneratorOptions.__init__(self,
                 conventions = vulkanConventions,
                 filename = customFileName if customFileName else globalFileName,
@@ -149,6 +168,9 @@ class BaseGeneratorOptions(GeneratorOptions):
         self.apientry        = 'VKAPI_CALL '
         self.apientryp       = 'VKAPI_PTR *'
         self.alignFuncParam  = 48
+
+        # This is used to provide the video.xml to the private video XML generator
+        self.videoXmlPath = videoXmlPath
 
 #
 # This object handles all the parsing from reg.py generator scripts in the Vulkan-Headers
@@ -221,6 +243,16 @@ class BaseGenerator(OutputGenerator):
         self.vk.queueBits[Queues.OPTICAL_FLOW]   = 'VK_QUEUE_OPTICAL_FLOW_BIT_NV'
         self.vk.queueBits[Queues.DECODE]         = 'VK_QUEUE_VIDEO_DECODE_BIT_KHR'
         self.vk.queueBits[Queues.ENCODE]         = 'VK_QUEUE_VIDEO_ENCODE_BIT_KHR'
+        self.vk.queueBits[Queues.DATA_GRAPH]     = 'VK_QUEUE_DATA_GRAPH_BIT_ARM'
+
+        # If the video.xml path is provided then we need to load and parse it using
+        # the private video std generator
+        if genOpts.videoXmlPath is not None:
+            videoStdGenerator = _VideoStdGenerator()
+            videoRegistry = Registry(videoStdGenerator, genOpts)
+            videoRegistry.loadElementTree(ElementTree.parse(genOpts.videoXmlPath))
+            videoRegistry.apiGen()
+            self.vk.videoStd = videoStdGenerator.vk.videoStd
 
     # This function should be overloaded
     def generate(self):
@@ -391,31 +423,98 @@ class BaseGenerator(OutputGenerator):
         for key, value in self.handleAliasMap.items():
             self.vk.handles[self.dealias(value, self.handleAliasMap)].aliases.append(key)
 
-
-    def addConstants(self):
-        for constantName in [k for k,v in self.registry.enumvaluedict.items() if v == 'API Constants']:
+    def addConstants(self, constantNames: list[str]):
+        for constantName in constantNames:
             enumInfo = self.registry.enumdict[constantName]
             typeName = enumInfo.type
             valueStr = enumInfo.elem.get('value')
             # These values are represented in c-style
-            if valueStr.upper().endswith('F'):
+            isHex = valueStr.upper().startswith('0X')
+            intBase = 16 if isHex else 10
+            if valueStr.upper().endswith('F') and not isHex:
                 value = float(valueStr[:-1])
             elif valueStr.upper().endswith('U)'):
-                inner_number = int(valueStr.removeprefix("(~").removesuffix(")")[:-1])
+                inner_number = int(valueStr.removeprefix("(~").removesuffix(")")[:-1], intBase)
                 value = (~inner_number) & ((1 << 32) - 1)
             elif valueStr.upper().endswith('ULL)'):
-                inner_number = int(valueStr.removeprefix("(~").removesuffix(")")[:-3])
+                inner_number = int(valueStr.removeprefix("(~").removesuffix(")")[:-3], intBase)
                 value = (~0) & ((1 << 64) - 1)
             else:
-                value = int(valueStr)
+                value = int(valueStr, intBase)
             self.vk.constants[constantName] = Constant(constantName, typeName, value, valueStr)
+
+    def addVideoCodecs(self):
+        for xmlVideoCodec in self.registry.tree.findall('videocodecs/videocodec'):
+            name = xmlVideoCodec.get('name')
+            extend = xmlVideoCodec.get('extend')
+            value = xmlVideoCodec.get('value')
+
+            profiles: dict[str, VideoProfiles] = {}
+            capabilities: dict[str, str] = {}
+            formats: dict[str, VideoFormat] = {}
+
+            if extend is not None:
+                # Inherit base profiles, capabilities, and formats
+                profiles = copy.deepcopy(self.vk.videoCodecs[extend].profiles)
+                capabilities = copy.deepcopy(self.vk.videoCodecs[extend].capabilities)
+                formats = copy.deepcopy(self.vk.videoCodecs[extend].formats)
+
+            for xmlVideoProfiles in xmlVideoCodec.findall('videoprofiles'):
+                videoProfileStructName = xmlVideoProfiles.get('struct')
+                videoProfileStructMembers : dict[str, VideoProfileMember] = {}
+
+                for xmlVideoProfileMember in xmlVideoProfiles.findall('videoprofilemember'):
+                    memberName = xmlVideoProfileMember.get('name')
+                    memberValues: dict[str, str] = {}
+
+                    for xmlVideoProfile in xmlVideoProfileMember.findall('videoprofile'):
+                        memberValues[xmlVideoProfile.get('value')] = xmlVideoProfile.get('name')
+
+                    videoProfileStructMembers[memberName] = VideoProfileMember(memberName, memberValues)
+
+                profiles[videoProfileStructName] = VideoProfiles(videoProfileStructName, videoProfileStructMembers)
+
+            for xmlVideoCapabilities in xmlVideoCodec.findall('videocapabilities'):
+                capabilities[xmlVideoCapabilities.get('struct')] = xmlVideoCapabilities.get('struct')
+
+            for xmlVideoFormat in xmlVideoCodec.findall('videoformat'):
+                videoFormatName = xmlVideoFormat.get('name')
+                videoFormatExtend = xmlVideoFormat.get('extend')
+
+                videoFormatRequiredCaps: list[VideoRequiredCapabilities] = []
+                videoFormatProps: dict[str, str] = {}
+
+                if videoFormatName is not None:
+                    # This is a new video format category
+                    videoFormatUsage = xmlVideoFormat.get('usage')
+                    videoFormat = VideoFormat(videoFormatName, videoFormatUsage, videoFormatRequiredCaps, videoFormatProps)
+                    formats[videoFormatName] = videoFormat
+                else:
+                    # This is an extension to an already defined video format category
+                    videoFormat = formats[videoFormatExtend]
+                    videoFormatRequiredCaps = videoFormat.requiredCaps
+                    videoFormatProps = videoFormat.properties
+
+                for xmlVideoFormatRequiredCap in xmlVideoFormat.findall('videorequirecapabilities'):
+                    requiredCap = VideoRequiredCapabilities(xmlVideoFormatRequiredCap.get('struct'),
+                                                            xmlVideoFormatRequiredCap.get('member'),
+                                                            xmlVideoFormatRequiredCap.get('value'))
+                    videoFormatRequiredCaps.append(requiredCap)
+
+                for xmlVideoFormatProperties in xmlVideoFormat.findall('videoformatproperties'):
+                    videoFormatProps[xmlVideoFormatProperties.get('struct')] = xmlVideoFormatProperties.get('struct')
+
+            self.vk.videoCodecs[name] = VideoCodec(name, value, profiles, capabilities, formats)
 
     def endFile(self):
         # This is the point were reg.py has ran, everything is collected
         # We do some post processing now
         self.applyExtensionDependency()
 
-        self.addConstants()
+        self.addConstants([k for k,v in self.registry.enumvaluedict.items() if v == 'API Constants'])
+        self.addVideoCodecs()
+
+        self.vk.headerVersionComplete = APISpecific.createHeaderVersion(self.targetApiName, self.vk)
 
         # Use structs and commands to find which things are returnedOnly
         for struct in [x for x in self.vk.structs.values() if not x.returnedOnly]:
@@ -447,10 +546,6 @@ class BaseGenerator(OutputGenerator):
                 handle.instance = next_parent.name == 'VkInstance'
                 handle.device = next_parent.name == 'VkDevice'
                 next_parent = next_parent.parent
-
-        # This use to be Queues.ALL, but there is no real concept of "all"
-        # Found this just needs to be something non-None
-        maxSyncSupport.queues = Queues.TRANSFER
 
         maxSyncSupport.stages = self.vk.bitmasks['VkPipelineStageFlagBits2'].flags
         maxSyncEquivalent.accesses = self.vk.bitmasks['VkAccessFlagBits2'].flags
@@ -511,7 +606,7 @@ class BaseGenerator(OutputGenerator):
             obsoletedby = interface.get('obsoletedby')
             specialuse = splitIfGet(interface, 'specialuse')
             ratifiedApis = splitIfGet(interface, 'ratified')
-            ratified = True if ratifiedApis is not None and self.genOpts.apiname in ratifiedApis else False
+            ratified = True if len(ratifiedApis) > 0 and self.genOpts.apiname in ratifiedApis else False
 
             # Not sure if better way to get this info
             specVersion = self.featureDictionary[name]['enumconstant'][None][None][0]
@@ -570,8 +665,8 @@ class BaseGenerator(OutputGenerator):
 
             # See Member::optional code for details of this
             optionalValues = splitIfGet(param, 'optional')
-            optional = optionalValues is not None and optionalValues[0].lower() == "true"
-            optionalPointer = optionalValues is not None and len(optionalValues) > 1 and optionalValues[1].lower() == "true"
+            optional = len(optionalValues) > 0 and optionalValues[0].lower() == "true"
+            optionalPointer = len(optionalValues) > 1 and optionalValues[1].lower() == "true"
 
             # externsync will be 'true', 'maybe', '<expression>' or 'maybe:<expression>'
             (externSync, externSyncPointer) = externSyncGet(param)
@@ -722,7 +817,7 @@ class BaseGenerator(OutputGenerator):
 
         typeElem = typeInfo.elem
         protect = self.currentExtension.protect if hasattr(self.currentExtension, 'protect') and self.currentExtension.protect is not None else None
-        extension = [self.currentExtension] if self.currentExtension is not None else []
+        extension = [self.currentExtension.name] if self.currentExtension is not None else []
         category = typeElem.get('category')
         if (category == 'struct' or category == 'union'):
             if alias is not None:
@@ -735,7 +830,7 @@ class BaseGenerator(OutputGenerator):
             allowDuplicate = boolGet(typeElem, 'allowduplicate')
 
             extends = splitIfGet(typeElem, 'structextends')
-            extendedBy = self.registry.validextensionstructs[typeName] if len(self.registry.validextensionstructs[typeName]) > 0 else None
+            extendedBy = self.registry.validextensionstructs[typeName] if len(self.registry.validextensionstructs[typeName]) > 0 else []
 
             membersElem = typeInfo.elem.findall('.//member')
             members = []
@@ -774,19 +869,22 @@ class BaseGenerator(OutputGenerator):
                 if fixedSizeArray and not length:
                     length = ','.join(fixedSizeArray)
 
+                # Handle C bit field members
+                bitFieldWidth = int(cdecl.split(':')[1]) if ':' in cdecl else None
+
                 # if a pointer, this can be a something like:
                 #     optional="true,false" for ppGeometries
                 #     optional="false,true" for pPhysicalDeviceCount
                 # the first is if the variable itself is optional
                 # the second is the value of the pointer is optional;
                 optionalValues = splitIfGet(member, 'optional')
-                optional = optionalValues is not None and optionalValues[0].lower() == "true"
-                optionalPointer = optionalValues is not None and len(optionalValues) > 1 and optionalValues[1].lower() == "true"
+                optional = len(optionalValues) > 0 and optionalValues[0].lower() == "true"
+                optionalPointer = len(optionalValues) > 1 and optionalValues[1].lower() == "true"
 
                 members.append(Member(name, type, fullType, noautovalidity, limittype,
                                       const, length, nullTerminated, pointer, fixedSizeArray,
                                       optional, optionalPointer,
-                                      externSync, cdecl))
+                                      externSync, cdecl, bitFieldWidth))
 
             self.vk.structs[typeName] = Struct(typeName, [], extension, self.currentVersion, protect, members,
                                                union, returnedOnly, sType, allowDuplicate, extends, extendedBy)
@@ -901,16 +999,16 @@ class BaseGenerator(OutputGenerator):
         if supportElem is not None:
             queues = getQueues(supportElem)
             stageNames = splitIfGet(supportElem, 'stage')
-            stages = [x for x in self.vk.bitmasks['VkPipelineStageFlagBits2'].flags if x.name in stageNames] if stageNames is not None else None
+            stages = [x for x in self.vk.bitmasks['VkPipelineStageFlagBits2'].flags if x.name in stageNames] if len(stageNames) > 0 else None
             support = SyncSupport(queues, stages, False)
 
         equivalent = maxSyncEquivalent
         equivalentElem = syncElem.find('syncequivalent')
         if equivalentElem is not None:
             stageNames = splitIfGet(equivalentElem, 'stage')
-            stages = [x for x in self.vk.bitmasks['VkPipelineStageFlagBits2'].flags if x.name in stageNames] if stageNames is not None else None
+            stages = [x for x in self.vk.bitmasks['VkPipelineStageFlagBits2'].flags if x.name in stageNames] if len(stageNames) > 0 else None
             accessNames = splitIfGet(equivalentElem, 'access')
-            accesses = [x for x in self.vk.bitmasks['VkAccessFlagBits2'].flags if x.name in accessNames] if accessNames is not None else None
+            accesses = [x for x in self.vk.bitmasks['VkAccessFlagBits2'].flags if x.name in accessNames] if len(accessNames) > 0 else None
             equivalent = SyncEquivalent(stages, accesses, False)
 
         flagName = syncElem.get('name')
@@ -928,16 +1026,16 @@ class BaseGenerator(OutputGenerator):
         if supportElem is not None:
             queues = getQueues(supportElem)
             stageNames = splitIfGet(supportElem, 'stage')
-            stages = [x for x in self.vk.bitmasks['VkPipelineStageFlagBits2'].flags if x.name in stageNames] if stageNames is not None else None
+            stages = [x for x in self.vk.bitmasks['VkPipelineStageFlagBits2'].flags if x.name in stageNames] if len(stageNames) > 0 else None
             support = SyncSupport(queues, stages, False)
 
         equivalent = maxSyncEquivalent
         equivalentElem = syncElem.find('syncequivalent')
         if equivalentElem is not None:
             stageNames = splitIfGet(equivalentElem, 'stage')
-            stages = [x for x in self.vk.bitmasks['VkPipelineStageFlagBits2'].flags if x.name in stageNames] if stageNames is not None else None
+            stages = [x for x in self.vk.bitmasks['VkPipelineStageFlagBits2'].flags if x.name in stageNames] if len(stageNames) > 0 else None
             accessNames = splitIfGet(equivalentElem, 'access')
-            accesses = [x for x in self.vk.bitmasks['VkAccessFlagBits2'].flags if x.name in accessNames] if accessNames is not None else None
+            accesses = [x for x in self.vk.bitmasks['VkAccessFlagBits2'].flags if x.name in accessNames] if len(accessNames) > 0 else None
             equivalent = SyncEquivalent(stages, accesses, False)
 
         flagName = syncElem.get('name')
@@ -960,3 +1058,119 @@ class BaseGenerator(OutputGenerator):
             stages.append(SyncPipelineStage(order, before, after, value))
 
         self.vk.syncPipeline.append(SyncPipeline(name, depends, stages))
+
+#
+# This object handles all the parsing from the video.xml (i.e. Video Std header definitions)
+# It will fill in video standard definitions into the VulkanObject
+class _VideoStdGenerator(BaseGenerator):
+    def __init__(self):
+        BaseGenerator.__init__(self)
+        self.vk.videoStd = VideoStd()
+
+        # Track the current Video Std header we are processing
+        self.currentVideoStdHeader = None
+
+    def write(self, data):
+        # We do not write anything here
+        return
+
+    def beginFile(self, genOpts):
+        # We intentionally skip default BaseGenerator behavior
+        OutputGenerator.beginFile(self, genOpts)
+
+    def endFile(self):
+        # Move parsed definitions to the Video Std definitions
+        self.vk.videoStd.enums = self.vk.enums
+        self.vk.videoStd.structs = self.vk.structs
+        self.vk.videoStd.constants = self.vk.constants
+
+        # We intentionally skip default BaseGenerator behavior
+        OutputGenerator.endFile(self)
+
+    def beginFeature(self, interface, emit):
+        # We intentionally skip default BaseGenerator behavior
+        OutputGenerator.beginFeature(self, interface, emit)
+
+        # Only "extension" is possible in the video.xml, identifying the Video Std header
+        assert interface.tag == 'extension'
+        name = interface.get('name')
+        version: (str | None) = None
+        depends: list[str] = []
+
+        # Handle Video Std header version constant
+        for enum in interface.findall('require/enum[@value]'):
+            enumName = enum.get('name')
+            if enumName.endswith('_SPEC_VERSION'):
+                version = enum.get('value')
+
+        # Handle dependencies on other Video Std headers
+        for type in interface.findall('require/type[@name]'):
+            typeName = type.get('name')
+            if typeName.startswith('vk_video/'):
+                depends.append(typeName[len('vk_video/'):-len('.h')])
+
+        headerFile = f'vk_video/{name}.h'
+
+        self.vk.videoStd.headers[name] = VideoStdHeader(name, version, headerFile, depends)
+
+        self.currentVideoStdHeader = self.vk.videoStd.headers[name]
+
+        # Handle constants here as that seems the most straightforward
+        constantNames = []
+        for enum in interface.findall('require/enum[@type]'):
+            constantNames.append(enum.get('name'))
+        self.addConstants(constantNames)
+        for constantName in constantNames:
+            self.vk.constants[constantName].videoStdHeader = self.currentVideoStdHeader.name
+
+    def endFeature(self):
+        self.currentVideoStdHeader = None
+
+        # We intentionally skip default BaseGenerator behavior
+        OutputGenerator.endFeature(self)
+
+    def genCmd(self, cmdinfo, name, alias):
+        # video.xml should not contain any commands
+        assert False
+
+    def genGroup(self, groupinfo, groupName, alias):
+        BaseGenerator.genGroup(self, groupinfo, groupName, alias)
+
+        # We are supposed to be inside a video std header
+        assert self.currentVideoStdHeader is not None
+
+        # Mark the enum with the Video Std header it comes from
+        if groupinfo.elem.get('type') == 'enum':
+            assert alias is None
+            self.vk.enums[groupName].videoStdHeader = self.currentVideoStdHeader.name
+
+    def genType(self, typeInfo, typeName, alias):
+        BaseGenerator.genType(self, typeInfo, typeName, alias)
+
+        # We are supposed to be inside a video std header
+        assert self.currentVideoStdHeader is not None
+
+        # Mark the struct with the Video Std header it comes from
+        if typeInfo.elem.get('category') == 'struct':
+            assert alias is None
+            self.vk.structs[typeName].videoStdHeader = self.currentVideoStdHeader.name
+
+    def genSpirv(self, spirvinfo, spirvName, alias):
+        # video.xml should not contain any SPIR-V info
+        assert False
+
+    def genFormat(self, format, formatinfo, alias):
+        # video.xml should not contain any format info
+        assert False
+
+    def genSyncStage(self, sync):
+        # video.xml should not contain any sync stage info
+        assert False
+
+    def genSyncAccess(self, sync):
+        # video.xml should not contain any sync access info
+        assert False
+
+    def genSyncPipeline(self, sync):
+        # video.xml should not contain any sync pipeline info
+        assert False

@@ -73,6 +73,7 @@ type struct_with_runtime_array
   d2
   d3
   Cube
+  Buffer
   SubpassData
 }
 
@@ -128,25 +129,47 @@ match samplers
 
 match f32_texel_format
   : texel_format.r8unorm
+  | texel_format.r8snorm
+  | texel_format.rg8unorm
+  | texel_format.rg8snorm
   | texel_format.bgra8unorm
   | texel_format.rgba8unorm
   | texel_format.rgba8snorm
+  | texel_format.r16unorm
+  | texel_format.r16snorm
+  | texel_format.rg16unorm
+  | texel_format.rg16snorm
+  | texel_format.rgba16unorm
+  | texel_format.rgba16snorm
+  | texel_format.r16float
+  | texel_format.rg16float
   | texel_format.rgba16float
   | texel_format.r32float
   | texel_format.rg32float
   | texel_format.rgba32float
+  | texel_format.rgb10a2unorm
+  | texel_format.rg11b10ufloat
 match i32_texel_format
-  : texel_format.rgba8sint
+  : texel_format.r8sint
+  | texel_format.rg8sint
+  | texel_format.rgba8sint
+  | texel_format.r16sint
+  | texel_format.rg16sint
   | texel_format.rgba16sint
   | texel_format.r32sint
   | texel_format.rg32sint
   | texel_format.rgba32sint
 match u32_texel_format
-  : texel_format.rgba8uint
+  : texel_format.r8uint
+  | texel_format.rg8uint
+  | texel_format.r16uint
+  | texel_format.rg16uint
+  | texel_format.rgba8uint
   | texel_format.rgba16uint
   | texel_format.r32uint
   | texel_format.rg32uint
   | texel_format.rgba32uint
+  | texel_format.rgb10a2uint
 
 match read_write
   : access.read_write
@@ -161,6 +184,7 @@ match dim_1d : dim.d1
 match dim_2d : dim.d2
 match dim_3d : dim.d3
 match dim_cube : dim.Cube
+match dim_buffer : dim.Buffer
 match dim_subpass : dim.SubpassData
 match dim_1d_2d_3d_or_cube
   : dim.d1
@@ -444,6 +468,9 @@ implicit(T: fiu32, F: texel_format, A: access)
 fn image_query_size<R: iu32>(image: image<T, dim_1d, non_depth, non_arrayed, single_sampled, rw_op_compatible, F, A>) -> R
 
 implicit(T: fiu32, F: texel_format, A: access)
+fn image_query_size<R: iu32>(image: image<T, dim_buffer, non_depth, non_arrayed, single_sampled, rw_op_compatible, F, A>) -> R
+
+implicit(T: fiu32, F: texel_format, A: access)
 fn image_query_size<R: iu32>(image: image<T, dim_2d, non_depth, non_arrayed, single_sampled, rw_op_compatible, F, A>) -> vec2<R>
 
 implicit(T: fiu32, F: texel_format, A: access)
@@ -482,6 +509,10 @@ fn image_query_size<R: iu32>(image: image<f32, dim_2d, is_depth, non_arrayed, mu
 //////////////////////////////////////////////
 implicit(T: fiu32, L: iu32, S: sampled, F: texel_format, A: access)
 fn image_query_size_lod<R: iu32>(image: image<T, dim_1d, non_depth, non_arrayed, single_sampled, S, F, A>,
+                                 level: L) -> R
+
+implicit(T: fiu32, L: iu32, S: sampled, F: texel_format, A: access)
+fn image_query_size_lod<R: iu32>(image: image<T, dim_buffer, non_depth, non_arrayed, single_sampled, S, F, A>,
                                  level: L) -> R
 
 implicit(T: fiu32, L: iu32, S: sampled, F: texel_format, A: access)
@@ -543,13 +574,28 @@ fn image_read(image: image<f32, dim_1d, non_depth, non_arrayed, single_sampled, 
               coords: C,
               image_operands: u32) -> vec4<f32>
 
+implicit(F: f32_texel_format, A: readable, C: iu32)
+fn image_read(image: image<f32, dim_buffer, non_depth, non_arrayed, single_sampled, rw_op_compatible, F, A>,
+              coords: C,
+              image_operands: u32) -> vec4<f32>
+
 implicit(F: i32_texel_format, A: readable, C: iu32)
 fn image_read(image: image<i32, dim_1d, non_depth, non_arrayed, single_sampled, rw_op_compatible, F, A>,
               coords: C,
               image_operands: u32) -> vec4<i32>
 
+implicit(F: i32_texel_format, A: readable, C: iu32)
+fn image_read(image: image<i32, dim_buffer, non_depth, non_arrayed, single_sampled, rw_op_compatible, F, A>,
+              coords: C,
+              image_operands: u32) -> vec4<i32>
+
 implicit(F: u32_texel_format, A: readable, C: iu32)
 fn image_read(image: image<u32, dim_1d, non_depth, non_arrayed, single_sampled, rw_op_compatible, F, A>,
+              coords: C,
+              image_operands: u32) -> vec4<u32>
+
+implicit(F: u32_texel_format, A: readable, C: iu32)
+fn image_read(image: image<u32, dim_buffer, non_depth, non_arrayed, single_sampled, rw_op_compatible, F, A>,
               coords: C,
               image_operands: u32) -> vec4<u32>
 
@@ -1489,13 +1535,32 @@ fn image_write(image: image<f32, dim_1d, non_depth, non_arrayed, single_sampled,
                image_operands: u32)
 
 implicit(C: iu32, F: texel_format, A: access)
+fn image_write(image: image<f32, dim_buffer, non_depth, non_arrayed, single_sampled, rw_op_compatible, f32_texel_format, writable>,
+               coords: C,
+               texel: vec4<f32>,
+               image_operands: u32)
+
+implicit(C: iu32, F: texel_format, A: access)
 fn image_write(image: image<i32, dim_1d, non_depth, non_arrayed, single_sampled, rw_op_compatible, i32_texel_format, writable>,
                coords: C,
                texel: vec4<i32>,
                image_operands: u32)
 
 implicit(C: iu32, F: texel_format, A: access)
+fn image_write(image: image<i32, dim_buffer, non_depth, non_arrayed, single_sampled, rw_op_compatible, i32_texel_format, writable>,
+               coords: C,
+               texel: vec4<i32>,
+               image_operands: u32)
+
+
+implicit(C: iu32, F: texel_format, A: access)
 fn image_write(image: image<u32, dim_1d, non_depth, non_arrayed, single_sampled, rw_op_compatible, u32_texel_format, writable>,
+               coords: C,
+               texel: vec4<u32>,
+               image_operands: u32)
+
+implicit(C: iu32, F: texel_format, A: access)
+fn image_write(image: image<u32, dim_buffer, non_depth, non_arrayed, single_sampled, rw_op_compatible, u32_texel_format, writable>,
                coords: C,
                texel: vec4<u32>,
                image_operands: u32)
@@ -1790,4 +1855,57 @@ fn u_dot(u32, u32, u32) -> u32
     subgroup_matrix<subgroup_matrix_kind_result, TR, C, R>,
     u32)
     -> subgroup_matrix<subgroup_matrix_kind_result, TR, C, R>
+
+////////////////////////////////////////////////////////////////////////////////
+// Subgroups
+////////////////////////////////////////////////////////////////////////////////
+@must_use @stage("fragment", "compute") implicit(T: scalar)
+fn group_non_uniform_broadcast(scope: u32, e: T, @const id: u32) -> T
+@must_use @stage("fragment", "compute") implicit(N: num, T: scalar)
+fn group_non_uniform_broadcast(scope: u32, e: vec<N, T>, @const id: u32) -> vec<N, T>
+
+@must_use @stage("fragment", "compute") implicit(T: scalar)
+fn group_non_uniform_broadcast_first(scope: u32, value: T) -> T
+@must_use @stage("fragment", "compute") implicit(N: num, T: scalar)
+fn group_non_uniform_broadcast_first(scope: u32, value: vec<N, T>) -> vec<N, T>
+
+@must_use @stage("fragment", "compute") implicit(T: scalar)
+fn group_non_uniform_quad_broadcast(scope: u32, e: T, @const id: u32) -> T
+@must_use @stage("fragment", "compute") implicit(N: num, T: scalar)
+fn group_non_uniform_quad_broadcast(scope: u32, e: vec<N, T>, @const id: u32) -> vec<N, T>
+
+@must_use @stage("fragment", "compute") implicit(T: scalar)
+fn group_non_uniform_quad_swap(scope: u32, e: T, @const dir: u32) -> T
+@must_use @stage("fragment", "compute") implicit(N: num, T: scalar)
+fn group_non_uniform_quad_swap(scope:u32, e: vec<N, T>, @const dir: u32) -> vec<N, T>
+
+@must_use @stage("fragment", "compute") implicit(T: scalar)
+fn group_non_uniform_shuffle(scope: u32, value: T, id: u32) -> T
+@must_use @stage("fragment", "compute") implicit(N: num, T: scalar)
+fn group_non_uniform_shuffle(scope: u32, value: vec<N, T>, id: u32) -> vec<N, T>
+
+@must_use @stage("fragment", "compute") implicit(T: scalar)
+fn group_non_uniform_shuffle_xor(scope: u32, value: T, mask: u32) -> T
+@must_use @stage("fragment", "compute") implicit(N: num, T: scalar)
+fn group_non_uniform_shuffle_xor(scope: u32, value: vec<N, T>, mask: u32) -> vec<N, T>
+
+@must_use @stage("fragment", "compute") implicit(T: scalar)
+fn group_non_uniform_shuffle_down(scope: u32, value: T, delta: u32) -> T
+@must_use @stage("fragment", "compute") implicit(N: num, T: scalar)
+fn group_non_uniform_shuffle_down(scope: u32, value: vec<N, T>, delta: u32) -> vec<N, T>
+
+@must_use @stage("fragment", "compute") implicit(T: scalar)
+fn group_non_uniform_shuffle_up(scope: u32, value: T, delta: u32) -> T
+@must_use @stage("fragment", "compute") implicit(N: num, T: scalar)
+fn group_non_uniform_shuffle_up(scope: u32, value: vec<N, T>, delta: u32) -> vec<N, T>
+
+@must_use @stage("fragment", "compute") implicit(T: iu32)
+fn group_non_uniform_s_min(scope: u32, group_operation: u32, value: T) -> T
+@must_use @stage("fragment", "compute") implicit(N: num, T: iu32)
+fn group_non_uniform_s_min(scope: u32, group_operation: u32, value: vec<N, T>) -> vec<N, T>
+
+@must_use @stage("fragment", "compute") implicit(T: iu32)
+fn group_non_uniform_s_max(scope: u32, group_operation: u32, value: T) -> T
+@must_use @stage("fragment", "compute") implicit(N: num, T: iu32)
+fn group_non_uniform_s_max(scope: u32, group_operation: u32, value: vec<N, T>) -> vec<N, T>
 

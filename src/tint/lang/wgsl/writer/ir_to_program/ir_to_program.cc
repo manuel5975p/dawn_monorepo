@@ -27,6 +27,7 @@
 
 #include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program.h"
 
+#include <limits>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -106,9 +107,12 @@ class State {
     explicit State(const core::ir::Module& m) : mod(m) {}
 
     Program Run(const ProgramOptions& options) {
-        core::ir::Capabilities caps{core::ir::Capability::kAllowRefTypes,
-                                    core::ir::Capability::kAllowOverrides,
-                                    core::ir::Capability::kAllowPhonyInstructions};
+        core::ir::Capabilities caps{
+            core::ir::Capability::kAllowMultipleEntryPoints,
+            core::ir::Capability::kAllowOverrides,
+            core::ir::Capability::kAllowPhonyInstructions,
+            core::ir::Capability::kAllowRefTypes,
+        };
         if (auto res = core::ir::ValidateAndDumpIfNeeded(mod, "wgsl.to_program", caps);
             res != Success) {
             // IR module failed validation.
@@ -134,6 +138,11 @@ class State {
             // Suppress errors regarding non-uniform derivative operations if requested, by adding a
             // diagnostic directive to the module.
             b.DiagnosticDirective(wgsl::DiagnosticSeverity::kOff, "derivative_uniformity");
+        }
+        if (options.allow_non_uniform_subgroup_operations) {
+            // Suppress errors regarding non-uniform subgroups operations if requested, by adding a
+            // diagnostic directive to the module.
+            b.DiagnosticDirective(wgsl::DiagnosticSeverity::kOff, "subgroup_uniformity");
         }
 
         return Program{resolver::Resolve(b, options.allowed_features)};
@@ -178,11 +187,11 @@ class State {
     /// Map of struct to output program name.
     Hashmap<const core::type::Struct*, Symbol, 8> structs_;
 
+    /// Map of struct members to their sanitized names.
+    Hashmap<const core::type::StructMember*, Symbol, 32> member_names_;
+
     /// The current function being emitted.
     const core::ir::Function* current_function_ = nullptr;
-
-    /// True if 'diagnostic(off, derivative_uniformity)' has been emitted
-    bool disabled_derivative_uniformity_ = false;
 
     void RootBlock(const core::ir::Block* root) {
         for (auto* inst : *root) {
@@ -258,6 +267,10 @@ class State {
                     case core::BuiltinValue::kClipDistances:
                         Enable(wgsl::Extension::kClipDistances);
                         attrs.Push(b.Builtin(core::BuiltinValue::kClipDistances));
+                        break;
+                    case core::BuiltinValue::kPrimitiveId:
+                        Enable(wgsl::Extension::kChromiumExperimentalPrimitiveId);
+                        attrs.Push(b.Builtin(core::BuiltinValue::kPrimitiveId));
                         break;
                     default:
                         TINT_UNIMPLEMENTED() << builtin.value();
@@ -688,13 +701,6 @@ class State {
                 Bind(c->Result(), expr);
             },
             [&](const wgsl::ir::BuiltinCall* c) {
-                if (!disabled_derivative_uniformity_ && RequiresDerivativeUniformity(c->Func())) {
-                    // TODO(crbug.com/tint/1985): Be smarter about disabling derivative uniformity.
-                    b.DiagnosticDirective(wgsl::DiagnosticSeverity::kOff,
-                                          wgsl::CoreDiagnosticRule::kDerivativeUniformity);
-                    disabled_derivative_uniformity_ = true;
-                }
-
                 switch (c->Func()) {
                     case wgsl::BuiltinFn::kSubgroupBallot:
                     case wgsl::BuiltinFn::kSubgroupElect:
@@ -721,7 +727,6 @@ class State {
                     case wgsl::BuiltinFn::kQuadSwapX:
                     case wgsl::BuiltinFn::kQuadSwapY:
                     case wgsl::BuiltinFn::kQuadSwapDiagonal:
-                        Enable(wgsl::Extension::kF16);
                         Enable(wgsl::Extension::kSubgroups);
                         break;
                     default:
@@ -825,7 +830,7 @@ class State {
                         TINT_ASSERT(i < s->Members().Length());
                         auto* member = s->Members()[i];
                         obj_ty = member->Type();
-                        expr = b.MemberAccessor(expr, member->Name().NameView());
+                        expr = b.MemberAccessor(expr, SanitizedMemberName(member));
                     } else {
                         TINT_ICE() << "invalid index for struct type: " << index->TypeInfo().name;
                     }
@@ -962,7 +967,15 @@ class State {
         };
         return tint::Switch(
             c->Type(),  //
-            [&](const core::type::I32*) { return b.Expr(c->ValueAs<i32>()); },
+            [&](const core::type::I32*) -> const ast::Expression* {
+                auto val = c->ValueAs<i32>();
+                if (val == std::numeric_limits<int32_t>::min()) {
+                    return b.Call(b.ty.i32(), b.create<ast::IntLiteralExpression>(
+                                                  val, ast::IntLiteralExpression::Suffix::kNone));
+                }
+
+                return b.Expr(val);
+            },
             [&](const core::type::U32*) { return b.Expr(c->ValueAs<u32>()); },
             [&](const core::type::F32*) { return b.Expr(c->ValueAs<f32>()); },
             [&](const core::type::F16*) {
@@ -1081,10 +1094,19 @@ class State {
         }
 
         auto n = structs_.GetOrAdd(s, [&] {
-            uint32_t current_offset = 0;
-            TINT_ASSERT(s->Members().Length() > 0 && s->Members()[0]->Offset() == 0);
+            TINT_ASSERT(s->Members().Length() > 0);
+            uint32_t current_offset = s->Members()[0]->Offset();
 
             Vector<const ast::StructMember*, 8> members;
+
+            // Add padding before the first member if necessary.
+            if (current_offset > 0) {
+                TINT_ASSERT(current_offset % 4 == 0);
+                for (uint32_t i = 0; i < current_offset; i += 4) {
+                    members.Push(b.Member("tint_pad_" + std::to_string(i), b.ty.u32()));
+                }
+            }
+
             for (const auto* m : s->Members()) {
                 auto ty = Type(m->Type());
                 const auto& ir_attrs = m->Attributes();
@@ -1138,13 +1160,22 @@ class State {
                 if (ir_attrs.invariant) {
                     ast_attrs.Push(b.Invariant());
                 }
-                members.Push(b.Member(m->Name().NameView(), ty, std::move(ast_attrs)));
+
+                auto name = SanitizedMemberName(m);
+                members.Push(b.Member(name, ty, std::move(ast_attrs)));
             }
 
             // TODO(crbug.com/tint/1902): Emit structure attributes
             Vector<const ast::Attribute*, 2> attrs;
 
-            auto name = b.Symbols().Register(s->Name().NameView());
+            // Sanitize the name of the structure.
+            Symbol name;
+            if (IsWGSLSafe(s->Name().NameView())) {
+                name = b.Symbols().Register(s->Name().NameView());
+            } else {
+                name = b.Symbols().New("S");
+            }
+
             b.Structure(name, std::move(members), std::move(attrs));
             return name;
         });
@@ -1211,6 +1242,15 @@ class State {
     }
 
     bool IsWGSLSafe(std::string_view name) {
+        // Make sure the name starts with an alphabetic character and then only contains
+        // alphanumeric characters or underscores after that.
+        if (name.empty() || !std::isalpha(static_cast<unsigned char>(name[0])) ||
+            !std::all_of(name.begin(), name.end(),
+                         [](unsigned char c) {  //
+                             return std::isalnum(c) || c == '_';
+                         })) {
+            return false;
+        }
         return !IsReserved(name) && !IsKeyword(name) && !IsEnumName(name) && !IsTypeName(name);
     }
 
@@ -1228,6 +1268,16 @@ class State {
                 }
             }
             return b.Symbols().New("v");
+        });
+    }
+
+    /// @returns the AST name for the given struct member
+    Symbol SanitizedMemberName(const core::type::StructMember* member) {
+        return member_names_.GetOrAdd(member, [&] {
+            if (IsWGSLSafe(member->Name().NameView())) {
+                return b.Symbols().Register(member->Name().NameView());
+            }
+            return b.Symbols().New("m");
         });
     }
 
@@ -1350,26 +1400,6 @@ class State {
             }
         }
         return b.IndexAccessor(expr, Expr(index));
-    }
-
-    bool RequiresDerivativeUniformity(wgsl::BuiltinFn fn) {
-        switch (fn) {
-            case wgsl::BuiltinFn::kDpdxCoarse:
-            case wgsl::BuiltinFn::kDpdyCoarse:
-            case wgsl::BuiltinFn::kFwidthCoarse:
-            case wgsl::BuiltinFn::kDpdxFine:
-            case wgsl::BuiltinFn::kDpdyFine:
-            case wgsl::BuiltinFn::kFwidthFine:
-            case wgsl::BuiltinFn::kDpdx:
-            case wgsl::BuiltinFn::kDpdy:
-            case wgsl::BuiltinFn::kFwidth:
-            case wgsl::BuiltinFn::kTextureSample:
-            case wgsl::BuiltinFn::kTextureSampleBias:
-            case wgsl::BuiltinFn::kTextureSampleCompare:
-                return true;
-            default:
-                return false;
-        }
     }
 
     /// @returns true if the builtin value requires the kSubgroups extension to be enabled.

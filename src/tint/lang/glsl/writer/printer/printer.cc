@@ -101,17 +101,13 @@ constexpr const char* kAMDGpuShaderHalfFloat = "GL_AMD_gpu_shader_half_float";
 constexpr const char* kOESSampleVariables = "GL_OES_sample_variables";
 constexpr const char* kEXTBlendFuncExtended = "GL_EXT_blend_func_extended";
 constexpr const char* kEXTTextureShadowLod = "GL_EXT_texture_shadow_lod";
+constexpr const char* kEXTGeometryShader = "GL_EXT_geometry_shader";
+constexpr const char* kEXTFragmentShaderBarycentric = "GL_EXT_fragment_shader_barycentric";
 
 enum class LayoutFormat : uint8_t {
     kStd140,
     kStd430,
 };
-
-/// Retrieve the gl_ string corresponding to a builtin.
-/// @param builtin the builtin
-/// @param address_space the address space (input or output)
-/// @returns the gl_ string corresponding to that builtin
-const char* GLSLBuiltinToString(core::BuiltinValue builtin, core::AddressSpace address_space);
 
 /// @returns true if @p ident is a GLSL keyword that needs to be avoided
 bool IsKeyword(std::string_view ident);
@@ -1109,9 +1105,8 @@ class Printer : public tint::TextGenerator {
         // If this is a combined texture sampler variable, check the provided map to see if we need
         // to give it a specific name.
         if (auto* combined_texture_sampler = var->As<ir::CombinedTextureSamplerVar>()) {
-            binding::CombinedTextureSamplerPair key{
-                combined_texture_sampler->TextureBindingPoint(),
-                combined_texture_sampler->SamplerBindingPoint()};
+            CombinedTextureSamplerPair key{combined_texture_sampler->TextureBindingPoint(),
+                                           combined_texture_sampler->SamplerBindingPoint()};
             auto itr = options_.bindings.sampler_texture_to_name.find(key);
             if (itr != options_.bindings.sampler_texture_to_name.end()) {
                 names_.Add(var->Result(), itr->second);
@@ -1291,6 +1286,72 @@ class Printer : public tint::TextGenerator {
                     break;
                 case core::TexelFormat::kR8Unorm:
                     out << "r8";
+                    break;
+                case core::TexelFormat::kR8Uint:
+                    out << "r8ui";
+                    break;
+                case core::TexelFormat::kRg8Uint:
+                    out << "rg8ui";
+                    break;
+                case core::TexelFormat::kR16Uint:
+                    out << "r16ui";
+                    break;
+                case core::TexelFormat::kRg16Uint:
+                    out << "rg16ui";
+                    break;
+                case core::TexelFormat::kR8Sint:
+                    out << "r8i";
+                    break;
+                case core::TexelFormat::kRg8Sint:
+                    out << "rg8i";
+                    break;
+                case core::TexelFormat::kR16Sint:
+                    out << "r16i";
+                    break;
+                case core::TexelFormat::kRg16Sint:
+                    out << "rg16i";
+                    break;
+                case core::TexelFormat::kR8Snorm:
+                    out << "r8_snorm";
+                    break;
+                case core::TexelFormat::kRg8Unorm:
+                    out << "rg8";
+                    break;
+                case core::TexelFormat::kRg8Snorm:
+                    out << "rg8_snorm";
+                    break;
+                case core::TexelFormat::kR16Float:
+                    out << "r16f";
+                    break;
+                case core::TexelFormat::kRg16Float:
+                    out << "rg16f";
+                    break;
+                case core::TexelFormat::kRgb10A2Uint:
+                    out << "rgb10_a2ui";
+                    break;
+                case core::TexelFormat::kRgb10A2Unorm:
+                    out << "rgb10_a2";
+                    break;
+                case core::TexelFormat::kRg11B10Ufloat:
+                    out << "r11f_g11f_b10f";
+                    break;
+                case core::TexelFormat::kR16Unorm:
+                    out << "r16";
+                    break;
+                case core::TexelFormat::kR16Snorm:
+                    out << "r16_snorm";
+                    break;
+                case core::TexelFormat::kRg16Unorm:
+                    out << "rg16";
+                    break;
+                case core::TexelFormat::kRg16Snorm:
+                    out << "rg16_snorm";
+                    break;
+                case core::TexelFormat::kRgba16Unorm:
+                    out << "rgba16";
+                    break;
+                case core::TexelFormat::kRgba16Snorm:
+                    out << "rgba16_snorm";
                     break;
                 case core::TexelFormat::kUndefined:
                     TINT_UNREACHABLE() << "invalid texel format";
@@ -1878,53 +1939,67 @@ class Printer : public tint::TextGenerator {
             out << ";";
         }
     }
-};
 
-const char* GLSLBuiltinToString(core::BuiltinValue builtin, core::AddressSpace address_space) {
-    switch (builtin) {
-        case core::BuiltinValue::kPosition: {
-            if (address_space == core::AddressSpace::kOut) {
-                return "gl_Position";
+    /// Retrieve the gl_ string corresponding to a builtin.
+    /// @param builtin the builtin
+    /// @param address_space the address space (input or output)
+    /// @returns the gl_ string corresponding to that builtin
+    const char* GLSLBuiltinToString(core::BuiltinValue builtin, core::AddressSpace address_space) {
+        switch (builtin) {
+            case core::BuiltinValue::kPosition: {
+                if (address_space == core::AddressSpace::kOut) {
+                    return "gl_Position";
+                }
+                if (address_space == core::AddressSpace::kIn) {
+                    return "gl_FragCoord";
+                }
+                TINT_UNREACHABLE();
             }
-            if (address_space == core::AddressSpace::kIn) {
-                return "gl_FragCoord";
+            case core::BuiltinValue::kVertexIndex:
+                return "gl_VertexID";
+            case core::BuiltinValue::kInstanceIndex:
+                return "gl_InstanceID";
+            case core::BuiltinValue::kFrontFacing:
+                return "gl_FrontFacing";
+            case core::BuiltinValue::kFragDepth:
+                return "gl_FragDepth";
+            case core::BuiltinValue::kLocalInvocationId:
+                return "gl_LocalInvocationID";
+            case core::BuiltinValue::kLocalInvocationIndex:
+                return "gl_LocalInvocationIndex";
+            case core::BuiltinValue::kGlobalInvocationId:
+                return "gl_GlobalInvocationID";
+            case core::BuiltinValue::kNumWorkgroups:
+                return "gl_NumWorkGroups";
+            case core::BuiltinValue::kWorkgroupId:
+                return "gl_WorkGroupID";
+            case core::BuiltinValue::kSampleIndex:
+                return "gl_SampleID";
+            case core::BuiltinValue::kSampleMask: {
+                if (address_space == core::AddressSpace::kIn) {
+                    return "gl_SampleMaskIn";
+                } else {
+                    return "gl_SampleMask";
+                }
+                TINT_UNREACHABLE();
             }
-            TINT_UNREACHABLE();
+            case core::BuiltinValue::kPointSize:
+                return "gl_PointSize";
+            case core::BuiltinValue::kPrimitiveId:
+                if (options_.version.IsES() && options_.version.major_version == 3 &&
+                    options_.version.minor_version == 1) {
+                    EmitExtension(kEXTGeometryShader);
+                }
+
+                return "gl_PrimitiveID";
+            case core::BuiltinValue::kBarycentricCoord:
+                EmitExtension(kEXTFragmentShaderBarycentric);
+                return "gl_BaryCoordEXT";
+            default:
+                TINT_UNREACHABLE();
         }
-        case core::BuiltinValue::kVertexIndex:
-            return "gl_VertexID";
-        case core::BuiltinValue::kInstanceIndex:
-            return "gl_InstanceID";
-        case core::BuiltinValue::kFrontFacing:
-            return "gl_FrontFacing";
-        case core::BuiltinValue::kFragDepth:
-            return "gl_FragDepth";
-        case core::BuiltinValue::kLocalInvocationId:
-            return "gl_LocalInvocationID";
-        case core::BuiltinValue::kLocalInvocationIndex:
-            return "gl_LocalInvocationIndex";
-        case core::BuiltinValue::kGlobalInvocationId:
-            return "gl_GlobalInvocationID";
-        case core::BuiltinValue::kNumWorkgroups:
-            return "gl_NumWorkGroups";
-        case core::BuiltinValue::kWorkgroupId:
-            return "gl_WorkGroupID";
-        case core::BuiltinValue::kSampleIndex:
-            return "gl_SampleID";
-        case core::BuiltinValue::kSampleMask: {
-            if (address_space == core::AddressSpace::kIn) {
-                return "gl_SampleMaskIn";
-            } else {
-                return "gl_SampleMask";
-            }
-            TINT_UNREACHABLE();
-        }
-        case core::BuiltinValue::kPointSize:
-            return "gl_PointSize";
-        default:
-            TINT_UNREACHABLE();
     }
-}
+};
 
 // This list is used for a binary search and must be kept in sorted order.
 const char* const kReservedKeywordsGLSL[] = {

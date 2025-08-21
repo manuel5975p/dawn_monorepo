@@ -57,7 +57,7 @@ TEST_F(SpirvParserTest, Matrix_ColMajor) {
 )",
               R"(
 tint_symbol_1 = struct @align(16) {
-  tint_symbol:mat4x3<f32> @offset(0), @matrix_stride(48)
+  tint_symbol:mat4x3<f32> @offset(0) @size(192), @matrix_stride(48)
 }
 
 $B1: {  # root
@@ -99,11 +99,191 @@ TEST_F(SpirvParserTest, Matrix_RowMajor) {
 )",
               R"(
 tint_symbol_1 = struct @align(16) {
-  tint_symbol:mat4x3<f32> @offset(0), @row_major, @matrix_stride(48)
+  tint_symbol:mat4x3<f32> @offset(0) @size(144), @row_major, @matrix_stride(48)
 }
 
 $B1: {  # root
   %1:ptr<uniform, tint_symbol_1, read> = var undef @binding_point(1, 2)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, ArrayOfMatrix_ColMajor) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpMemberDecorate %str 0 ColMajor
+               OpMemberDecorate %str 0 Offset 0
+               OpMemberDecorate %str 0 MatrixStride 48
+               OpDecorate %arr_mat4x3 ArrayStride 192
+               OpDecorate %str Block
+               OpDecorate %var DescriptorSet 1
+               OpDecorate %var Binding 2
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+     %uint_4 = OpConstant %uint 4
+        %f32 = OpTypeFloat 32
+      %vec3f = OpTypeVector %f32 3
+     %mat4x3 = OpTypeMatrix %vec3f 4
+ %arr_mat4x3 = OpTypeArray %mat4x3 %uint_4
+        %str = OpTypeStruct %arr_mat4x3
+        %ptr = OpTypePointer Uniform %str
+    %ep_type = OpTypeFunction %void
+        %var = OpVariable %ptr Uniform
+       %main = OpFunction %void None %ep_type
+ %main_start = OpLabel
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+tint_symbol_1 = struct @align(16) {
+  tint_symbol:spirv.explicit_layout_array<mat4x3<f32>, 4, stride=192> @offset(0), @matrix_stride(48)
+}
+
+$B1: {  # root
+  %1:ptr<uniform, tint_symbol_1, read> = var undef @binding_point(1, 2)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, ArrayOfMatrix_RowMajor) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpMemberDecorate %str 0 RowMajor
+               OpMemberDecorate %str 0 Offset 0
+               OpMemberDecorate %str 0 MatrixStride 48
+               OpDecorate %arr_mat4x3 ArrayStride 144
+               OpDecorate %str Block
+               OpDecorate %var DescriptorSet 1
+               OpDecorate %var Binding 2
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+     %uint_4 = OpConstant %uint 4
+        %f32 = OpTypeFloat 32
+      %vec3f = OpTypeVector %f32 3
+     %mat4x3 = OpTypeMatrix %vec3f 4
+ %arr_mat4x3 = OpTypeArray %mat4x3 %uint_4
+        %str = OpTypeStruct %arr_mat4x3
+        %ptr = OpTypePointer Uniform %str
+    %ep_type = OpTypeFunction %void
+        %var = OpVariable %ptr Uniform
+       %main = OpFunction %void None %ep_type
+ %main_start = OpLabel
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+tint_symbol_1 = struct @align(16) {
+  tint_symbol:spirv.explicit_layout_array<mat4x3<f32>, 4, stride=144> @offset(0), @row_major, @matrix_stride(48)
+}
+
+$B1: {  # root
+  %1:ptr<uniform, tint_symbol_1, read> = var undef @binding_point(1, 2)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, RuntimeArrayOfMatrix_ColMajor) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpMemberDecorate %str 0 ColMajor
+               OpMemberDecorate %str 0 Offset 0
+               OpMemberDecorate %str 0 MatrixStride 48
+               OpDecorate %arr_mat4x3 ArrayStride 192
+               OpDecorate %str BufferBlock
+               OpDecorate %var DescriptorSet 1
+               OpDecorate %var Binding 2
+       %void = OpTypeVoid
+        %f32 = OpTypeFloat 32
+      %vec3f = OpTypeVector %f32 3
+     %mat4x3 = OpTypeMatrix %vec3f 4
+ %arr_mat4x3 = OpTypeRuntimeArray %mat4x3
+        %str = OpTypeStruct %arr_mat4x3
+        %ptr = OpTypePointer Uniform %str
+    %ep_type = OpTypeFunction %void
+        %var = OpVariable %ptr Uniform
+       %main = OpFunction %void None %ep_type
+ %main_start = OpLabel
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+tint_symbol_1 = struct @align(16) {
+  tint_symbol:spirv.explicit_layout_array<mat4x3<f32>, stride=192> @offset(0), @matrix_stride(48)
+}
+
+$B1: {  # root
+  %1:ptr<storage, tint_symbol_1, read_write> = var undef @binding_point(1, 2)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, RuntimeArrayOfMatrix_RowMajor) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+               OpMemberDecorate %str 0 RowMajor
+               OpMemberDecorate %str 0 Offset 0
+               OpMemberDecorate %str 0 MatrixStride 48
+               OpDecorate %arr_mat4x3 ArrayStride 144
+               OpDecorate %str BufferBlock
+               OpDecorate %var DescriptorSet 1
+               OpDecorate %var Binding 2
+       %void = OpTypeVoid
+        %f32 = OpTypeFloat 32
+      %vec3f = OpTypeVector %f32 3
+     %mat4x3 = OpTypeMatrix %vec3f 4
+ %arr_mat4x3 = OpTypeRuntimeArray %mat4x3
+        %str = OpTypeStruct %arr_mat4x3
+        %ptr = OpTypePointer Uniform %str
+    %ep_type = OpTypeFunction %void
+        %var = OpVariable %ptr Uniform
+       %main = OpFunction %void None %ep_type
+ %main_start = OpLabel
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+tint_symbol_1 = struct @align(16) {
+  tint_symbol:spirv.explicit_layout_array<mat4x3<f32>, stride=144> @offset(0), @row_major, @matrix_stride(48)
+}
+
+$B1: {  # root
+  %1:ptr<storage, tint_symbol_1, read_write> = var undef @binding_point(1, 2)
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -1094,7 +1274,7 @@ TEST_F(SpirvParserTest, VectorInsertDynamic_VectorComponent) {
 )");
 }
 
-TEST_F(SpirvParserTest, VectorShuffle_BothVectors_A) {
+TEST_F(SpirvParserTest, VectorShuffle_AlternateVectors) {
     EXPECT_IR(R"(
                OpCapability Shader
                OpMemoryModel Logical GLSL450
@@ -1113,6 +1293,7 @@ TEST_F(SpirvParserTest, VectorShuffle_BothVectors_A) {
        %tmp1 = OpLoad %v4u32 %vec1
        %tmp2 = OpLoad %v4u32 %vec2
        %shuf = OpVectorShuffle %v4u32 %tmp1 %tmp2 0 5 2 7
+     %result = OpCopyObject %v4u32 %shuf
                OpReturn
                OpFunctionEnd
     )",
@@ -1123,18 +1304,19 @@ TEST_F(SpirvParserTest, VectorShuffle_BothVectors_A) {
     %3:ptr<function, vec4<u32>, read_write> = var undef
     %4:vec4<u32> = load %2
     %5:vec4<u32> = load %3
-    %6:u32 = access %4, 0u
-    %7:u32 = access %5, 1u
-    %8:u32 = access %4, 2u
-    %9:u32 = access %5, 3u
+    %6:u32 = swizzle %4, x
+    %7:u32 = swizzle %5, y
+    %8:u32 = swizzle %4, z
+    %9:u32 = swizzle %5, w
     %10:vec4<u32> = construct %6, %7, %8, %9
+    %11:vec4<u32> = let %10
     ret
   }
 }
 )");
 }
 
-TEST_F(SpirvParserTest, VectorShuffle_BothVectors_B) {
+TEST_F(SpirvParserTest, VectorShuffle_TwoFromA_Then_TwoFromB) {
     EXPECT_IR(R"(
                OpCapability Shader
                OpMemoryModel Logical GLSL450
@@ -1153,6 +1335,7 @@ TEST_F(SpirvParserTest, VectorShuffle_BothVectors_B) {
        %tmp1 = OpLoad %v4u32 %vec1
        %tmp2 = OpLoad %v4u32 %vec2
        %shuf = OpVectorShuffle %v4u32 %tmp1 %tmp2 0 2 5 7
+     %result = OpCopyObject %v4u32 %shuf
                OpReturn
                OpFunctionEnd
     )",
@@ -1163,11 +1346,51 @@ TEST_F(SpirvParserTest, VectorShuffle_BothVectors_B) {
     %3:ptr<function, vec4<u32>, read_write> = var undef
     %4:vec4<u32> = load %2
     %5:vec4<u32> = load %3
-    %6:u32 = access %4, 0u
-    %7:u32 = access %4, 2u
-    %8:u32 = access %5, 1u
-    %9:u32 = access %5, 3u
-    %10:vec4<u32> = construct %6, %7, %8, %9
+    %6:vec2<u32> = swizzle %4, xz
+    %7:vec2<u32> = swizzle %5, yw
+    %8:vec4<u32> = construct %6, %7
+    %9:vec4<u32> = let %8
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, VectorShuffle_OneFromA_Then_TwoFromB_Then_OneFromA) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+       %void = OpTypeVoid
+        %u32 = OpTypeInt 32 0
+      %v4u32 = OpTypeVector %u32 4
+  %v4u32_ptr = OpTypePointer Function %v4u32
+    %ep_type = OpTypeFunction %void
+
+       %main = OpFunction %void None %ep_type
+ %main_start = OpLabel
+       %vec1 = OpVariable %v4u32_ptr Function
+       %vec2 = OpVariable %v4u32_ptr Function
+       %tmp1 = OpLoad %v4u32 %vec1
+       %tmp2 = OpLoad %v4u32 %vec2
+       %shuf = OpVectorShuffle %v4u32 %tmp1 %tmp2 0 5 6 3
+     %result = OpCopyObject %v4u32 %shuf
+               OpReturn
+               OpFunctionEnd
+    )",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:ptr<function, vec4<u32>, read_write> = var undef
+    %3:ptr<function, vec4<u32>, read_write> = var undef
+    %4:vec4<u32> = load %2
+    %5:vec4<u32> = load %3
+    %6:u32 = swizzle %4, x
+    %7:vec2<u32> = swizzle %5, yz
+    %8:u32 = swizzle %4, w
+    %9:vec4<u32> = construct %6, %7, %8
+    %10:vec4<u32> = let %9
     ret
   }
 }
@@ -1196,6 +1419,7 @@ TEST_F(SpirvParserTest, VectorShuffle_BothVectorsToBigger) {
        %tmp1 = OpLoad %v2u32 %vec1
        %tmp2 = OpLoad %v3u32 %vec2
        %shuf = OpVectorShuffle %v4u32 %tmp1 %tmp2 0 2 1 4
+     %result = OpCopyObject %v4u32 %shuf
                OpReturn
                OpFunctionEnd
     )",
@@ -1206,11 +1430,12 @@ TEST_F(SpirvParserTest, VectorShuffle_BothVectorsToBigger) {
     %3:ptr<function, vec3<u32>, read_write> = var undef
     %4:vec2<u32> = load %2
     %5:vec3<u32> = load %3
-    %6:u32 = access %4, 0u
-    %7:u32 = access %5, 0u
-    %8:u32 = access %4, 1u
-    %9:u32 = access %5, 2u
+    %6:u32 = swizzle %4, x
+    %7:u32 = swizzle %5, x
+    %8:u32 = swizzle %4, y
+    %9:u32 = swizzle %5, z
     %10:vec4<u32> = construct %6, %7, %8, %9
+    %11:vec4<u32> = let %10
     ret
   }
 }
@@ -1239,6 +1464,7 @@ TEST_F(SpirvParserTest, VectorShuffle_BothVectorsToSmaller) {
        %tmp1 = OpLoad %v3u32 %vec1
        %tmp2 = OpLoad %v4u32 %vec2
        %shuf = OpVectorShuffle %v2u32 %tmp1 %tmp2 0 4
+     %result = OpCopyObject %v2u32 %shuf
                OpReturn
                OpFunctionEnd
     )",
@@ -1249,9 +1475,10 @@ TEST_F(SpirvParserTest, VectorShuffle_BothVectorsToSmaller) {
     %3:ptr<function, vec4<u32>, read_write> = var undef
     %4:vec3<u32> = load %2
     %5:vec4<u32> = load %3
-    %6:u32 = access %4, 0u
-    %7:u32 = access %5, 1u
+    %6:u32 = swizzle %4, x
+    %7:u32 = swizzle %5, y
     %8:vec2<u32> = construct %6, %7
+    %9:vec2<u32> = let %8
     ret
   }
 }
@@ -1277,8 +1504,9 @@ TEST_F(SpirvParserTest, VectorShuffle_BothVectors_UndefinedIndex) {
        %tmpA = OpLoad %v4u32 %vecA
        %tmpB = OpLoad %v4u32 %vecB
        %shuf = OpVectorShuffle %v4u32 %tmpA %tmpB 0 4294967295 6 3
-         OpReturn
-         OpFunctionEnd
+     %result = OpCopyObject %v4u32 %shuf
+               OpReturn
+               OpFunctionEnd
     )",
               R"(
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -1287,11 +1515,11 @@ TEST_F(SpirvParserTest, VectorShuffle_BothVectors_UndefinedIndex) {
     %3:ptr<function, vec4<u32>, read_write> = var undef
     %4:vec4<u32> = load %2
     %5:vec4<u32> = load %3
-    %6:u32 = access %4, 0u
-    %7:u32 = access %4, 0u
-    %8:u32 = access %5, 2u
-    %9:u32 = access %4, 3u
-    %10:vec4<u32> = construct %6, %7, %8, %9
+    %6:vec2<u32> = swizzle %4, xx
+    %7:u32 = swizzle %5, z
+    %8:u32 = swizzle %4, w
+    %9:vec4<u32> = construct %6, %7, %8
+    %10:vec4<u32> = let %9
     ret
   }
 }
@@ -1320,6 +1548,7 @@ TEST_F(SpirvParserTest, VectorShuffle_MixedDimensions_234) {
        %tmp1 = OpLoad %v2u32 %vec1
        %tmp2 = OpLoad %v3u32 %vec2
        %shuf = OpVectorShuffle %v4u32 %tmp1 %tmp2 0 3 4 1
+     %result = OpCopyObject %v4u32 %shuf
                OpReturn
                OpFunctionEnd
     )",
@@ -1330,18 +1559,18 @@ TEST_F(SpirvParserTest, VectorShuffle_MixedDimensions_234) {
     %3:ptr<function, vec3<u32>, read_write> = var undef
     %4:vec2<u32> = load %2
     %5:vec3<u32> = load %3
-    %6:u32 = access %4, 0u
-    %7:u32 = access %5, 1u
-    %8:u32 = access %5, 2u
-    %9:u32 = access %4, 1u
-    %10:vec4<u32> = construct %6, %7, %8, %9
+    %6:u32 = swizzle %4, x
+    %7:vec2<u32> = swizzle %5, yz
+    %8:u32 = swizzle %4, y
+    %9:vec4<u32> = construct %6, %7, %8
+    %10:vec4<u32> = let %9
     ret
   }
 }
 )");
 }
 
-TEST_F(SpirvParserTest, VectorShuffle_Swizzle_FirstVector) {
+TEST_F(SpirvParserTest, VectorShuffle_AllFromA) {
     EXPECT_IR(R"(
                OpCapability Shader
                OpMemoryModel Logical GLSL450
@@ -1359,6 +1588,7 @@ TEST_F(SpirvParserTest, VectorShuffle_Swizzle_FirstVector) {
         %vec = OpVariable %v4u32_ptr Function
         %tmp = OpLoad %v4u32 %vec
        %shuf = OpVectorShuffle %v2u32 %tmp %tmp 0 2
+     %result = OpCopyObject %v2u32 %shuf
                OpReturn
                OpFunctionEnd
     )",
@@ -1368,13 +1598,14 @@ TEST_F(SpirvParserTest, VectorShuffle_Swizzle_FirstVector) {
     %2:ptr<function, vec4<u32>, read_write> = var undef
     %3:vec4<u32> = load %2
     %4:vec2<u32> = swizzle %3, xz
+    %5:vec2<u32> = let %4
     ret
   }
 }
 )");
 }
 
-TEST_F(SpirvParserTest, VectorShuffle_Swizzle_SecondVector) {
+TEST_F(SpirvParserTest, VectorShuffle_AllFromB) {
     EXPECT_IR(R"(
                OpCapability Shader
                OpMemoryModel Logical GLSL450
@@ -1393,6 +1624,7 @@ TEST_F(SpirvParserTest, VectorShuffle_Swizzle_SecondVector) {
        %tmp1 = OpLoad %v4u32 %vec1
        %tmp2 = OpLoad %v4u32 %vec2
        %shuf = OpVectorShuffle %v4u32 %tmp1 %tmp2 4 5 6 7
+     %result = OpCopyObject %v4u32 %shuf
                OpReturn
                OpFunctionEnd
     )",
@@ -1404,6 +1636,7 @@ TEST_F(SpirvParserTest, VectorShuffle_Swizzle_SecondVector) {
     %4:vec4<u32> = load %2
     %5:vec4<u32> = load %3
     %6:vec4<u32> = swizzle %5, xyzw
+    %7:vec4<u32> = let %6
     ret
   }
 }
@@ -1428,6 +1661,7 @@ TEST_F(SpirvParserTest, VectorShuffle_Swizzle_SmallerResult) {
        %vec  = OpVariable %v4u32_ptr Function
        %tmp  = OpLoad %v4u32 %vec
        %shuf = OpVectorShuffle %v2u32 %tmp %tmp 2 0
+     %result = OpCopyObject %v2u32 %shuf
                OpReturn
                OpFunctionEnd
     )",
@@ -1437,6 +1671,7 @@ TEST_F(SpirvParserTest, VectorShuffle_Swizzle_SmallerResult) {
     %2:ptr<function, vec4<u32>, read_write> = var undef
     %3:vec4<u32> = load %2
     %4:vec2<u32> = swizzle %3, zx
+    %5:vec2<u32> = let %4
     ret
   }
 }
@@ -1461,6 +1696,7 @@ TEST_F(SpirvParserTest, VectorShuffle_Swizzle_BiggerResult) {
        %vec  = OpVariable %v2u32_ptr Function
        %tmp  = OpLoad %v2u32 %vec
        %shuf = OpVectorShuffle %v4u32 %tmp %tmp 3 2 3 2
+     %result = OpCopyObject %v4u32 %shuf
                OpReturn
                OpFunctionEnd
     )",
@@ -1470,6 +1706,7 @@ TEST_F(SpirvParserTest, VectorShuffle_Swizzle_BiggerResult) {
     %2:ptr<function, vec2<u32>, read_write> = var undef
     %3:vec2<u32> = load %2
     %4:vec4<u32> = swizzle %3, yxyx
+    %5:vec4<u32> = let %4
     ret
   }
 }
@@ -1496,6 +1733,7 @@ TEST_F(SpirvParserTest, VectorShuffle_Swizzle_OneVectorUndef) {
         %tmp = OpLoad %v2u32 %vec
      %undef4 = OpUndef %v4u32
        %shuf = OpVectorShuffle %v2u32 %undef4 %tmp 4 5
+     %result = OpCopyObject %v2u32 %shuf
                OpReturn
                OpFunctionEnd
     )",
@@ -1505,6 +1743,7 @@ TEST_F(SpirvParserTest, VectorShuffle_Swizzle_OneVectorUndef) {
     %2:ptr<function, vec2<u32>, read_write> = var undef
     %3:vec2<u32> = load %2
     %4:vec2<u32> = swizzle %3, xy
+    %5:vec2<u32> = let %4
     ret
   }
 }

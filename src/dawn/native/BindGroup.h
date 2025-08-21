@@ -34,6 +34,7 @@
 #include "dawn/common/Constants.h"
 #include "dawn/common/Math.h"
 #include "dawn/native/BindGroupLayout.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/Forward.h"
 #include "dawn/native/ObjectBase.h"
@@ -45,9 +46,10 @@ namespace dawn::native {
 
 class DeviceBase;
 
-MaybeError ValidateBindGroupDescriptor(DeviceBase* device,
-                                       const BindGroupDescriptor* descriptor,
-                                       UsageValidationMode mode);
+ResultOrError<UnpackedPtr<BindGroupDescriptor>> ValidateBindGroupDescriptor(
+    DeviceBase* device,
+    const BindGroupDescriptor* descriptor,
+    UsageValidationMode mode);
 
 struct BufferBinding {
     BufferBase* buffer;
@@ -59,7 +61,7 @@ class BindGroupBase : public ApiObjectBase {
   public:
     static Ref<BindGroupBase> MakeError(DeviceBase* device, StringView label);
 
-    MaybeError Initialize(const BindGroupDescriptor* descriptor);
+    MaybeError Initialize(const UnpackedPtr<BindGroupDescriptor>& descriptor);
 
     ObjectType GetType() const override;
 
@@ -68,9 +70,11 @@ class BindGroupBase : public ApiObjectBase {
     BindGroupLayoutInternalBase* GetLayout();
     const BindGroupLayoutInternalBase* GetLayout() const;
 
-    BufferBinding GetBindingAsBufferBinding(BindingIndex bindingIndex);
+    // Getters for static bindings.
+    BufferBase* GetBindingAsBuffer(BindingIndex bindingIndex);
     SamplerBase* GetBindingAsSampler(BindingIndex bindingIndex) const;
     TextureViewBase* GetBindingAsTextureView(BindingIndex bindingIndex);
+    BufferBinding GetBindingAsBufferBinding(BindingIndex bindingIndex);
     const ityp::span<uint32_t, uint64_t>& GetUnverifiedBufferSizes() const;
     const std::vector<Ref<ExternalTextureBase>>& GetBoundExternalTextures() const;
 
@@ -82,13 +86,15 @@ class BindGroupBase : public ApiObjectBase {
     // dynamically-sized bindings after it. The pointer of the memory of the beginning of the
     // binding data should be passed as |bindingDataStart|.
     BindGroupBase(DeviceBase* device,
-                  const BindGroupDescriptor* descriptor,
+                  const UnpackedPtr<BindGroupDescriptor>& descriptor,
                   void* bindingDataStart);
 
     // Helper to instantiate BindGroupBase. We pass in |derived| because BindGroupBase may not
     // be first in the allocation. The binding data is stored after the Derived class.
     template <typename Derived>
-    BindGroupBase(Derived* derived, DeviceBase* device, const BindGroupDescriptor* descriptor)
+    BindGroupBase(Derived* derived,
+                  DeviceBase* device,
+                  const UnpackedPtr<BindGroupDescriptor>& descriptor)
         : BindGroupBase(
               device,
               descriptor,

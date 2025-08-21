@@ -63,13 +63,11 @@ static_library("wgpu_utils") {
   ]
 
   public_deps = [
+    ":abseil",
     "${dawn_root}/include/dawn:cpp_headers",
     "${dawn_root}/src/dawn/common",
   ]
   deps = [ ":dawn_utils_gen" ]
-  if (tint_build_spv_reader) {
-    deps += [ "${dawn_spirv_tools_dir}:spvtools_opt" ]
-  }
 }
 
 static_library("test_utils") {
@@ -87,6 +85,7 @@ static_library("test_utils") {
   ]
 
   public_deps = [
+    ":abseil",
     ":wgpu_utils",
     "${dawn_root}/include/dawn:cpp_headers",
     "${dawn_root}/src/dawn:proc",
@@ -151,6 +150,7 @@ group("abseil") {
   } else {
     public_deps = [
       "${dawn_root}/third_party/gn/abseil-cpp:flat_hash_map",
+      "${dawn_root}/third_party/gn/abseil-cpp:flat_hash_set",
       "${dawn_root}/third_party/gn/abseil-cpp:span",
       "${dawn_root}/third_party/gn/abseil-cpp:str_format",
       "${dawn_root}/third_party/gn/abseil-cpp:string_view",

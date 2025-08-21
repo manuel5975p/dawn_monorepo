@@ -25,68 +25,65 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# Starlark file for Buildbucket entries of trybots using the gn_v2_trybot
-# recipe. Note that builders must first be defined the the build repo in
-# https://source.chromium.org/chromium/infra/infra_superproject/+/main:build/recipes/recipe_modules/dawn/trybots.py
+"""Try Dawn builders using GN and a standalone Dawn checkout (instead of Chromium)."""
 
+load("@chromium-luci//builders.star", "os")
+load("@chromium-luci//try.star", "try_")
 load("//constants.star", "siso")
+# load("//location_filters.star", "exclusion_filters")
 
-luci.recipe(
-    name = "recipe:dawn/gn_v2_trybot",
-    cipd_package = "infra/recipe_bundles/chromium.googlesource.com/chromium/tools/build",
-    recipe = "dawn/gn_v2_trybot",
-    use_bbagent = True,
-    use_python3 = True,
+try_.defaults.set(
+    executable = "recipe:dawn/gn_v2_trybot",
+    builder_group = "try",
+    bucket = "try",
+    pool = "luci.chromium.gpu.try",
+    builderless = True,
+    build_numbers = True,
+    list_view = "try",
+    cq_group = "Dawn-CQ",
+    contact_team_email = "chrome-gpu-infra@google.com",
+    service_account = "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+    siso_project = siso.project.DEFAULT_UNTRUSTED,
+    siso_remote_jobs = siso.remote_jobs.DEFAULT,
 )
 
-LINUX_BUILDER_DIMENSIONS = {
-    "pool": "luci.chromium.gpu.try",
-    "os": "Ubuntu-22.04",
-    "cores": "8",
-}
+# CQ Builders
 
-TRY_SERVICE_ACCOUNT = "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com"
+try_.builder(
+    name = "dawn-cq-linux-x64-rel",
+    description_html = "Tests Dawn on Linux/x64 on multiple hardware configs. Blocks CL submission",
+    max_concurrent_builds = 3,
+    os = os.LINUX_DEFAULT,
+    ssd = None,
+    mirrors = [
+        "ci/dawn-linux-x64-builder-rel",
+        "ci/dawn-linux-x64-sws-rel",
+    ],
+    gn_args = "ci/dawn-linux-x64-builder-rel",
+    # TODO(crbug.com/385317083): Re-add this to the CQ after the recipe is
+    # fixed to properly surface failures and the CI builder is green.
+    # tryjob = try_.job(
+    #     location_filters = exclusion_filters.gn_clang_cq_file_exclusions,
+    # ),
+)
 
-def generate_properties():
-    properties = {
-        "builder_group": "dawn",
-        "$build/siso": {
-            "project": siso.project.DEFAULT_UNTRUSTED,
-            "remote_jobs": siso.remote_jobs.DEFAULT,
-            "configs": ["builder"],
-            "enable_cloud_monitoring": True,
-            "enable_cloud_profiler": True,
-            "enable_cloud_trace": True,
-            "metrics_project": "chromium-reclient-metrics",
-        },
-        "$build/reclient": {
-            "instance": siso.project.DEFAULT_UNTRUSTED,
-            "jobs": siso.remote_jobs.DEFAULT,
-            "metrics_project": "chromium-reclient-metrics",
-            "scandeps_server": True,
-        },
-    }
-    return properties
+# Manual trybots
 
-def trybot(name, dimensions):
-    """Adds a trybot.
-
-    Note that the mirroring configuration is handled in the build-side
-    trybots.py file.
-
-    Args:
-        name: The name of the trybot being added.
-        dimensions: The Swarming dimensions the trybot should target.
-    """
-    luci.builder(
+def dawn_linux_manual_builder(*, name, **kwargs):
+    return try_.builder(
         name = name,
-        bucket = "try",
-        executable = "recipe:dawn/gn_v2_trybot",
-        properties = generate_properties(),
-        dimensions = dimensions,
-        build_numbers = True,
-        resultdb_settings = resultdb.settings(enable = True),
-        service_account = TRY_SERVICE_ACCOUNT,
+        max_concurrent_builds = 1,
+        os = os.LINUX_DEFAULT,
+        ssd = None,
+        **kwargs
     )
 
-trybot("dawn-cq-linux-x64-sws-rel", LINUX_BUILDER_DIMENSIONS)
+dawn_linux_manual_builder(
+    name = "dawn-try-linux-x64-sws-rel",
+    description_html = "Tests Dawn on Linux/x64 with SwiftShader. Manual only.",
+    mirrors = [
+        "ci/dawn-linux-x64-builder-rel",
+        "ci/dawn-linux-x64-sws-rel",
+    ],
+    gn_args = "ci/dawn-linux-x64-builder-rel",
+)

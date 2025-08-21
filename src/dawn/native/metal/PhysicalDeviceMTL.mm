@@ -134,17 +134,10 @@ MaybeError GetDeviceIORegistryPCIInfo(id<MTLDevice> device, PCIIDs* ids) {
         return DAWN_INTERNAL_ERROR("Failed to create the matching dict for the device");
     }
 
-    // Work around a breaking deprecation of kIOMasterPortDefault to kIOMainPortDefault. Both values
-    // are equivalent with NULL (given mach_port_t is an unsigned int they probably mean 0) as noted
-    // by the IOKitLib.h comments so use that directly.
-    // TODO(chromium:1400252): Use kIOMainPortDefault once the minimum supported version includes
-    // macOS 12.0
-    constexpr mach_port_t kIOMainPort = 0;
-
     // IOServiceGetMatchingService will consume the reference on the matching dictionary,
     // so we don't need to release the dictionary.
     IORef<io_registry_entry_t> acceleratorEntry =
-        AcquireIORef(IOServiceGetMatchingService(kIOMainPort, matchingDict.Detach()));
+        AcquireIORef(IOServiceGetMatchingService(kIOMainPortDefault, matchingDict.Detach()));
 
     if (acceleratorEntry == IO_OBJECT_NULL) {
         return DAWN_INTERNAL_ERROR("Failed to get the IO registry entry for the accelerator");
@@ -402,6 +395,9 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         // TODO(crbug.com/dawn/342): Investigate emulation -- possibly expensive.
         deviceToggles->Default(Toggle::MetalDisableSamplerCompare, !haveSamplerCompare);
 
+        // TODO(crbug.com/363031535): Enable by default when possible
+        deviceToggles->Default(Toggle::MetalUseArgumentBuffers, false);
+
         bool haveBaseVertexBaseInstance = true;
 #if DAWN_PLATFORM_IS(IOS) && !DAWN_PLATFORM_IS(TVOS) && \
     (!defined(__IPHONE_16_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_16_0)
@@ -448,6 +444,11 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(Toggle::MetalDisableModuleConstantF16, true);
     }
 
+    // chromium:407109055: Signed unpacking is inaccurate on AMD only.
+    if (gpu_info::IsAMD(vendorId)) {
+        deviceToggles->Default(Toggle::MetalPolyfillUnpack2x16snorm, true);
+    }
+
     // On some Intel GPUs vertex only render pipeline get wrong depth result if no fragment
     // shader provided. Create a placeholder fragment shader module to work around this issue.
     if (gpu_info::IsIntel(vendorId)) {
@@ -471,18 +472,18 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     // encoders on macOS 11.0+, we need to add mock blit command to blit encoder when encoding
     // writeTimestamp as workaround by enabling the toggle
     // "metal_use_mock_blit_encoder_for_write_timestamp".
-        deviceToggles->Default(Toggle::MetalUseMockBlitEncoderForWriteTimestamp, true);
+    deviceToggles->Default(Toggle::MetalUseMockBlitEncoderForWriteTimestamp, true);
 
     // On macOS 15.0+, we can use sampleTimestamps:gpuTimestamp: from MTLDevice to capture CPU and
     // GPU timestamps to estimate GPU timestamp period at device creation, but this API call will
     // cause GPU overheating on Intel GPUs due to a driver bug keeping the GPU running at the
     // maximum clock. Disable timestamp sampling to avoid overheating user's devices.
     // See https://crbug.com/342701242 for more details.
-        if (@available(macos 15.0, *)) {
-            if (gpu_info::IsIntel(deviceId)) {
-                deviceToggles->Default(Toggle::MetalDisableTimestampPeriodEstimation, true);
-            }
+    if (@available(macos 15.0, *)) {
+        if (gpu_info::IsIntel(deviceId)) {
+            deviceToggles->Default(Toggle::MetalDisableTimestampPeriodEstimation, true);
         }
+    }
 
 #if DAWN_PLATFORM_IS(MACOS)
     if (gpu_info::IsIntel(vendorId)) {
@@ -677,10 +678,6 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::FlexibleTextureViews);
     EnableFeature(Feature::TextureFormatsTier1);
 
-    // The function subgroupBroadcast(f16) fails for some edge cases on intel gen-9 devices.
-    // See crbug.com/391680973
-    const bool kForceDisableSubgroups = gpu_info::IsIntelGen9(GetVendorId(), GetDeviceId());
-
     // SIMD-scoped permute operations is supported by GPU family Metal3, Apple6, Apple7, Apple8,
     // and Mac2.
     // https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
@@ -691,13 +688,16 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     // Note that supportsFamily: method requires macOS 10.15+ or iOS 13.0+
     // TODO(380326541): Check that reduction operations are supported in Apple6. The support
     // table says Apple7.
-    if (!kForceDisableSubgroups && ([*mDevice supportsFamily:MTLGPUFamilyApple6] ||
-                                    [*mDevice supportsFamily:MTLGPUFamilyMac2])) {
+    if (([*mDevice supportsFamily:MTLGPUFamilyApple6] ||
+         [*mDevice supportsFamily:MTLGPUFamilyMac2])) {
         EnableFeature(Feature::Subgroups);
     }
 
     if ([*mDevice supportsFamily:MTLGPUFamilyApple7]) {
         EnableFeature(Feature::ChromiumExperimentalSubgroupMatrix);
+        // TODO(342172182): This may be available in more places?
+        // (mwyrzykowski says "Apple7 and all Macs")
+        EnableFeature(Feature::ChromiumExperimentalPrimitiveId);
     }
 
     EnableFeature(Feature::SharedTextureMemoryIOSurface);
@@ -717,6 +717,14 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::BufferMapExtendedUsages);
     }
 #endif
+
+    if ([*mDevice supportsFamily:MTLGPUFamilyMac2]) {
+        EnableFeature(Feature::TextureComponentSwizzle);
+    }
+
+    if ([*mDevice readWriteTextureSupport] == MTLReadWriteTextureTier2) {
+        EnableFeature(Feature::TextureFormatsTier2);
+    }
 }
 
 void PhysicalDevice::InitializeVendorArchitectureImpl() {
@@ -770,7 +778,7 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     };
 
     struct LimitsForFamily {
-        uint32_t MTLDeviceLimits::*limit;
+        uint32_t MTLDeviceLimits::* limit;
         ityp::array<MTLGPUFamily, uint32_t, 9> values;
     };
 
@@ -907,6 +915,22 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
 FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
     wgpu::FeatureName feature,
     const TogglesState& toggles) const {
+    switch (feature) {
+        // The function subgroupBroadcast(f16) fails for some edge cases on Intel Gen-9 devices.
+        // See crbug.com/391680973. We disable subgroups on this device unless the user has
+        // explicitly enabled the 'EnableSubgroupsIntelGen9' toggle.
+        case wgpu::FeatureName::Subgroups:
+            if (gpu_info::IsIntelGen9(GetVendorId(), GetDeviceId()) &&
+                !toggles.IsEnabled(Toggle::EnableSubgroupsIntelGen9)) {
+                return FeatureValidationResult(
+                    absl::StrFormat("Intel Gen-9 devices require `enable_subgroups_intel_gen9`"
+                                    " to enable %s.",
+                                    feature));
+            }
+            break;
+        default:
+            break;
+    }
     return {};
 }
 

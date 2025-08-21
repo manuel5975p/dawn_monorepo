@@ -49,6 +49,9 @@ Extension ParseExtension(std::string_view str) {
     if (str == "chromium_disable_uniformity_analysis") {
         return Extension::kChromiumDisableUniformityAnalysis;
     }
+    if (str == "chromium_experimental_barycentric_coord") {
+        return Extension::kChromiumExperimentalBarycentricCoord;
+    }
     if (str == "chromium_experimental_framebuffer_fetch") {
         return Extension::kChromiumExperimentalFramebufferFetch;
     }
@@ -57,6 +60,9 @@ Extension ParseExtension(std::string_view str) {
     }
     if (str == "chromium_experimental_pixel_local") {
         return Extension::kChromiumExperimentalPixelLocal;
+    }
+    if (str == "chromium_experimental_primitive_id") {
+        return Extension::kChromiumExperimentalPrimitiveId;
     }
     if (str == "chromium_experimental_subgroup_matrix") {
         return Extension::kChromiumExperimentalSubgroupMatrix;
@@ -87,12 +93,16 @@ std::string_view ToString(Extension value) {
             return "undefined";
         case Extension::kChromiumDisableUniformityAnalysis:
             return "chromium_disable_uniformity_analysis";
+        case Extension::kChromiumExperimentalBarycentricCoord:
+            return "chromium_experimental_barycentric_coord";
         case Extension::kChromiumExperimentalFramebufferFetch:
             return "chromium_experimental_framebuffer_fetch";
         case Extension::kChromiumExperimentalImmediate:
             return "chromium_experimental_immediate";
         case Extension::kChromiumExperimentalPixelLocal:
             return "chromium_experimental_pixel_local";
+        case Extension::kChromiumExperimentalPrimitiveId:
+            return "chromium_experimental_primitive_id";
         case Extension::kChromiumExperimentalSubgroupMatrix:
             return "chromium_experimental_subgroup_matrix";
         case Extension::kChromiumInternalGraphite:
@@ -164,6 +174,9 @@ std::string_view ToString(ChromiumDiagnosticRule value) {
 /// @param str the string to parse
 /// @returns the parsed enum, or LanguageFeature::kUndefined if the string could not be parsed.
 LanguageFeature ParseLanguageFeature(std::string_view str) {
+    if (str == "chromium_print") {
+        return LanguageFeature::kChromiumPrint;
+    }
     if (str == "chromium_testing_experimental") {
         return LanguageFeature::kChromiumTestingExperimental;
     }
@@ -203,6 +216,8 @@ std::string_view ToString(LanguageFeature value) {
     switch (value) {
         case LanguageFeature::kUndefined:
             return "undefined";
+        case LanguageFeature::kChromiumPrint:
+            return "chromium_print";
         case LanguageFeature::kChromiumTestingExperimental:
             return "chromium_testing_experimental";
         case LanguageFeature::kChromiumTestingShipped:
@@ -730,6 +745,9 @@ BuiltinFn ParseBuiltinFn(std::string_view name) {
     if (name == "subgroupMatrixMultiplyAccumulate") {
         return BuiltinFn::kSubgroupMatrixMultiplyAccumulate;
     }
+    if (name == "print") {
+        return BuiltinFn::kPrint;
+    }
     if (name == "__tint_materialize") {
         return BuiltinFn::kTintMaterialize;
     }
@@ -1042,6 +1060,8 @@ const char* str(BuiltinFn i) {
             return "subgroupMatrixMultiply";
         case BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
             return "subgroupMatrixMultiplyAccumulate";
+        case BuiltinFn::kPrint:
+            return "print";
         case BuiltinFn::kTintMaterialize:
             return "__tint_materialize";
     }

@@ -36,6 +36,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "dawn/native/DawnNative.h"
@@ -145,6 +146,11 @@ class Converter {
 
     [[nodiscard]] bool Convert(wgpu::TextureUsage& out, const interop::GPUTextureUsageFlags& in);
 
+    [[nodiscard]] bool Convert(wgpu::TextureComponentSwizzle& out,
+                               const interop::GPUTextureComponentSwizzle& in);
+
+    [[nodiscard]] bool Convert(wgpu::ComponentSwizzle& out, const interop::GPUComponentSwizzle& in);
+
     [[nodiscard]] bool Convert(wgpu::ColorWriteMask& out, const interop::GPUColorWriteFlags& in);
 
     [[nodiscard]] bool Convert(wgpu::BufferUsage& out, const interop::GPUBufferUsageFlags& in);
@@ -208,6 +214,11 @@ class Converter {
     [[nodiscard]] bool Convert(wgpu::VertexAttribute& out, const interop::GPUVertexAttribute& in);
 
     [[nodiscard]] bool Convert(wgpu::VertexFormat& out, const interop::GPUVertexFormat& in);
+
+    [[nodiscard]] bool Convert(wgpu::TextureView& outView,
+                               const std::variant<interop::Interface<interop::GPUTexture>,
+                                                  interop::Interface<interop::GPUTextureView>>& in,
+                               const char* name);
 
     [[nodiscard]] bool Convert(wgpu::RenderPassColorAttachment& out,
                                const interop::GPURenderPassColorAttachment& in);

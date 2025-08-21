@@ -91,7 +91,7 @@ class IRToProgramRoundtripTest : public testing::Test {
             return result;
         }
 
-        auto output = wgsl::writer::Generate(output_program, {});
+        auto output = wgsl::writer::Generate(output_program);
         if (output != Success) {
             std::stringstream ss;
             ss << "wgsl::Generate() errored: " << output.Failure();
@@ -428,23 +428,6 @@ TEST_F(IRToProgramRoundtripTest, CoreBuiltinCall_PtrArg) {
 
 fn foo() -> u32 {
   return arrayLength(&(v));
-}
-)");
-}
-
-TEST_F(IRToProgramRoundtripTest, CoreBuiltinCall_DisableDerivativeUniformity) {
-    RUN_TEST(R"(
-fn f(in : f32) {
-  let x = dpdx(in);
-  let y = dpdy(in);
-}
-)",
-             R"(
-diagnostic(off, derivative_uniformity);
-
-fn f(in : f32) {
-  let x = dpdx(in);
-  let y = dpdy(in);
 }
 )");
 }

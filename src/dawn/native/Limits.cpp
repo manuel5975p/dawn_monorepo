@@ -111,6 +111,16 @@
     X(v1, Maximum,                       maxTextureDimension3D,      1024,      2048,       2048) \
     X(v1, Maximum,                       maxTextureArrayLayers,       256,       256,       2048)
 
+// Tired limits for immediate data sizes.
+//                                 compat  tier0  tier1
+#define LIMITS_IMMEDIATE_SIZE(X) \
+  X(v1, Maximum, maxImmediateSize,       0,    0,    16,  32,  64)
+
+// Limits for the dynamic binding array.
+//                                                                   compat  tier0
+#define LIMITS_DYNAMIC_BINDING_ARRAY(X) \
+  X(dynamicBindingArrayLimits, Maximum, maxDynamicBindingArraySize,       0,    50'000)
+
 // TODO(crbug.com/dawn/685):
 // These limits don't have tiers yet. Define two tiers with the same values since the macros
 // in this file expect more than one tier.
@@ -120,13 +130,12 @@
     X(v1,                              Maximum,                    maxBindGroupsPlusVertexBuffers,        24,        24,         24) \
     X(v1,                              Maximum,                           maxBindingsPerBindGroup,      1000,      1000,       1000) \
     X(v1,                              Maximum,                       maxUniformBufferBindingSize,     16384,     65536,      65536) \
-    X(v1,                            Alignment,                 minUniformBufferOffsetAlignment,       256,       256,        256) \
-    X(v1,                            Alignment,                 minStorageBufferOffsetAlignment,       256,       256,        256) \
+    X(v1,                            Alignment,                   minUniformBufferOffsetAlignment,       256,       256,        256) \
+    X(v1,                            Alignment,                   minStorageBufferOffsetAlignment,       256,       256,        256) \
     X(v1,                              Maximum,                                  maxVertexBuffers,         8,         8,          8) \
     X(v1,                              Maximum,                               maxVertexAttributes,        16,        16,         30) \
     X(v1,                              Maximum,                        maxVertexBufferArrayStride,      2048,      2048,       2048) \
-    X(v1,                              Maximum,                               maxColorAttachments,         4,         8,          8) \
-    X(v1,                              Maximum,                               maxImmediateSize,            0,         0,         16)
+    X(v1,                              Maximum,                               maxColorAttachments,         4,         8,          8)
 
 // clang-format on
 
@@ -140,6 +149,8 @@
     X(LIMITS_ATTACHMENTS)                  \
     X(LIMITS_INTER_STAGE_SHADER_VARIABLES) \
     X(LIMITS_TEXTURE_DIMENSIONS)           \
+    X(LIMITS_IMMEDIATE_SIZE)               \
+    X(LIMITS_DYNAMIC_BINDING_ARRAY)        \
     X(LIMITS_OTHER)
 
 #define LIMITS(X)                          \
@@ -152,6 +163,8 @@
     LIMITS_ATTACHMENTS(X)                  \
     LIMITS_INTER_STAGE_SHADER_VARIABLES(X) \
     LIMITS_TEXTURE_DIMENSIONS(X)           \
+    LIMITS_IMMEDIATE_SIZE(X)               \
+    LIMITS_DYNAMIC_BINDING_ARRAY(X)        \
     LIMITS_OTHER(X)
 
 namespace dawn::native {
@@ -272,6 +285,10 @@ MaybeError ValidateAndUnpackLimitsIn(const Limits* chainedLimits,
         out->compat = *compatibilityModeLimits;
         out->compat.nextInChain = nullptr;
     }
+    if (auto* dynamicBindingArrayLimits = unpacked.Get<DynamicBindingArrayLimits>()) {
+        out->dynamicBindingArrayLimits = *dynamicBindingArrayLimits;
+        out->dynamicBindingArrayLimits.nextInChain = nullptr;
+    }
 
     // TODO(crbug.com/378361783): Add validation and default values to support requiring limits for
     // DawnTexelCopyBufferRowAlignmentLimits. Test this, see old test removed here:
@@ -302,6 +319,10 @@ void UnpackLimitsIn(const Limits* chainedLimits, CombinedLimits* out) {
     if (auto* compatibilityModeLimits = unpacked.Get<CompatibilityModeLimits>()) {
         out->compat = *compatibilityModeLimits;
         out->compat.nextInChain = nullptr;
+    }
+    if (auto* dynamicBindingArrayLimits = unpacked.Get<DynamicBindingArrayLimits>()) {
+        out->dynamicBindingArrayLimits = *dynamicBindingArrayLimits;
+        out->dynamicBindingArrayLimits.nextInChain = nullptr;
     }
 }
 
@@ -516,35 +537,33 @@ MaybeError FillLimits(Limits* outputLimits,
         compatibilityModeLimits->nextInChain = originalChain;
     }
 
-    if (auto* texelCopyBufferRowAlignmentLimits =
-            unpacked.Get<DawnTexelCopyBufferRowAlignmentLimits>()) {
-        wgpu::ChainedStructOut* originalChain = texelCopyBufferRowAlignmentLimits->nextInChain;
-        if (!supportedFeatures.IsEnabled(wgpu::FeatureName::DawnTexelCopyBufferRowAlignment)) {
-            // If the feature is not enabled, minTexelCopyBufferRowAlignment is default-initialized
-            // to WGPU_LIMIT_U32_UNDEFINED.
-            *texelCopyBufferRowAlignmentLimits = DawnTexelCopyBufferRowAlignmentLimits{};
+    // Helper to fill a part of the extension chain based on the features enabled.
+    auto FillExtensionLimits = [&](auto chain, auto memberPtr, wgpu::FeatureName requiredFeature) {
+        if (chain == nullptr) {
+            return;
+        }
+
+        wgpu::ChainedStructOut* originalChain = chain->nextInChain;
+        if (!supportedFeatures.IsEnabled(requiredFeature)) {
+            // Default initialize the chain.
+            *chain = {};
         } else {
-            *texelCopyBufferRowAlignmentLimits = combinedLimits.texelCopyBufferRowAlignmentLimits;
+            *chain = combinedLimits.*memberPtr;
         }
 
         // Recover original chain.
-        texelCopyBufferRowAlignmentLimits->nextInChain = originalChain;
-    }
+        chain->nextInChain = originalChain;
+    };
 
-    if (auto* hostMappedPointerLimits = unpacked.Get<DawnHostMappedPointerLimits>()) {
-        wgpu::ChainedStructOut* originalChain = hostMappedPointerLimits->nextInChain;
-        if (!supportedFeatures.IsEnabled(wgpu::FeatureName::HostMappedPointer)) {
-            // If the feature is not enabled, hostMappedPointerAlignment is default-initialized to
-            // WGPU_LIMIT_U32_UNDEFINED.
-            *hostMappedPointerLimits = DawnHostMappedPointerLimits{};
-        } else {
-            hostMappedPointerLimits->hostMappedPointerAlignment =
-                combinedLimits.hostMappedPointerLimits.hostMappedPointerAlignment;
-        }
-
-        // Recover original chain.
-        hostMappedPointerLimits->nextInChain = originalChain;
-    }
+    FillExtensionLimits(unpacked.Get<DawnTexelCopyBufferRowAlignmentLimits>(),
+                        &CombinedLimits::texelCopyBufferRowAlignmentLimits,
+                        wgpu::FeatureName::DawnTexelCopyBufferRowAlignment);
+    FillExtensionLimits(unpacked.Get<DawnHostMappedPointerLimits>(),
+                        &CombinedLimits::hostMappedPointerLimits,
+                        wgpu::FeatureName::HostMappedPointer);
+    FillExtensionLimits(unpacked.Get<DynamicBindingArrayLimits>(),
+                        &CombinedLimits::dynamicBindingArrayLimits,
+                        wgpu::FeatureName::ChromiumExperimentalBindless);
 
     return {};
 }

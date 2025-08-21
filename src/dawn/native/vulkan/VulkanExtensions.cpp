@@ -38,6 +38,7 @@ namespace dawn::native::vulkan {
 static constexpr uint32_t VulkanVersion_1_1 = VK_API_VERSION_1_1;
 static constexpr uint32_t VulkanVersion_1_2 = VK_API_VERSION_1_2;
 static constexpr uint32_t VulkanVersion_1_3 = VK_API_VERSION_1_3;
+static constexpr uint32_t VulkanVersion_1_4 = VK_API_VERSION_1_4;
 static constexpr uint32_t NeverPromoted = std::numeric_limits<uint32_t>::max();
 
 // A static array for InstanceExtInfo that can be indexed with InstanceExts.
@@ -173,6 +174,7 @@ static constexpr std::array<DeviceExtInfo, kDeviceExtCount> sDeviceExtInfos{{
     {DeviceExt::VulkanMemoryModel, "VK_KHR_vulkan_memory_model", VulkanVersion_1_2},
     {DeviceExt::ShaderFloatControls, "VK_KHR_shader_float_controls", VulkanVersion_1_2},
     {DeviceExt::Spirv14, "VK_KHR_spirv_1_4", VulkanVersion_1_2},
+    {DeviceExt::DescriptorIndexing, "VK_EXT_descriptor_indexing", VulkanVersion_1_2},
 
     {DeviceExt::ShaderIntegerDotProduct, "VK_KHR_shader_integer_dot_product", VulkanVersion_1_3},
     {DeviceExt::ZeroInitializeWorkgroupMemory, "VK_KHR_zero_initialize_workgroup_memory",
@@ -181,6 +183,8 @@ static constexpr std::array<DeviceExtInfo, kDeviceExtCount> sDeviceExtInfos{{
      VulkanVersion_1_3},
     {DeviceExt::Maintenance4, "VK_KHR_maintenance4", VulkanVersion_1_3},
     {DeviceExt::SubgroupSizeControl, "VK_EXT_subgroup_size_control", VulkanVersion_1_3},
+
+    {DeviceExt::PipelineRobustness, "VK_EXT_pipeline_robustness", VulkanVersion_1_4},
 
     {DeviceExt::DepthClipEnable, "VK_EXT_depth_clip_enable", NeverPromoted},
     {DeviceExt::ImageDrmFormatModifier, "VK_EXT_image_drm_format_modifier", NeverPromoted},
@@ -291,6 +295,7 @@ DeviceExtSet EnsureDependencies(const DeviceExtSet& advertisedExts,
             case DeviceExt::ZeroInitializeWorkgroupMemory:
             case DeviceExt::DemoteToHelperInvocation:
             case DeviceExt::Maintenance4:
+            case DeviceExt::PipelineRobustness:
             case DeviceExt::Robustness2:
             case DeviceExt::SubgroupSizeControl:
             case DeviceExt::ShaderSubgroupExtendedTypes:
@@ -334,6 +339,11 @@ DeviceExtSet EnsureDependencies(const DeviceExtSet& advertisedExts,
             case DeviceExt::_16BitStorage:
                 hasDependencies = HasDep(DeviceExt::GetPhysicalDeviceProperties2) &&
                                   HasDep(DeviceExt::StorageBufferStorageClass);
+                break;
+
+            case DeviceExt::DescriptorIndexing:
+                hasDependencies = HasDep(DeviceExt::GetPhysicalDeviceProperties2) &&
+                                  HasDep(DeviceExt::Maintenance3);
                 break;
 
             case DeviceExt::DisplayTiming:

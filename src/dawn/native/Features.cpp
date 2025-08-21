@@ -371,7 +371,7 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       "dawn_load_resolve_texture.md",
       FeatureInfo::FeatureState::Stable}},
     {Feature::DawnPartialLoadResolveTexture,
-     {"Support RenderPassDescriptorExpandResolveRect as chained struct into RenderPassDescriptor "
+     {"Support RenderPassDescriptorResolveRect as chained struct into RenderPassDescriptor "
       "for a render pass. This will expand and resolve the texels within the rect of texture.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
       "dawn_partial_load_resolve_texture.md",
@@ -383,8 +383,12 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
     {Feature::TextureFormatsTier1,
      {"Supports some new GPUTextureFormats with the RENDER_ATTACHMENT, blendable, multisampling "
       "capabilities and the STORAGE_BINDING capability with the 'read-only' and 'write-only'"
-      "GPUStorageTextureAccesses ",
+      "GPUStorageTextureAccesses.",
       "https://gpuweb.github.io/gpuweb/#texture-formats-tier1",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::TextureFormatsTier2,
+     {"Supports StorageTextureAccess 'read-write' on several additional formats.",
+      "https://gpuweb.github.io/gpuweb/#texture-formats-tier2",
       FeatureInfo::FeatureState::Experimental}},
     {Feature::TextureComponentSwizzle,
      {"Texture component swizzle lets you to specify how the channels of a texture (red, green, "
@@ -424,7 +428,15 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Supports configuring device allocator via DawnDeviceAllocatorControl",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
       "dawn_device_allocator_control.md",
-      FeatureInfo::FeatureState::Experimental}}};
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::ChromiumExperimentalPrimitiveId,
+     {"Supports the \"enable chromium_experimental_primitive_id;\" directive in WGSL",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/tint/extensions/"
+      "chromium_experimental_primitive_id.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::ChromiumExperimentalBindless,
+     {"Experimental support for the prototype of a bindless extension",
+      "https://hackmd.io/@kangz/bindless-proposal", FeatureInfo::FeatureState::Experimental}}};
 
 }  // anonymous namespace
 

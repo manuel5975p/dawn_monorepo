@@ -81,10 +81,13 @@ class Queue : public d3d::Queue {
     void DestroyImpl() override;
     bool HasPendingCommands() const override;
     void ForceEventualFlushOfCommands() override;
-    MaybeError WaitForIdleForDestruction() override;
+    MaybeError WaitForIdleForDestructionImpl() override;
     MaybeError SubmitPendingCommandsImpl() override;
+    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
 
     ResultOrError<Ref<d3d::SharedFence>> GetOrCreateSharedFence() override;
+
+    virtual ResultOrError<ExecutionSerial> CheckCompletedSerialsImpl() = 0;
 
     // Check all pending map buffers, and actually map the ready ones.
     MaybeError CheckAndMapReadyBuffers(ExecutionSerial completedSerial);

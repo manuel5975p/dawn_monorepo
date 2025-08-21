@@ -41,6 +41,7 @@
 #include "src/tint/lang/core/type/manager.h"
 #include "src/tint/lang/core/type/matrix.h"
 #include "src/tint/lang/core/type/reference.h"
+#include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/struct.h"
 #include "src/tint/utils/text/string.h"
@@ -191,6 +192,41 @@ TEST_F(IR_ValidatorTest, RootBlock_VarBlockMismatch) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Construct_Scalar_WrongArgType) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Construct<u32>(42_i);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:3:24 error: construct: scalar construct argument type 'i32' does not match result type 'u32'
+    %2:u32 = construct 42i
+                       ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Construct_Scalar_TooManyArguments) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Construct<u32>(42_u, 10_u);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:3:14 error: construct: scalar construct must not have more than one argument
+    %2:u32 = construct 42u, 10u
+             ^^^^^^^^^
+)")) << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, Construct_Array_WrongArgType) {
     auto* f = b.Function("f", ty.void_());
     b.Append(f->Block(), [&] {
@@ -207,6 +243,69 @@ TEST_F(IR_ValidatorTest, Construct_Array_WrongArgType) {
     %2:array<u32, 4> = construct 1u, 2u, 3i, 4u
                                          ^^
 )")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Construct_Matrix_NoArgs) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Construct(ty.mat2x2<f32>());
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Construct_Matrix_Scalar) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Construct(ty.mat2x2<f32>(), 1_f, 2_f, 3_f, 4_f);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Construct_Matrix_ColumnVectors) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* v1 = b.Composite(ty.vec2<f32>(), 1_f, 2_f);
+        auto* v2 = b.Composite(ty.vec2<f32>(), 3_f, 4_f);
+        b.Construct(ty.mat2x2<f32>(), v1, v2);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Construct_Matrix_MixedScalarVector) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Construct(ty.mat2x2<f32>(), 1_f, b.Composite(ty.vec2<f32>(), 2_f, 3_f));
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr("error: construct: no matching overload for mat2x2<f32> constructor"));
+}
+
+TEST_F(IR_ValidatorTest, Construct_Matrix_Scalar_WrongType) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Construct(ty.mat2x2<f32>(), 1_f, 2_f, 3_h, 4_f);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr("error: construct: no matching overload for mat2x2<f32> constructor"));
 }
 
 TEST_F(IR_ValidatorTest, Construct_Struct_ZeroValue) {
@@ -389,6 +488,38 @@ TEST_F(IR_ValidatorTest, Construct_EmptyResult) {
     undef = construct 1i, 2u
             ^^^^^^^^^
 )")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Construct_Texture) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Construct(ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()));
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
+                                          R"(:3:26 error: construct: type is not constructible
+    %2:texture_2d<f32> = construct
+                         ^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Construct_TextureInStruct_WithCapability) {
+    auto* tex_ty = ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32());
+    auto* str_ty = ty.Struct(mod.symbols.New("MyStruct"), {
+                                                              {mod.symbols.New("a"), tex_ty},
+                                                          });
+
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Construct(str_ty);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowPointersAndHandlesInStructures});
+    ASSERT_EQ(res, Success) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, Convert_MissingArg) {
@@ -1097,7 +1228,7 @@ TEST_F(IR_ValidatorTest, Binary_MissingOperands) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(R"(:3:5 error: binary: expected at least 2 operands, got 0
+                testing::HasSubstr(R"(:3:5 error: binary: expected exactly 2 operands, got 0
     %2:i32 = add
     ^^^^^^^^^^^^
 )")) << res.Failure();
@@ -1117,6 +1248,54 @@ TEST_F(IR_ValidatorTest, Binary_MissingResult) {
                 testing::HasSubstr(R"(:3:5 error: binary: expected exactly 1 results, got 0
     undef = add 1i, 2i
     ^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Binary_Valid) {
+    auto* i32 = ty.i32();
+    auto* func = b.Function("foo", ty.void_());
+    b.Append(func->Block(), [&] {
+        b.Add(i32, b.Constant(1_i), b.Constant(2_i));
+        b.Return(func);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success);
+}
+
+TEST_F(IR_ValidatorTest, Binary_TooManyOperands) {
+    auto* func = b.Function("foo", ty.void_());
+    b.Append(func->Block(), [&] {
+        auto* add = b.Add(ty.i32(), b.Constant(1_i), b.Constant(2_i));
+        add->PushOperand(b.Constant(3_i));
+        b.Return(func);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:3:5 error: binary: expected exactly 2 operands, got 3
+    %2:i32 = add 1i, 2i, 3i
+    ^^^^^^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Binary_OperandWrongType_Func) {
+    auto* i32 = ty.i32();
+    auto* func = b.Function("foo", ty.void_());
+    auto* other_func = b.Function("other", ty.void_());
+    b.Append(other_func->Block(), [&] { b.Return(other_func); });
+
+    b.Append(func->Block(), [&] {
+        b.Add(i32, b.Constant(1_i), other_func);
+        b.Return(func);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:3:5 error: binary: no matching overload for 'operator + (i32, <function>)'
 )")) << res.Failure();
 }
 
@@ -1184,7 +1363,7 @@ TEST_F(IR_ValidatorTest, Unary_MissingOperands) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(R"(:3:5 error: unary: expected at least 1 operands, got 0
+                testing::HasSubstr(R"(:3:5 error: unary: expected exactly 1 operands, got 0
     %2:f32 = negation
     ^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -1205,6 +1384,56 @@ TEST_F(IR_ValidatorTest, Unary_MissingResults) {
                 testing::HasSubstr(R"(:3:5 error: unary: expected exactly 1 results, got 0
     undef = negation 2.0f
     ^^^^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Unary_Valid) {
+    auto* i32 = ty.i32();
+    auto* func = b.Function("foo", ty.void_());
+    b.Append(func->Block(), [&] {
+        b.Negation(i32, b.Constant(1_i));
+        b.Return(func);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success);
+}
+
+TEST_F(IR_ValidatorTest, Unary_TooManyOperands) {
+    auto* i32 = ty.i32();
+    auto* func = b.Function("foo", ty.void_());
+    b.Append(func->Block(), [&] {
+        // Manually create a negation with an extra operand.
+        auto* neg = b.Negation(i32, b.Constant(1_i));
+        neg->PushOperand(b.Constant(2_i));
+        b.Return(func);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:3:5 error: unary: expected exactly 1 operands, got 2
+    %2:i32 = negation 1i, 2i
+    ^^^^^^^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Unary_OperandWrongType) {
+    auto* i32 = ty.i32();
+    auto* other_func = b.Function("other", ty.void_());
+    b.Append(other_func->Block(), [&] { b.Return(other_func); });
+
+    auto* func = b.Function("foo", ty.void_());
+    b.Append(func->Block(), [&] {
+        b.Negation(i32, other_func);
+        b.Return(func);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(R"(:8:5 error: unary: no matching overload for 'operator - (<function>)'
 )")) << res.Failure();
 }
 

@@ -159,7 +159,7 @@ class NonMovable : NonCopyable {
 // For some objects we may do additional cleanup routines, i.e. Destroy if the
 // object was natively created via the API. However, if the object was imported
 // from JS, we don't do the additional cleanup because they may still be used
-// outside of the WASM API.
+// outside of the Wasm API.
 struct ImportedFromJSTag {};
 static constexpr ImportedFromJSTag kImportedFromJS;
 
@@ -620,6 +620,7 @@ class EventManager : NonMovable {
         auto eventIt = mEvents.find(futureId);
         if (eventIt == mEvents.end()) {
           infos[i].completed = true;
+          anyCompleted = true;
           continue;
         }
 
@@ -853,14 +854,15 @@ struct WGPUShaderModuleImpl final : public EventSource, public RefCounted {
         return;
       }
 
+      // Free allocations iff there were any.
       if (compilationInfo->messageCount) {
         // Since we allocate all the messages in a single block, we only need to
         // free the first pointer.
         free(const_cast<char*>(compilationInfo->messages[0].message.data));
-      }
-      if (compilationInfo->messages) {
+        // We also allocate all the Utf16 structs in a single array.
         free(reinterpret_cast<WGPUDawnCompilationMessageUtf16*>(
             compilationInfo->messages[0].nextInChain));
+        // Finally, free the array of messages.
         free(const_cast<WGPUCompilationMessage*>(compilationInfo->messages));
       }
       delete compilationInfo;
@@ -1536,12 +1538,12 @@ void WGPUBufferImpl::AbortPendingMap(const char* message) {
   mMapState = WGPUBufferMapState_Unmapped;
 
   FutureID futureId = mPendingMapRequest.futureID;
+  mPendingMapRequest = {};
   if (futureId == kNullFutureId) {
     // If we were mappedAtCreation, then there is no pending map request so we
     // don't need to resolve any futures.
     return;
   }
-  mPendingMapRequest = {};
   GetEventManager().SetFutureReady<MapAsyncEvent>(
       futureId, WGPUMapAsyncStatus_Aborted, message);
 }
@@ -1655,6 +1657,15 @@ Ref<WGPUInstanceImpl> WGPUInstanceImpl::Create(
             instance->mTimedWaitAnyMaxCount = kTimedWaitAnyMaxCountDefault;
           }
           continue;
+        case WGPUInstanceFeatureName_MultipleDevicesPerAdapter:
+          DEBUG_PRINTF(
+              "MultipleDevicesPerAdapter requested, but not supported in "
+              "Wasm.\n");
+          return {};
+        case WGPUInstanceFeatureName_ShaderSourceSPIRV:
+          DEBUG_PRINTF(
+              "ShaderSourceSPIRV requested, but not supported in Wasm.\n");
+          return {};
         case WGPUInstanceFeatureName_Force32:
           return {};
       }
@@ -1976,12 +1987,12 @@ void wgpuBufferUnmap(WGPUBuffer buffer) {
 
 WGPUBuffer wgpuDeviceCreateBuffer(WGPUDevice device,
                                   const WGPUBufferDescriptor* descriptor) {
-  WGPUBuffer buffer = new WGPUBufferImpl(device, descriptor->mappedAtCreation);
-  if (!emwgpuDeviceCreateBuffer(device, descriptor, buffer)) {
-    delete buffer;
+  Ref<WGPUBufferImpl> buffer =
+      AcquireRef(new WGPUBufferImpl(device, descriptor->mappedAtCreation));
+  if (!emwgpuDeviceCreateBuffer(device, descriptor, buffer.Get())) {
     return nullptr;
   }
-  return buffer;
+  return ReturnToAPI(std::move(buffer));
 }
 
 WGPUFuture wgpuDeviceCreateComputePipelineAsync(

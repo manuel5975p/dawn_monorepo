@@ -264,7 +264,7 @@ class TextureBase : public RefCountedWithExternalCount<SharedResource> {
     ApiObjectList mTextureViews;
 
     using TextureViewCache =
-        LRUCache<TextureViewQuery, Ref<TextureViewBase>, ErrorData, TextureViewCacheFuncs>;
+        LRUCache<TextureViewQuery, Ref<TextureViewBase>, TextureViewCacheFuncs>;
     std::unique_ptr<TextureViewCache> mTextureViewCache;
 
     // TODO(crbug.com/dawn/845): Use a more optimized data structure to save space
@@ -315,6 +315,13 @@ class TextureViewBase : public ApiObjectBase {
     wgpu::TextureUsage GetUsage() const;
     wgpu::TextureUsage GetInternalUsage() const;
 
+    wgpu::ComponentSwizzle GetSwizzleRed() const;
+    wgpu::ComponentSwizzle GetSwizzleGreen() const;
+    wgpu::ComponentSwizzle GetSwizzleBlue() const;
+    wgpu::ComponentSwizzle GetSwizzleAlpha() const;
+    bool UsesNonDefaultSwizzle() const;
+    wgpu::TextureComponentSwizzle ComposeSwizzle(wgpu::TextureComponentSwizzle swizzle) const;
+
     virtual bool IsYCbCr() const;
     // Valid to call only if `IsYCbCr()` is true.
     virtual YCbCrVkDescriptor GetYCbCrVkDescriptor() const;
@@ -334,6 +341,10 @@ class TextureViewBase : public ApiObjectBase {
     SubresourceRange mRange;
     const wgpu::TextureUsage mUsage = wgpu::TextureUsage::None;
     const wgpu::TextureUsage mInternalUsage = wgpu::TextureUsage::None;
+    wgpu::ComponentSwizzle mSwizzleRed = wgpu::ComponentSwizzle::R;
+    wgpu::ComponentSwizzle mSwizzleGreen = wgpu::ComponentSwizzle::G;
+    wgpu::ComponentSwizzle mSwizzleBlue = wgpu::ComponentSwizzle::B;
+    wgpu::ComponentSwizzle mSwizzleAlpha = wgpu::ComponentSwizzle::A;
 };
 
 }  // namespace dawn::native

@@ -59,7 +59,7 @@ class MonitoredFenceQueue final : public Queue {
     using Queue::Queue;
     MaybeError Initialize();
     MaybeError NextSerial() override;
-    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
+    ResultOrError<ExecutionSerial> CheckCompletedSerialsImpl() override;
     void SetEventOnCompletion(ExecutionSerial serial, HANDLE event) override;
 
   private:
@@ -72,8 +72,9 @@ class SystemEventQueue final : public Queue {
     using Queue::Queue;
     MaybeError Initialize();
     MaybeError NextSerial() override;
-    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
-    ResultOrError<bool> WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) override;
+    ResultOrError<ExecutionSerial> CheckCompletedSerialsImpl() override;
+    ResultOrError<ExecutionSerial> WaitForQueueSerialImpl(ExecutionSerial serial,
+                                                          Nanoseconds timeout) override;
     void SetEventOnCompletion(ExecutionSerial serial, HANDLE event) override;
 
   private:
@@ -86,7 +87,7 @@ class SystemEventQueue final : public Queue {
     // Events associated with submitted commands. They are in old to recent order.
     MutexProtected<std::deque<SerialEventReceiverPair>> mPendingEvents;
 
-    // List of completed events to be recycled in CheckAndUpdateCompletedSerials().
+    // List of completed events to be recycled in CheckCompletedSerialsImpl().
     MutexProtected<std::vector<SerialEventReceiverPair>> mCompletedEvents;
 };
 
@@ -108,8 +109,9 @@ class DelayFlushQueue final : public Queue {
     using Queue::Queue;
     MaybeError Initialize();
     MaybeError NextSerial() override;
-    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
-    ResultOrError<bool> WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) override;
+    ResultOrError<ExecutionSerial> CheckCompletedSerialsImpl() override;
+    ResultOrError<ExecutionSerial> WaitForQueueSerialImpl(ExecutionSerial serial,
+                                                          Nanoseconds timeout) override;
     void SetEventOnCompletion(ExecutionSerial serial, HANDLE event) override;
 
   private:
@@ -119,6 +121,8 @@ class DelayFlushQueue final : public Queue {
     MaybeError CheckPendingQueries(const ScopedCommandRecordingContext* commandContext);
 
     void MarkPendingQueriesAsComplete(size_t numCompletedQueries);
+
+    MaybeError BlockWaitForLastSubmittedSerial(const ScopedCommandRecordingContext* commandContext);
 
     struct EventQuery {
       public:
@@ -143,7 +147,7 @@ class DelayFlushQueue final : public Queue {
 
     // Events associated with submitted commands. They are in old to recent order.
     std::deque<EventQuery> mPendingQueries;
-    // List of completed queries to be recycled in CheckAndUpdateCompletedSerials().
+    // List of completed queries to be recycled in CheckCompletedSerialsImpl().
     std::vector<EventQuery> mCompletedQueries;
     // List of recycled queries.
     std::vector<ComPtr<ID3D11Query>> mFreeQueries;
@@ -310,6 +314,25 @@ MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* co
     return {};
 }
 
+ResultOrError<ExecutionSerial> Queue::CheckAndUpdateCompletedSerials() {
+    // TODO(crbug.com/40643114): Revisit whether this lock is needed for this backend.
+    auto deviceGuard = GetDevice()->GetGuard();
+
+    if (!mPendingCommands->IsValid()) {
+        // Device might already be destroyed. Skip checking further.
+        return GetCompletedCommandSerial();
+    }
+
+    ExecutionSerial completedSerial;
+
+    DAWN_TRY_ASSIGN(completedSerial, CheckCompletedSerialsImpl());
+
+    // Finalize Mapping on ready buffers.
+    DAWN_TRY(CheckAndMapReadyBuffers(completedSerial));
+
+    return completedSerial;
+}
+
 MaybeError Queue::CheckAndMapReadyBuffers(ExecutionSerial completedSerial) {
     auto commandContext = GetScopedPendingCommandContext(QueueBase::SubmitMode::Passive);
     for (const auto& bufferEntry : mPendingMapBuffers.IterateUpTo(completedSerial)) {
@@ -371,15 +394,15 @@ bool Queue::HasPendingCommands() const {
 
 void Queue::ForceEventualFlushOfCommands() {}
 
-MaybeError Queue::WaitForIdleForDestruction() {
+MaybeError Queue::WaitForIdleForDestructionImpl() {
     if (!mPendingCommands->IsValid()) {
         return {};
     }
 
     DAWN_TRY(NextSerial());
     // Wait for all in-flight commands to finish executing
-    DAWN_TRY_ASSIGN(std::ignore, WaitForQueueSerial(GetLastSubmittedCommandSerial(),
-                                                    std::numeric_limits<Nanoseconds>::max()));
+    DAWN_TRY_ASSIGN(std::ignore, WaitForQueueSerialImpl(GetLastSubmittedCommandSerial(),
+                                                        std::numeric_limits<Nanoseconds>::max()));
     return CheckPassedSerials();
 }
 
@@ -407,7 +430,7 @@ MaybeError MonitoredFenceQueue::NextSerial() {
     return {};
 }
 
-ResultOrError<ExecutionSerial> MonitoredFenceQueue::CheckAndUpdateCompletedSerials() {
+ResultOrError<ExecutionSerial> MonitoredFenceQueue::CheckCompletedSerialsImpl() {
     ExecutionSerial completedSerial = ExecutionSerial(mFence->GetCompletedValue());
     if (completedSerial == ExecutionSerial(UINT64_MAX)) [[unlikely]] {
         // GetCompletedValue returns UINT64_MAX if the device was removed.
@@ -418,12 +441,6 @@ ResultOrError<ExecutionSerial> MonitoredFenceQueue::CheckAndUpdateCompletedSeria
         // Otherwise, return a generic device lost error.
         return DAWN_DEVICE_LOST_ERROR("Device lost");
     }
-
-    if (completedSerial <= GetCompletedCommandSerial()) {
-        return ExecutionSerial(0);
-    }
-
-    DAWN_TRY(CheckAndMapReadyBuffers(completedSerial));
 
     DAWN_TRY(RecycleSystemEventReceivers(completedSerial));
 
@@ -465,7 +482,7 @@ MaybeError SystemEventQueue::NextSerial() {
     return {};
 }
 
-ResultOrError<ExecutionSerial> SystemEventQueue::CheckAndUpdateCompletedSerials() {
+ResultOrError<ExecutionSerial> SystemEventQueue::CheckCompletedSerialsImpl() {
     ExecutionSerial completedSerial;
     std::vector<SystemEventReceiver> returnedReceivers;
     // Check for completed events in the pending list.
@@ -513,7 +530,7 @@ ResultOrError<ExecutionSerial> SystemEventQueue::CheckAndUpdateCompletedSerials(
             return completedSerial;
         }));
 
-    // Also check for completed events processed by WaitForQueueSerial()
+    // Also check for completed events processed by WaitForQueueSerialImpl()
     mCompletedEvents.Use([&](auto completedEvents) {
         returnedReceivers.reserve(returnedReceivers.size() + completedEvents->size());
         for (auto& event : *completedEvents) {
@@ -523,20 +540,19 @@ ResultOrError<ExecutionSerial> SystemEventQueue::CheckAndUpdateCompletedSerials(
         completedEvents->clear();
     });
 
-    DAWN_TRY(CheckAndMapReadyBuffers(completedSerial));
-
     if (!returnedReceivers.empty()) {
-        DAWN_TRY(ReturnSystemEventReceivers(std::move(returnedReceivers)));
+        DAWN_TRY(ReturnSystemEventReceivers(
+            std::span(returnedReceivers.data(), returnedReceivers.size())));
     }
 
     return completedSerial;
 }
 
-ResultOrError<bool> SystemEventQueue::WaitForQueueSerial(ExecutionSerial serial,
-                                                         Nanoseconds timeout) {
+ResultOrError<ExecutionSerial> SystemEventQueue::WaitForQueueSerialImpl(ExecutionSerial serial,
+                                                                        Nanoseconds timeout) {
     ExecutionSerial completedSerial = GetCompletedCommandSerial();
     if (serial <= completedSerial) {
-        return true;
+        return serial;
     }
 
     if (serial > GetLastSubmittedCommandSerial()) {
@@ -545,9 +561,8 @@ ResultOrError<bool> SystemEventQueue::WaitForQueueSerial(ExecutionSerial serial,
             uint64_t(serial), uint64_t(GetLastSubmittedCommandSerial()));
     }
 
-    bool didComplete = false;
-    DAWN_TRY_ASSIGN(didComplete, mPendingEvents.Use([=, &completedEventsList = mCompletedEvents](
-                                                        auto pendingEvents) -> ResultOrError<bool> {
+    return mPendingEvents.Use([=, &completedEventsList = mCompletedEvents](
+                                  auto pendingEvents) -> ResultOrError<ExecutionSerial> {
         DAWN_ASSERT(!pendingEvents->empty());
         DAWN_ASSERT(serial >= pendingEvents->front().serial);
         DAWN_ASSERT(serial <= pendingEvents->back().serial);
@@ -563,7 +578,7 @@ ResultOrError<bool> SystemEventQueue::WaitForQueueSerial(ExecutionSerial serial,
         DAWN_INTERNAL_ERROR_IF(result == WAIT_FAILED, "WaitForSingleObject() failed");
 
         if (result != WAIT_OBJECT_0) {
-            return false;
+            return kWaitSerialTimeout;
         }
 
         // Events before |it| should be signalled as well.
@@ -574,10 +589,8 @@ ResultOrError<bool> SystemEventQueue::WaitForQueueSerial(ExecutionSerial serial,
         });
         pendingEvents->erase(pendingEvents->begin(), it + 1);
 
-        return true;
-    }));
-
-    return didComplete;
+        return serial;
+    });
 }
 
 void SystemEventQueue::SetEventOnCompletion(ExecutionSerial serial, HANDLE event) {
@@ -657,7 +670,7 @@ MaybeError DelayFlushQueue::CheckPendingQueries(
     return {};
 }
 
-ResultOrError<ExecutionSerial> DelayFlushQueue::CheckAndUpdateCompletedSerials() {
+ResultOrError<ExecutionSerial> DelayFlushQueue::CheckCompletedSerialsImpl() {
     ExecutionSerial completedSerial;
     {
         auto commandContext = GetScopedPendingCommandContext(SubmitMode::Passive);
@@ -673,42 +686,51 @@ ResultOrError<ExecutionSerial> DelayFlushQueue::CheckAndUpdateCompletedSerials()
         mCompletedQueries.clear();
     }
 
-    // Finalize Mapping on ready buffers.
-    DAWN_TRY(CheckAndMapReadyBuffers(completedSerial));
-
     return completedSerial;
 }
 
-ResultOrError<bool> DelayFlushQueue::WaitForQueueSerial(ExecutionSerial serial,
-                                                        Nanoseconds timeout) {
+ResultOrError<ExecutionSerial> DelayFlushQueue::WaitForQueueSerialImpl(ExecutionSerial waitSerial,
+                                                                       Nanoseconds timeout) {
     ExecutionSerial completedSerial = GetCompletedCommandSerial();
-    if (serial <= completedSerial) {
-        return true;
+    if (waitSerial <= completedSerial) {
+        return waitSerial;
     }
 
-    if (serial > GetLastSubmittedCommandSerial()) {
+    if (waitSerial > GetLastSubmittedCommandSerial()) {
         return DAWN_FORMAT_INTERNAL_ERROR(
             "Wait a serial (%llu) which is greater than last submitted command serial (%llu).",
-            uint64_t(serial), uint64_t(GetLastSubmittedCommandSerial()));
+            uint64_t(waitSerial), uint64_t(GetLastSubmittedCommandSerial()));
     }
 
     auto commandContext = GetScopedPendingCommandContext(SubmitMode::Passive);
 
-    DAWN_ASSERT(!mPendingQueries.empty());
-    DAWN_ASSERT(serial >= mPendingQueries.front().Serial());
-    DAWN_ASSERT(serial <= mPendingQueries.back().Serial());
+    if (mPendingQueries.empty() || waitSerial < mPendingQueries.front().Serial()) {
+        // Empty list must mean the serial have already completed.
+        return waitSerial;
+    }
+
+    if (uint64_t(timeout) == std::numeric_limits<uint64_t>::max() &&
+        waitSerial == GetLastSubmittedCommandSerial()) {
+        // If user submits then waits immediately, we can do a small optimization here,
+        // Flush + enqueue SetEvent then wait on the event. This can avoid spinning wait below,
+        // wasting less CPU cycles.
+        DAWN_TRY(BlockWaitForLastSubmittedSerial(&commandContext));
+    }
+
+    DAWN_ASSERT(waitSerial >= mPendingQueries.front().Serial());
+    DAWN_ASSERT(waitSerial <= mPendingQueries.back().Serial());
     auto it =
-        std::lower_bound(mPendingQueries.begin(), mPendingQueries.end(), serial,
+        std::lower_bound(mPendingQueries.begin(), mPendingQueries.end(), waitSerial,
                          [](const EventQuery& a, ExecutionSerial b) { return a.Serial() < b; });
     DAWN_ASSERT(it != mPendingQueries.end());
-    DAWN_ASSERT(it->Serial() == serial);
+    DAWN_ASSERT(it->Serial() == waitSerial);
 
     bool done;
     DAWN_TRY_ASSIGN(done, IsQueryCompleted(&commandContext, /*requireFlush=*/false, &(*it)));
     if (timeout == Nanoseconds(0)) {
         if (!done) {
             // Return timed-out immediately without using a timer.
-            return false;
+            return kWaitSerialTimeout;
         }
     } else {
         auto startTime = std::chrono::steady_clock::now();
@@ -721,17 +743,33 @@ ResultOrError<bool> DelayFlushQueue::WaitForQueueSerial(ExecutionSerial serial,
                 auto elapsedNs =
                     std::chrono::duration_cast<std::chrono::nanoseconds>(curTime - startTime);
                 if (static_cast<uint64_t>(elapsedNs.count()) >= uint64_t(timeout)) {
-                    return false;
+                    return kWaitSerialTimeout;
                 }
                 std::this_thread::yield();
             }
         }
     }
 
-    // Completed queries will be recycled in CheckAndUpdateCompletedSerials();
+    // Completed queries will be recycled in CheckCompletedSerialsImpl();
     auto numCompletedQueries = std::distance(mPendingQueries.begin(), it) + 1;
     MarkPendingQueriesAsComplete(numCompletedQueries);
-    return done;
+    return done ? waitSerial : kWaitSerialTimeout;
+}
+
+MaybeError DelayFlushQueue::BlockWaitForLastSubmittedSerial(
+    const ScopedCommandRecordingContext* commandContext) {
+    TRACE_EVENT0(GetDevice()->GetPlatform(), General,
+                 "DelayFlushQueue::BlockWaitForLastSubmittedSerial");
+
+    SystemEventReceiver receiver;
+    DAWN_TRY_ASSIGN(receiver, GetSystemEventReceiver());
+    commandContext->Flush1(D3D11_CONTEXT_TYPE_ALL, receiver.GetPrimitive().Get());
+
+    DWORD result = WaitForSingleObject(receiver.GetPrimitive().Get(), INFINITE);
+    DAWN_INTERNAL_ERROR_IF(result != WAIT_OBJECT_0, "WaitForSingleObject() failed");
+
+    SystemEventReceiver returnedReceivers[] = {std::move(receiver)};
+    return ReturnSystemEventReceivers(returnedReceivers);
 }
 
 void DelayFlushQueue::SetEventOnCompletion(ExecutionSerial serial, HANDLE event) {

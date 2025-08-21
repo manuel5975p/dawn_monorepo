@@ -127,28 +127,12 @@ struct State {
             });
         }
 
-        Vector<spirv::ir::BuiltinCall*, 4> builtin_worklist;
         Vector<spirv::ir::BuiltinCall*, 4> depth_worklist;
         for (auto* inst : ir.Instructions()) {
             if (auto* builtin = inst->As<spirv::ir::BuiltinCall>()) {
                 switch (builtin->Func()) {
                     case spirv::BuiltinFn::kSampledImage:
                         SampledImage(builtin);
-                        break;
-                    case spirv::BuiltinFn::kImage:
-                    case spirv::BuiltinFn::kImageRead:
-                    case spirv::BuiltinFn::kImageFetch:
-                    case spirv::BuiltinFn::kImageGather:
-                    case spirv::BuiltinFn::kImageQueryLevels:
-                    case spirv::BuiltinFn::kImageQuerySamples:
-                    case spirv::BuiltinFn::kImageQuerySize:
-                    case spirv::BuiltinFn::kImageQuerySizeLod:
-                    case spirv::BuiltinFn::kImageSampleExplicitLod:
-                    case spirv::BuiltinFn::kImageSampleImplicitLod:
-                    case spirv::BuiltinFn::kImageSampleProjImplicitLod:
-                    case spirv::BuiltinFn::kImageSampleProjExplicitLod:
-                    case spirv::BuiltinFn::kImageWrite:
-                        builtin_worklist.Push(builtin);
                         break;
                     case spirv::BuiltinFn::kImageDrefGather:
                     case spirv::BuiltinFn::kImageSampleDrefImplicitLod:
@@ -158,7 +142,7 @@ struct State {
                         depth_worklist.Push(builtin);
                         break;
                     default:
-                        TINT_UNREACHABLE() << "unknown spirv builtin: " << builtin->Func();
+                        break;
                 }
             }
         }
@@ -192,6 +176,39 @@ struct State {
             ConvertVarToComparison(FindRootVarFor(tex));
         }
         UpdateValues();
+
+        Vector<spirv::ir::BuiltinCall*, 4> builtin_worklist;
+        for (auto* inst : ir.Instructions()) {
+            if (auto* builtin = inst->As<spirv::ir::BuiltinCall>()) {
+                switch (builtin->Func()) {
+                    case spirv::BuiltinFn::kSampledImage:
+                        // Note, we _also_ do this here even though it was done above. The one above
+                        // registers for the depth functions, but, we may have forked functions in
+                        // the `UpdateValues` when it does the `ConvertUserCalls`. This would then
+                        // generate new `SampledImage` objects which need to be registered. In the
+                        // worse case, we just write the same data twice.
+                        SampledImage(builtin);
+                        break;
+                    case spirv::BuiltinFn::kImage:
+                    case spirv::BuiltinFn::kImageRead:
+                    case spirv::BuiltinFn::kImageFetch:
+                    case spirv::BuiltinFn::kImageGather:
+                    case spirv::BuiltinFn::kImageQueryLevels:
+                    case spirv::BuiltinFn::kImageQuerySamples:
+                    case spirv::BuiltinFn::kImageQuerySize:
+                    case spirv::BuiltinFn::kImageQuerySizeLod:
+                    case spirv::BuiltinFn::kImageSampleExplicitLod:
+                    case spirv::BuiltinFn::kImageSampleImplicitLod:
+                    case spirv::BuiltinFn::kImageSampleProjImplicitLod:
+                    case spirv::BuiltinFn::kImageSampleProjExplicitLod:
+                    case spirv::BuiltinFn::kImageWrite:
+                        builtin_worklist.Push(builtin);
+                        break;
+                    default:
+                        TINT_UNREACHABLE() << "unknown spirv builtin: " << builtin->Func();
+                }
+            }
+        }
 
         for (auto* builtin : builtin_worklist) {
             switch (builtin->Func()) {
@@ -233,7 +250,11 @@ struct State {
 
         // Destroy all the OpSampledImage instructions.
         for (auto res : sampled_images_) {
-            res.value->Destroy();
+            // If the sampled image was in a user function which was forked and the original
+            // destroyed then it will no longer be alive.
+            if (res.value->Alive()) {
+                res.value->Destroy();
+            }
         }
     }
 
@@ -905,7 +926,6 @@ struct State {
                                       img->GetTexelFormat(), img->GetAccess());
         }
 
-        // TODO(dsinclair): Handle determining depth texture by usage
         if (img->GetDepth() == spirv::type::Depth::kDepth) {
             if (img->GetMultisampled() == spirv::type::Multisampled::kMultisampled) {
                 return ty.depth_multisampled_texture(ConvertDim(img->GetDim(), img->GetArrayed()));
@@ -928,6 +948,7 @@ struct State {
 Result<SuccessType> Texture(core::ir::Module& ir) {
     auto result = ValidateAndDumpIfNeeded(ir, "spirv.Texture",
                                           core::ir::Capabilities{
+                                              core::ir::Capability::kAllowMultipleEntryPoints,
                                               core::ir::Capability::kAllowOverrides,
                                               core::ir::Capability::kAllowNonCoreTypes,
                                           });

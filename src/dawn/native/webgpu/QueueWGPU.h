@@ -32,20 +32,19 @@
 #include <utility>
 #include "dawn/common/MutexProtected.h"
 #include "dawn/native/Queue.h"
-
 #include "dawn/native/webgpu/Forward.h"
+#include "dawn/native/webgpu/ObjectWGPU.h"
 
 namespace dawn::native::webgpu {
 
 class Device;
 
-class Queue final : public QueueBase {
+class Queue final : public QueueBase, public ObjectWGPU<WGPUQueue> {
   public:
     static ResultOrError<Ref<Queue>> Create(Device* device, const QueueDescriptor* descriptor);
 
   private:
     Queue(Device* device, const QueueDescriptor* descriptor);
-    ~Queue() override;
     MaybeError SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) override;
     MaybeError WriteBufferImpl(BufferBase* buffer,
                                uint64_t bufferOffset,
@@ -55,11 +54,11 @@ class Queue final : public QueueBase {
     void ForceEventualFlushOfCommands() override;
     bool HasPendingCommands() const override;
     MaybeError SubmitPendingCommandsImpl() override;
-    ResultOrError<bool> WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) override;
-    MaybeError WaitForIdleForDestruction() override;
+    ResultOrError<ExecutionSerial> WaitForQueueSerialImpl(ExecutionSerial waitSerial,
+                                                          Nanoseconds timeout) override;
+    MaybeError WaitForIdleForDestructionImpl() override;
     MaybeError SubmitFutureSync();
 
-    WGPUQueue mInnerQueue = nullptr;
     MutexProtected<std::deque<std::pair<WGPUFuture, ExecutionSerial>>> mFuturesInFlight;
     bool mHasPendingCommands = false;
 };

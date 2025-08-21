@@ -28,7 +28,7 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_layer.h>
 #include <string.h>
-#include "vk_layer_dispatch_table.h"
+#include "loader/generated/vk_layer_dispatch_table.h"
 
 // clang-format off
 static inline void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable *table, PFN_vkGetDeviceProcAddr gpa) {
@@ -361,6 +361,7 @@ static inline void layer_init_device_dispatch_table(VkDevice device, VkLayerDisp
     table->GetPipelineKeyKHR = (PFN_vkGetPipelineKeyKHR)gpa(device, "vkGetPipelineKeyKHR");
     table->GetPipelineBinaryDataKHR = (PFN_vkGetPipelineBinaryDataKHR)gpa(device, "vkGetPipelineBinaryDataKHR");
     table->ReleaseCapturedPipelineDataKHR = (PFN_vkReleaseCapturedPipelineDataKHR)gpa(device, "vkReleaseCapturedPipelineDataKHR");
+    table->ReleaseSwapchainImagesKHR = (PFN_vkReleaseSwapchainImagesKHR)gpa(device, "vkReleaseSwapchainImagesKHR");
     table->CmdSetLineStippleKHR = (PFN_vkCmdSetLineStippleKHR)gpa(device, "vkCmdSetLineStippleKHR");
     table->GetCalibratedTimestampsKHR = (PFN_vkGetCalibratedTimestampsKHR)gpa(device, "vkGetCalibratedTimestampsKHR");
     table->CmdBindDescriptorSets2KHR = (PFN_vkCmdBindDescriptorSets2KHR)gpa(device, "vkCmdBindDescriptorSets2KHR");

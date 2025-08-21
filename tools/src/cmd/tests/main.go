@@ -152,14 +152,14 @@ func run(fsReaderWriter oswrapper.FilesystemReaderWriter) error {
 	flag.BoolVar(&generateExpected, "generate-expected", false, "create or update all expected outputs")
 	flag.BoolVar(&generateSkip, "generate-skip", false, "create or update all expected outputs that fail with SKIP")
 	flag.BoolVar(&server, "server", true, "run Tint in server mode")
-	flag.BoolVar(&useIrReader, "use-ir-reader", false, "force use of IR SPIR-V Reader")
+	flag.BoolVar(&useIrReader, "use-ir-reader", true, "force use of IR SPIR-V Reader")
 	flag.IntVar(&numCPU, "j", numCPU, "maximum number of concurrent threads to run tests")
 	flag.IntVar(&maxTableWidth, "table-width", terminalWidth, "maximum width of the results table")
 	flag.Usage = showUsage
 	flag.Parse()
 
 	// Check the executable can be found and actually is executable
-	if !fileutils.IsExe(tintPath) {
+	if !fileutils.IsExe(tintPath, fsReaderWriter) {
 		fmt.Fprintln(os.Stderr, "tint executable not found, please specify with --tint")
 		showUsage()
 	}
@@ -192,12 +192,12 @@ func run(fsReaderWriter oswrapper.FilesystemReaderWriter) error {
 		}
 
 		switch {
-		case fileutils.IsDir(arg):
+		case fileutils.IsDir(arg, fsReaderWriter):
 			// Argument is to a directory, expand out to N globs
 			for _, glob := range directoryGlobs {
 				globs = append(globs, path.Join(arg, glob))
 			}
-		case fileutils.IsFile(arg):
+		case fileutils.IsFile(arg, fsReaderWriter):
 			// Argument is a file, append to absFiles
 			absFiles = append(absFiles, arg)
 		default:
@@ -270,16 +270,16 @@ func run(fsReaderWriter oswrapper.FilesystemReaderWriter) error {
 		if *tool.path == "" {
 			// Look first in the directory of the tint executable
 			p, err := exec.LookPath(filepath.Join(filepath.Dir(tintPath), tool.name))
-			if err == nil && fileutils.IsExe(p) {
+			if err == nil && fileutils.IsExe(p, fsReaderWriter) {
 				*tool.path = p
 			} else {
 				// Look in PATH
 				p, err := exec.LookPath(tool.name)
-				if err == nil && fileutils.IsExe(p) {
+				if err == nil && fileutils.IsExe(p, fsReaderWriter) {
 					*tool.path = p
 				}
 			}
-		} else if !fileutils.IsExe(*tool.path) {
+		} else if !fileutils.IsExe(*tool.path, fsReaderWriter) {
 			return fmt.Errorf("%v not found at '%v'", tool.name, *tool.path)
 		}
 
@@ -1033,21 +1033,37 @@ func invokeWithServer(tintPath string, tintServer *tintServerState, args ...stri
 	result := make(chan testResult, 1)
 	go func() {
 		// Send the test arguments to the Tint server.
-		_, in_err := tintServer.stdin.Write([]byte("\"" + strings.Join(args, "\" \"") + "\"\n"))
+		_, inErr := tintServer.stdin.Write([]byte("\"" + strings.Join(args, "\" \"") + "\"\n"))
 
 		// Read from stdout and stderr until the next null character.
-		read := func(stream io.ReadCloser) (str string, err error) {
-			reader := bufio.NewReader(stream)
-			result, err := reader.ReadString(0)
-			return strings.TrimSuffix(result, "\x00"), err
+		// Perform these as two asynchronous operations to prevent buffering of large output from
+		// blocking progress.
+		type readResult struct {
+			str string
+			err error
 		}
-		stdout_str, out_err := read(tintServer.stdout)
-		stderr_str, err_err := read(tintServer.stderr)
-		str := stderr_str + stdout_str
+		read := func(stream io.ReadCloser) chan readResult {
+			resultChannel := make(chan readResult, 1)
+			go func() {
+				reader := bufio.NewReader(stream)
+				result, err := reader.ReadString(0)
+				resultChannel <- readResult{strings.TrimSuffix(result, "\x00"), err}
+			}()
+			return resultChannel
+		}
+		stdoutChannel := read(tintServer.stdout)
+		stderrChannel := read(tintServer.stderr)
+
+		// Read the results from the channels.
+		stdoutResult := <-stdoutChannel
+		stderrResult := <-stderrChannel
+		stdoutStr, outErr := stdoutResult.str, stdoutResult.err
+		stderrStr, errErr := stderrResult.str, stderrResult.err
+		str := stderrStr + stdoutStr
 
 		result <- testResult{
 			output: str,
-			ok:     in_err == nil && out_err == nil && err_err == nil,
+			ok:     inErr == nil && outErr == nil && errErr == nil,
 		}
 	}()
 

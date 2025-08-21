@@ -50,6 +50,7 @@
 #include "dawn/native/vulkan/CommandBufferVk.h"
 #include "dawn/native/vulkan/ComputePipelineVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
+#include "dawn/native/vulkan/FramebufferCache.h"
 #include "dawn/native/vulkan/PhysicalDeviceVk.h"
 #include "dawn/native/vulkan/PipelineCacheVk.h"
 #include "dawn/native/vulkan/PipelineLayoutVk.h"
@@ -115,8 +116,6 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
     VulkanFunctions* functions = GetMutableFunctions();
     *functions = ToBackend(GetPhysicalDevice())->GetVulkanInstance()->GetFunctions();
 
-    mSupportsMappableStorageBuffer = SupportsBufferMapExtendedUsages(mDeviceInfo);
-
     // Two things are crucial if device initialization fails: the function pointers to destroy
     // objects, and the fence deleter that calls these functions. Do not do anything before
     // these two are set up, so that a failed initialization doesn't cause a crash in
@@ -141,6 +140,7 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
         functions->CmdDrawIndexedIndirect = NoopDrawFunction<PFN_vkCmdDrawIndexedIndirect>::Fun;
     }
 
+    mFramebufferCache = std::make_unique<FramebufferCache>(this);
     mRenderPassCache = std::make_unique<RenderPassCache>(this);
 
     VkDeviceSize heapBlockSize =
@@ -196,11 +196,11 @@ Device::~Device() {
 }
 
 ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
-    const BindGroupDescriptor* descriptor) {
+    const UnpackedPtr<BindGroupDescriptor>& descriptor) {
     return BindGroup::Create(this, descriptor);
 }
 ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
-    const BindGroupLayoutDescriptor* descriptor) {
+    const UnpackedPtr<BindGroupLayoutDescriptor>& descriptor) {
     return BindGroupLayout::Create(this, descriptor);
 }
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(
@@ -248,7 +248,7 @@ ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
 ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
     TextureBase* texture,
     const UnpackedPtr<TextureViewDescriptor>& descriptor) {
-    return TextureView::Create(texture, descriptor);
+    return TextureView::Create(texture, mNextTextureViewId++, descriptor);
 }
 Ref<PipelineCacheBase> Device::GetOrCreatePipelineCacheImpl(const CacheKey& key) {
     if (IsToggleEnabled(Toggle::VulkanMonolithicPipelineCache)) {
@@ -388,6 +388,10 @@ MutexProtected<FencedDeleter>& Device::GetFencedDeleter() const {
     return *mDeleter;
 }
 
+FramebufferCache* Device::GetFramebufferCache() const {
+    return mFramebufferCache.get();
+}
+
 RenderPassCache* Device::GetRenderPassCache() const {
     return mRenderPassCache.get();
 }
@@ -449,6 +453,37 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
 
     if (IsRobustnessEnabled()) {
         usedKnobs.features.robustBufferAccess = VK_TRUE;
+
+        // Enable the robustness 2 guarantees that better implement the WebGPU semantics. It forces
+        // tight bounds checking when enabled on buffers (instead of potentially extending by 16
+        // bytes or a vertex stride). It also exposes driver support for image robustness.
+        if (mDeviceInfo.HasExt(DeviceExt::Robustness2)) {
+            DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::Robustness2));
+
+            usedKnobs.robustness2Features = mDeviceInfo.robustness2Features;
+            featuresChain.Add(&usedKnobs.robustness2Features);
+        }
+
+        // Enable pipelineRobustness to better control where robustness happens.
+        if (mDeviceInfo.HasExt(DeviceExt::PipelineRobustness)) {
+            DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::PipelineRobustness));
+
+            usedKnobs.pipelineRobustnessFeatures = mDeviceInfo.pipelineRobustnessFeatures;
+            featuresChain.Add(&usedKnobs.pipelineRobustnessFeatures);
+        }
+
+        // robustBufferAccess requires robustBufferAccessUpdateAfterBind to be used with bindless
+        // enabled. If it is not available, we manual implement robustness for shader buffers and
+        // rely on pipelineRobustness for vertex buffer robustness.
+        if (HasFeature(Feature::ChromiumExperimentalBindless) &&
+            !mDeviceInfo.descriptorIndexingProperties.robustBufferAccessUpdateAfterBind) {
+            usedKnobs.features.robustBufferAccess = VK_FALSE;
+            usedKnobs.robustness2Features.robustBufferAccess2 = VK_FALSE;
+
+            DAWN_ASSERT(!IsToggleEnabled(Toggle::VulkanUseBufferRobustAccess2));
+            DAWN_ASSERT(mDeviceInfo.HasExt(DeviceExt::PipelineRobustness) &&
+                        mDeviceInfo.pipelineRobustnessFeatures.pipelineRobustness);
+        }
     }
 
     if (mDeviceInfo.HasExt(DeviceExt::SubgroupSizeControl)) {
@@ -512,6 +547,11 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
         usedKnobs.features.depthClamp = VK_TRUE;
     }
 
+    if (HasFeature(Feature::ChromiumExperimentalPrimitiveId)) {
+        DAWN_ASSERT(mDeviceInfo.features.geometryShader == VK_TRUE);
+        usedKnobs.features.geometryShader = VK_TRUE;
+    }
+
     bool shaderFloat16Int8FeaturesAdded = false;
     if (HasFeature(Feature::ShaderF16)) {
         DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::ShaderFloat16Int8) &&
@@ -552,15 +592,8 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
         usedKnobs.features.shaderClipDistance = VK_TRUE;
     }
 
-    if (HasFeature(Feature::R8UnormStorage)) {
+    if (HasFeature(Feature::R8UnormStorage) || HasFeature(Feature::TextureFormatsTier1)) {
         usedKnobs.features.shaderStorageImageExtendedFormats = VK_TRUE;
-    }
-
-    if (IsRobustnessEnabled() && mDeviceInfo.HasExt(DeviceExt::Robustness2)) {
-        DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::Robustness2));
-
-        usedKnobs.robustness2Features = mDeviceInfo.robustness2Features;
-        featuresChain.Add(&usedKnobs.robustness2Features);
     }
 
     if (HasFeature(Feature::YCbCrVulkanSamplers) &&
@@ -592,6 +625,11 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
                     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR);
             }
         }
+    }
+
+    if (HasFeature(Feature::ChromiumExperimentalBindless)) {
+        usedKnobs.descriptorIndexingFeatures = mDeviceInfo.descriptorIndexingFeatures;
+        featuresChain.Add(&usedKnobs.descriptorIndexingFeatures);
     }
 
     // Find a universal queue family
@@ -956,8 +994,9 @@ void Device::DestroyImpl() {
     // Allow recycled memory to be deleted.
     GetResourceMemoryAllocator()->FreeRecycledMemory();
 
-    // The VkRenderPasses in the cache can be destroyed immediately since all commands referring
-    // to them are guaranteed to be finished executing.
+    // The VkFramebuffers and VkRenderPasses in the cache can be destroyed immediately since all
+    // commands referring to them are guaranteed to be finished executing.
+    mFramebufferCache = nullptr;
     mRenderPassCache = nullptr;
 
     // Destroy the VkPipelineCache before VkDevice.
@@ -1060,6 +1099,8 @@ void Device::SetLabelImpl() {
 bool Device::ReduceMemoryUsageImpl() {
     GetResourceMemoryAllocator()->FreeRecycledMemory();
 
+    GetFramebufferCache()->Clear();
+
     auto GetLastPendingDeletionSerial = [this]() {
         // Only hold the lock for one of these objects at a time to avoid lock-order-inversion.
         auto deleterSerial = GetFencedDeleter()->GetLastPendingDeletionSerial();
@@ -1111,7 +1152,7 @@ bool Device::CanAddStorageUsageToBufferWithoutSideEffects(wgpu::BufferUsage stor
     DAWN_ASSERT(IsSubset(storageUsage, wgpu::BufferUsage::Storage | kInternalStorageBuffer |
                                            kReadOnlyStorageBuffer));
     if (originalUsage & kMappableBufferUsages) {
-        return mSupportsMappableStorageBuffer;
+        return HasFeature(Feature::BufferMapExtendedUsages);
     }
     return true;
 }

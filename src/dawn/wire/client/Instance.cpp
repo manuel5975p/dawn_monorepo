@@ -212,9 +212,8 @@ WireResult Client::DoInstanceRequestAdapterCallback(ObjectHandle eventManager,
                                                     const WGPULimits* limits,
                                                     uint32_t featuresCount,
                                                     const WGPUFeatureName* features) {
-    return GetEventManager(eventManager)
-        .SetFutureReady<RequestAdapterEvent>(future.id, status, message, info, limits,
-                                             featuresCount, features);
+    return SetFutureReady<RequestAdapterEvent>(eventManager, future.id, status, message, info,
+                                               limits, featuresCount, features);
 }
 
 void Instance::APIProcessEvents() {
@@ -291,11 +290,8 @@ bool Instance::APIHasWGSLLanguageFeature(WGPUWGSLLanguageFeatureName feature) co
     return mWGSLFeatures.contains(feature);
 }
 
-WGPUStatus Instance::APIGetWGSLLanguageFeatures(WGPUSupportedWGSLLanguageFeatures* features) const {
-    if (features == nullptr) {
-        return WGPUStatus_Error;
-    }
-
+void Instance::APIGetWGSLLanguageFeatures(WGPUSupportedWGSLLanguageFeatures* features) const {
+    DAWN_ASSERT(features != nullptr);
     size_t featureCount = mWGSLFeatures.size();
     WGPUWGSLLanguageFeatureName* wgslFeatures = new WGPUWGSLLanguageFeatureName[featureCount];
     uint32_t index = 0;
@@ -306,7 +302,6 @@ WGPUStatus Instance::APIGetWGSLLanguageFeatures(WGPUSupportedWGSLLanguageFeature
 
     features->featureCount = featureCount;
     features->features = wgslFeatures;
-    return WGPUStatus_Success;
 }
 
 WGPUSurface Instance::APICreateSurface(const WGPUSurfaceDescriptor* desc) const {
@@ -338,6 +333,7 @@ DAWN_WIRE_EXPORT WGPUStatus wgpuDawnWireClientGetInstanceLimits(WGPUInstanceLimi
     return WGPUStatus_Success;
 }
 
+// No features listed here because CreateInstance is not supported in the wire.
 static constexpr auto kSupportedFeatures = std::array<WGPUInstanceFeatureName, 0>{};
 
 DAWN_WIRE_EXPORT WGPUBool wgpuDawnWireClientHasInstanceFeature(WGPUInstanceFeatureName feature) {
@@ -355,6 +351,7 @@ DAWN_WIRE_EXPORT void wgpuDawnWireClientGetInstanceFeatures(
 
 DAWN_WIRE_EXPORT WGPUInstance
 wgpuDawnWireClientCreateInstance(WGPUInstanceDescriptor const* descriptor) {
-    DAWN_UNREACHABLE();
+    // Not implemented. Wire currently must be created from an existing server side instance.
+    DAWN_CHECK(false);
     return nullptr;
 }

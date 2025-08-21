@@ -28,9 +28,6 @@
 #include "src/tint/lang/hlsl/writer/helpers/generate_bindings.h"
 
 #include <algorithm>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
 #include "src/tint/api/common/binding_point.h"
 #include "src/tint/lang/core/ir/module.h"
@@ -38,9 +35,6 @@
 #include "src/tint/lang/core/type/external_texture.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/storage_texture.h"
-#include "src/tint/lang/wgsl/ast/module.h"
-#include "src/tint/lang/wgsl/program/program.h"
-#include "src/tint/lang/wgsl/sem/variable.h"
 #include "src/tint/utils/containers/hashmap.h"
 #include "src/tint/utils/containers/vector.h"
 #include "src/tint/utils/rtti/switch.h"
@@ -74,7 +68,7 @@ Bindings GenerateBindings(const core::ir::Module& module) {
                 continue;
             }
 
-            binding::BindingInfo info{bp->group, bp->binding};
+            tint::BindingPoint info{bp->group, bp->binding};
             switch (ptr->AddressSpace()) {
                 case core::AddressSpace::kHandle:
                     Switch(
@@ -109,11 +103,11 @@ Bindings GenerateBindings(const core::ir::Module& module) {
         uint32_t g = bp.group;
         uint32_t& next_num = group_to_next_binding_number.GetOrAddZero(g);
 
-        binding::BindingInfo plane0{bp.group, bp.binding};
-        binding::BindingInfo plane1{g, next_num++};
-        binding::BindingInfo metadata{g, next_num++};
+        tint::BindingPoint plane0{bp.group, bp.binding};
+        tint::BindingPoint plane1{g, next_num++};
+        tint::BindingPoint metadata{g, next_num++};
 
-        bindings.external_texture.emplace(bp, binding::ExternalTexture{metadata, plane0, plane1});
+        bindings.external_texture.emplace(bp, ExternalTexture{metadata, plane0, plane1});
     }
 
     return bindings;

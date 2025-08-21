@@ -27,12 +27,14 @@
 
 #include "src/tint/lang/core/ir/analysis/integer_range_analysis.h"
 
+#include <algorithm>
 #include <limits>
 
 #include "src/tint/lang/core/constant/scalar.h"
 #include "src/tint/lang/core/ir/access.h"
 #include "src/tint/lang/core/ir/binary.h"
 #include "src/tint/lang/core/ir/convert.h"
+#include "src/tint/lang/core/ir/core_builtin_call.h"
 #include "src/tint/lang/core/ir/exit_if.h"
 #include "src/tint/lang/core/ir/exit_loop.h"
 #include "src/tint/lang/core/ir/function.h"
@@ -93,6 +95,16 @@ IntegerRangeInfo ToIntegerRangeInfo(const Constant* constant,
         return IntegerRangeInfo(min_value, max_value);
     } else {
         return IntegerRangeInfo(static_cast<uint64_t>(min_value), static_cast<uint64_t>(max_value));
+    }
+}
+
+IntegerRangeInfo GetFullRangeWithSameIntegerRangeInfoType(const IntegerRangeInfo& range) {
+    if (std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(range.range)) {
+        return IntegerRangeInfo(static_cast<int64_t>(i32::kLowestValue),
+                                static_cast<int64_t>(i32::kHighestValue));
+    } else {
+        return IntegerRangeInfo(static_cast<uint64_t>(u32::kLowestValue),
+                                static_cast<uint64_t>(u32::kHighestValue));
     }
 }
 
@@ -238,6 +250,7 @@ struct IntegerRangeAnalysisImpl {
                     [&](const Let* let) { return GetInfo(let); },
                     [&](const Binary* binary) { return GetInfo(binary); },
                     [&](const Convert* convert) { return GetInfo(convert); },
+                    [&](const CoreBuiltinCall* call) { return GetInfo(call); },
                     [](Default) { return IntegerRangeInfo(); });
             },
             [](Default) { return IntegerRangeInfo(); });
@@ -245,12 +258,19 @@ struct IntegerRangeAnalysisImpl {
 
     IntegerRangeInfo GetInfo(const Binary* binary) {
         return integer_binary_range_info_map_.GetOrAdd(binary, [&]() -> IntegerRangeInfo {
-            IntegerRangeInfo range_lhs = GetInfo(binary->LHS());
-            if (!range_lhs.IsValid()) {
-                return {};
-            }
             IntegerRangeInfo range_rhs = GetInfo(binary->RHS());
             if (!range_rhs.IsValid()) {
+                return {};
+            }
+
+            // We may compute the range of a `modulo` binary when the LHS doesn't have a valid
+            // range.
+            if (binary->Op() == BinaryOp::kModulo) {
+                return ComputeIntegerRangeForBinaryModulo(binary->LHS(), range_rhs);
+            }
+
+            IntegerRangeInfo range_lhs = GetInfo(binary->LHS());
+            if (!range_lhs.IsValid()) {
                 return {};
             }
 
@@ -274,6 +294,27 @@ struct IntegerRangeAnalysisImpl {
                 case BinaryOp::kShiftRight:
                     return ComputeIntegerRangeForBinaryShiftRight(range_lhs, range_rhs);
 
+                default:
+                    return {};
+            }
+        });
+    }
+
+    IntegerRangeInfo GetInfo(const CoreBuiltinCall* call) {
+        return integer_core_builtin_call_range_info_map_.GetOrAdd(call, [&]() -> IntegerRangeInfo {
+            // Currently we only support the integer builtin calls that return an integer value.
+            if (!call->Result()->Type()->IsIntegerScalar()) {
+                return {};
+            }
+
+            // TODO(348701956): Support more builtin functions
+            switch (call->Func()) {
+                case core::BuiltinFn::kMin: {
+                    return ComputeIntegerRangeForBuiltinMin(call);
+                }
+                case core::BuiltinFn::kMax: {
+                    return ComputeIntegerRangeForBuiltinMax(call);
+                }
                 default:
                     return {};
             }
@@ -1089,12 +1130,280 @@ struct IntegerRangeAnalysisImpl {
         }
     }
 
+    IntegerRangeInfo ComputeIntegerRangeForBinaryModulo(const Value* lhs,
+                                                        const IntegerRangeInfo& rhs_range) {
+        TINT_ASSERT(rhs_range.IsValid());
+
+        if (!lhs->Type()->IsIntegerScalar()) {
+            return {};
+        }
+        IntegerRangeInfo lhs_range = GetInfo(lhs);
+        if (!lhs_range.IsValid()) {
+            lhs_range = GetFullRangeWithSameIntegerRangeInfoType(rhs_range);
+        }
+
+        // Suppose the range of `lhs` is [a, b], `a` and `b` are 64-bit signed positive integers
+        // and no greater than u32::kHighestValue.
+        // .
+        // `rhs` is a 64-bit signed constant positive integer.
+        // Let ra = a % rhs (0 <= ra <= rhs - 1), rb = b % rhs (0 <= rb <= rhs - 1)
+        // qa = a / rhs, qb = b / rhs
+        // Then a = qa * rhs + ra, b = qb * rhs + rb
+        //
+        // All the below arithmetic operations are done in the range of 64-bit signed integers so
+        // there won't be any overflow or underflow issues.
+        //
+        // I. We can ignore the case of qa > qb.
+        //    Proof:
+        //    Let qa = qb + d (d >= 1), then
+        //         a = (qb + d) * rhs + ra
+        //           = (qb * rhs + d * rhs) + ra
+        //           = (qb * rhs + rb) - rb + (d * rhs + ra)
+        //           = b - rb + (d * rhs) + ra
+        //           >= b - rb + rhs + (ra)  // d >= 1
+        //           >= b + (rhs - rb)       // ra >= 0
+        //           > b (impossible)        // rhs > rb
+        //
+        // II. When qa < qb, the range of `lhs % rhs` is [0, rhs- 1].
+        //     Proof:
+        //     Let qb = qa + d (d >= 1), then
+        //          b = (qa + d) * rhs + rb
+        //            = (qa * rhs + d * rhs) + rb
+        //            = qa * rhs + (ra - ra) + d * rhs + rb
+        //            = (qa * rhs + ra) + rb - ra + d * rhs
+        //            = a + rb - ra + d * rhs
+        //            >= a + (rb) - ra + rhs    // d >= 1
+        //
+        //      (1) rb >= 0
+        //       =>  b >= a - ra + rhs
+        //       =>  b >= (a) + (rhs - ra) > a  // rhs > ra
+        //       =>  b >= (qa * rhs + ra) + (rhs - ra) > a
+        //       =>  b >= (qa + 1) * rhs > a
+        //       So there must exist a k = ((qa + 1) * rhs) in (a, b] that satisfies `k % rhs == 0`
+        //
+        //      (2)   k = (qa + 1) * rhs > a
+        //            k > a, a >= 0 => k - 1 >= 0
+        //       Then b >= k
+        //              > k - 1 = (qa + 1) * rhs - 1
+        //                      = qa * rhs + (rhs - 1)  // rhs - 1 >= ra
+        //                      >= qa * rhs + ra = a
+        //       So there must exist a (k - 1) = ((qa + 1) * rhs - 1) in [a, b) that satisfies
+        //       `(k - 1) % rhs == 0`.
+        //
+        //       Based on (1) and (2), we can conclude the range of `lhs % rhs` is [0, rhs - 1].
+        //
+        // III. When qa == qb, the range of `lhs % rhs` is `[ra, rb]`.
+        //      Proof:
+        //      let q = qa = qb,
+        //      then a = q * rhs + ra, b = q * rhs + rb
+        //           a = q * rhs + ra <= q * rhs + rb = b
+        //      =>                 ra <= rb
+        //      Arbitrarily choose x in range [a, b], let rx = x % rhs, qx = x / rhs
+        //      x = qx * rhs + rx (0 <= rx < rhs)
+        //      a <= x <= b
+        //      => (q * rhs + ra) <= (qx * rhs + rx) <= (q * rhs + rb)
+        //
+        //      (1) q * rhs + ra <= qx * rhs + rx
+        //                    ra <= qx * rhs + rx - q * rhs  // ra >= 0
+        //               0 <= ra <= qx * rhs + rx - q * rhs
+        //                     0 <= qx * rhs + rx - q * rhs
+        //    q * rhs - qx * rhs <= rx < rhs
+        //    q * rhs - qx * rhs < rhs  // rhs > 0
+        //                q - qx < 1
+        //                    qx > q - 1
+        //
+        //       (2) qx * rhs + rx <= q * rhs + rb
+        //           qx * rhs + rx - q * rhs <= rb < rhs
+        //           qx * rhs + rx - q * rhs < rhs
+        //                                rx < rhs + q * rhs - qx * rhs  // rx >= 0
+        //                           0 <= rx < rhs + q * rhs - qx * rhs
+        //                                 0 < rhs + q * rhs - qx * rhs  // rhs > 0
+        //                                 0 < 1 + q - qx
+        //                                qx < q + 1
+        //
+        //        Based on (1) and (2), qx == q
+        //        Then (q * rhs + ra) <= (q * rhs + rx) <= (q * rhs + rb)
+        //          =>             ra <= rx <= rb
+        //        The range of `lhs % rhs` is [ra, rb].
+        if (std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(rhs_range.range)) {
+            // Currently we require `lhs` must be non-negative.
+            auto lhs_i32 = std::get<IntegerRangeInfo::SignedIntegerRange>(lhs_range.range);
+            if (lhs_i32.min_bound < 0) {
+                return {};
+            }
+
+            // Currently we only accept `rhs` as a constant positive integer.
+            auto rhs_i32 = std::get<IntegerRangeInfo::SignedIntegerRange>(rhs_range.range);
+            if (rhs_i32.min_bound != rhs_i32.max_bound) {
+                return {};
+            }
+            int64_t rhs_const = rhs_i32.min_bound;
+            if (rhs_const <= 0) {
+                return {};
+            }
+
+            // Let:
+            // lhs_max = q_max * rhs_const + r_max; // 0 <= r_max < rhs_const
+            // lhs_min = q_min * rhs_const + r_min; // 0 <= r_min < rhs_const
+            if (lhs_i32.min_bound / rhs_const == lhs_i32.max_bound / rhs_const) {
+                // if q_min == q_max (matches case III):
+                // The range of `lhs % rhs` is [r_min, r_max].
+                int64_t min_bound = lhs_i32.min_bound % rhs_const;
+                int64_t max_bound = lhs_i32.max_bound % rhs_const;
+                TINT_ASSERT(min_bound <= max_bound);
+                return IntegerRangeInfo(min_bound, max_bound);
+            } else {
+                // Otherwise (q_min < q_max, matches case II):
+                // The range of `lhs % rhs` is [0, rhs - 1] (the whole remainder range).
+                return IntegerRangeInfo(0, rhs_const - 1);
+            }
+        } else {
+            // Currently we only accept `rhs` as a constant positive integer.
+            auto rhs_u32 = std::get<IntegerRangeInfo::UnsignedIntegerRange>(rhs_range.range);
+            if (rhs_u32.min_bound != rhs_u32.max_bound) {
+                return {};
+            }
+            uint64_t rhs_const = rhs_u32.min_bound;
+            if (rhs_const == 0) {
+                return {};
+            }
+
+            // `lhs` must not be negative so we don't need to do the check on it.
+
+            // Let:
+            // lhs_max = q_max * rhs_const + r_max; // 0 <= r_max < rhs_const
+            // lhs_min = q_min * rhs_const + r_min; // 0 <= r_min < rhs_const
+            auto lhs_u32 = std::get<IntegerRangeInfo::UnsignedIntegerRange>(lhs_range.range);
+            if (lhs_u32.min_bound / rhs_const == lhs_u32.max_bound / rhs_const) {
+                // if q_min == q_max (matches case III):
+                // The range of `lhs % rhs` is [r_min, r_max].
+                uint64_t min_bound = lhs_u32.min_bound % rhs_const;
+                uint64_t max_bound = lhs_u32.max_bound % rhs_const;
+                TINT_ASSERT(min_bound <= max_bound);
+                return IntegerRangeInfo(min_bound, max_bound);
+            } else {
+                // Otherwise (q_min < q_max, matches case II):
+                // The range of `lhs % rhs` is [0, rhs - 1] (the whole remainder range).
+                return IntegerRangeInfo(0, rhs_const - 1);
+            }
+        }
+    }
+
+    IntegerRangeInfo ComputeIntegerRangeForBuiltinMin(const CoreBuiltinCall* call) {
+        TINT_ASSERT(call->Operands().Length() == 2u);
+
+        TINT_ASSERT(call->Operand(0)->Type()->IsIntegerScalar());
+        TINT_ASSERT(call->Operand(1)->Type()->IsIntegerScalar());
+
+        IntegerRangeInfo range1 = GetInfo(call->Operand(0));
+        IntegerRangeInfo range2 = GetInfo(call->Operand(1));
+        if (!range1.IsValid() && !range2.IsValid()) {
+            return {};
+        }
+
+        if (!range1.IsValid()) {
+            range1 = GetFullRangeWithSameIntegerRangeInfoType(range2);
+        }
+        if (!range2.IsValid()) {
+            range2 = GetFullRangeWithSameIntegerRangeInfoType(range1);
+        }
+
+        // range1: [min1, max1]  range2: [min2, max2]
+        // The minimum value of (min(range1, range2)) is min(min1, min2) and
+        // The maximum value of (min(range1, range2)) is min(max1, max2).
+        if (std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(range1.range)) {
+            TINT_ASSERT(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(range2.range));
+
+            auto range1_i32 = std::get<IntegerRangeInfo::SignedIntegerRange>(range1.range);
+            auto range2_i32 = std::get<IntegerRangeInfo::SignedIntegerRange>(range2.range);
+
+            // When the range is all i32 or u32, we will treat it as an invalid range.
+            int64_t min_bound = std::min(range1_i32.min_bound, range2_i32.min_bound);
+            int64_t max_bound = std::min(range1_i32.max_bound, range2_i32.max_bound);
+            if (min_bound == i32::kLowestValue && max_bound == i32::kHighestValue) {
+                return {};
+            }
+
+            return IntegerRangeInfo(min_bound, max_bound);
+        } else {
+            TINT_ASSERT(
+                std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(range2.range));
+
+            auto range1_u32 = std::get<IntegerRangeInfo::UnsignedIntegerRange>(range1.range);
+            auto range2_u32 = std::get<IntegerRangeInfo::UnsignedIntegerRange>(range2.range);
+
+            // When the range is all i32 or u32, we will treat it as an invalid range.
+            uint64_t min_bound = std::min(range1_u32.min_bound, range2_u32.min_bound);
+            uint64_t max_bound = std::min(range1_u32.max_bound, range2_u32.max_bound);
+            if (min_bound == u32::kLowestValue && max_bound == u32::kHighestValue) {
+                return {};
+            }
+
+            return IntegerRangeInfo(min_bound, max_bound);
+        }
+    }
+
+    IntegerRangeInfo ComputeIntegerRangeForBuiltinMax(const CoreBuiltinCall* call) {
+        TINT_ASSERT(call->Operands().Length() == 2u);
+
+        TINT_ASSERT(call->Operand(0)->Type()->IsIntegerScalar());
+        TINT_ASSERT(call->Operand(1)->Type()->IsIntegerScalar());
+
+        IntegerRangeInfo range1 = GetInfo(call->Operand(0));
+        IntegerRangeInfo range2 = GetInfo(call->Operand(1));
+        if (!range1.IsValid() && !range2.IsValid()) {
+            return {};
+        }
+
+        if (!range1.IsValid()) {
+            range1 = GetFullRangeWithSameIntegerRangeInfoType(range2);
+        }
+        if (!range2.IsValid()) {
+            range2 = GetFullRangeWithSameIntegerRangeInfoType(range1);
+        }
+
+        // range1: [min1, max1]  range2: [min2, max2]
+        // The minimum value of (max(range1, range2)) is max(min1, min2) and
+        // The maximum value of (max(range1, range2)) is max(max1, max2).
+        if (std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(range1.range)) {
+            TINT_ASSERT(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(range2.range));
+
+            auto range1_i32 = std::get<IntegerRangeInfo::SignedIntegerRange>(range1.range);
+            auto range2_i32 = std::get<IntegerRangeInfo::SignedIntegerRange>(range2.range);
+
+            // When the range is all i32 or u32, we will treat it as an invalid range.
+            int64_t min_bound = std::max(range1_i32.min_bound, range2_i32.min_bound);
+            int64_t max_bound = std::max(range1_i32.max_bound, range2_i32.max_bound);
+            if (min_bound == i32::kLowestValue && max_bound == i32::kHighestValue) {
+                return {};
+            }
+
+            return IntegerRangeInfo(min_bound, max_bound);
+        } else {
+            TINT_ASSERT(
+                std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(range2.range));
+
+            auto range1_u32 = std::get<IntegerRangeInfo::UnsignedIntegerRange>(range1.range);
+            auto range2_u32 = std::get<IntegerRangeInfo::UnsignedIntegerRange>(range2.range);
+
+            // When the range is all i32 or u32, we will treat it as an invalid range.
+            uint64_t min_bound = std::max(range1_u32.min_bound, range2_u32.min_bound);
+            uint64_t max_bound = std::max(range1_u32.max_bound, range2_u32.max_bound);
+            if (min_bound == u32::kLowestValue && max_bound == u32::kHighestValue) {
+                return {};
+            }
+
+            return IntegerRangeInfo(min_bound, max_bound);
+        }
+    }
+
     Hashmap<const FunctionParam*, Vector<IntegerRangeInfo, 3>, 4>
         integer_function_param_range_info_map_;
     Hashmap<const Var*, IntegerRangeInfo, 8> integer_var_range_info_map_;
     Hashmap<const Constant*, IntegerRangeInfo, 8> integer_constant_range_info_map_;
     Hashmap<const Binary*, IntegerRangeInfo, 8> integer_binary_range_info_map_;
     Hashmap<const Convert*, IntegerRangeInfo, 8> integer_convert_range_info_map_;
+    Hashmap<const CoreBuiltinCall*, IntegerRangeInfo, 8> integer_core_builtin_call_range_info_map_;
 };
 
 IntegerRangeAnalysis::IntegerRangeAnalysis(Module* ir_module)
@@ -1154,6 +1463,10 @@ IntegerRangeInfo IntegerRangeAnalysis::GetInfo(const Let* let) {
 
 IntegerRangeInfo IntegerRangeAnalysis::GetInfo(const Convert* convert) {
     return impl_->GetInfo(convert);
+}
+
+IntegerRangeInfo IntegerRangeAnalysis::GetInfo(const CoreBuiltinCall* call) {
+    return impl_->GetInfo(call);
 }
 
 }  // namespace tint::core::ir::analysis

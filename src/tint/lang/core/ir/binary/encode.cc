@@ -410,6 +410,9 @@ struct Encoder {
                 [&](const core::type::StorageTexture* t) {
                     TypeStorageTexture(*type_out.mutable_storage_texture(), t);
                 },
+                [&](const core::type::TexelBuffer* t) {
+                    TypeTexelBuffer(*type_out.mutable_texel_buffer(), t);
+                },
                 [&](const core::type::ExternalTexture* t) {
                     TypeExternalTexture(*type_out.mutable_external_texture(), t);
                 },
@@ -550,6 +553,12 @@ struct Encoder {
         texture_out.set_dimension(TextureDimension(texture_in->Dim()));
         texture_out.set_texel_format(TexelFormat(texture_in->TexelFormat()));
         texture_out.set_access(AccessControl(texture_in->Access()));
+    }
+
+    void TypeTexelBuffer(pb::TypeTexelBuffer& buffer_out,
+                         const core::type::TexelBuffer* buffer_in) {
+        buffer_out.set_texel_format(TexelFormat(buffer_in->TexelFormat()));
+        buffer_out.set_access(AccessControl(buffer_in->Access()));
     }
 
     void TypeExternalTexture(pb::TypeExternalTexture&, const core::type::ExternalTexture*) {}
@@ -940,6 +949,50 @@ struct Encoder {
                 return pb::TexelFormat::rgba8_uint;
             case core::TexelFormat::kRgba8Unorm:
                 return pb::TexelFormat::rgba8_unorm;
+            case core::TexelFormat::kR8Snorm:
+                return pb::TexelFormat::r8_snorm;
+            case core::TexelFormat::kR8Uint:
+                return pb::TexelFormat::r8_uint;
+            case core::TexelFormat::kR8Sint:
+                return pb::TexelFormat::r8_sint;
+            case core::TexelFormat::kRg8Unorm:
+                return pb::TexelFormat::rg8_unorm;
+            case core::TexelFormat::kRg8Snorm:
+                return pb::TexelFormat::rg8_snorm;
+            case core::TexelFormat::kRg8Uint:
+                return pb::TexelFormat::rg8_uint;
+            case core::TexelFormat::kRg8Sint:
+                return pb::TexelFormat::rg8_sint;
+            case core::TexelFormat::kR16Uint:
+                return pb::TexelFormat::r16_uint;
+            case core::TexelFormat::kR16Sint:
+                return pb::TexelFormat::r16_sint;
+            case core::TexelFormat::kR16Float:
+                return pb::TexelFormat::r16_float;
+            case core::TexelFormat::kRg16Uint:
+                return pb::TexelFormat::rg16_uint;
+            case core::TexelFormat::kRg16Sint:
+                return pb::TexelFormat::rg16_sint;
+            case core::TexelFormat::kRg16Float:
+                return pb::TexelFormat::rg16_float;
+            case core::TexelFormat::kRgb10A2Uint:
+                return pb::TexelFormat::rgb10a2_uint;
+            case core::TexelFormat::kRgb10A2Unorm:
+                return pb::TexelFormat::rgb10a2_unorm;
+            case core::TexelFormat::kRg11B10Ufloat:
+                return pb::TexelFormat::rg11b10_ufloat;
+            case core::TexelFormat::kR16Unorm:
+                return pb::TexelFormat::r16_unorm;
+            case core::TexelFormat::kR16Snorm:
+                return pb::TexelFormat::r16_snorm;
+            case core::TexelFormat::kRg16Unorm:
+                return pb::TexelFormat::rg16_unorm;
+            case core::TexelFormat::kRg16Snorm:
+                return pb::TexelFormat::rg16_snorm;
+            case core::TexelFormat::kRgba16Unorm:
+                return pb::TexelFormat::rgba16_unorm;
+            case core::TexelFormat::kRgba16Snorm:
+                return pb::TexelFormat::rgba16_snorm;
             case core::TexelFormat::kUndefined:
                 break;
         }
@@ -1028,6 +1081,10 @@ struct Encoder {
                 return pb::BuiltinValue::workgroup_id;
             case core::BuiltinValue::kClipDistances:
                 return pb::BuiltinValue::clip_distances;
+            case core::BuiltinValue::kPrimitiveId:
+                return pb::BuiltinValue::primitive_id;
+            case core::BuiltinValue::kBarycentricCoord:
+                return pb::BuiltinValue::barycentric_coord;
             case core::BuiltinValue::kUndefined:
                 break;
         }
@@ -1334,6 +1391,8 @@ struct Encoder {
                 return pb::BuiltinFn::subgroup_matrix_multiply;
             case core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
                 return pb::BuiltinFn::subgroup_matrix_multiply_accumulate;
+            case core::BuiltinFn::kPrint:
+                return pb::BuiltinFn::print;
             case core::BuiltinFn::kNone:
                 break;
         }

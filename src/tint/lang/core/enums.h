@@ -222,16 +222,38 @@ constexpr std::string_view kSubgroupMatrixKindStrings[] = {
 enum class TexelFormat : uint8_t {
     kUndefined,
     kBgra8Unorm,
+    kR16Float,
+    kR16Sint,
+    kR16Snorm,
+    kR16Uint,
+    kR16Unorm,
     kR32Float,
     kR32Sint,
     kR32Uint,
+    kR8Sint,
+    kR8Snorm,
+    kR8Uint,
     kR8Unorm,
+    kRg11B10Ufloat,
+    kRg16Float,
+    kRg16Sint,
+    kRg16Snorm,
+    kRg16Uint,
+    kRg16Unorm,
     kRg32Float,
     kRg32Sint,
     kRg32Uint,
+    kRg8Sint,
+    kRg8Snorm,
+    kRg8Uint,
+    kRg8Unorm,
+    kRgb10A2Uint,
+    kRgb10A2Unorm,
     kRgba16Float,
     kRgba16Sint,
+    kRgba16Snorm,
     kRgba16Uint,
+    kRgba16Unorm,
     kRgba32Float,
     kRgba32Sint,
     kRgba32Uint,
@@ -260,9 +282,13 @@ auto& operator<<(STREAM& out, TexelFormat value) {
 TexelFormat ParseTexelFormat(std::string_view str);
 
 constexpr std::string_view kTexelFormatStrings[] = {
-    "bgra8unorm", "r32float",   "r32sint",     "r32uint",    "r8unorm",    "rg32float",
-    "rg32sint",   "rg32uint",   "rgba16float", "rgba16sint", "rgba16uint", "rgba32float",
-    "rgba32sint", "rgba32uint", "rgba8sint",   "rgba8snorm", "rgba8uint",  "rgba8unorm",
+    "bgra8unorm",  "r16float",      "r16sint",     "r16snorm",     "r16uint",     "r16unorm",
+    "r32float",    "r32sint",       "r32uint",     "r8sint",       "r8snorm",     "r8uint",
+    "r8unorm",     "rg11b10ufloat", "rg16float",   "rg16sint",     "rg16snorm",   "rg16uint",
+    "rg16unorm",   "rg32float",     "rg32sint",    "rg32uint",     "rg8sint",     "rg8snorm",
+    "rg8uint",     "rg8unorm",      "rgb10a2uint", "rgb10a2unorm", "rgba16float", "rgba16sint",
+    "rgba16snorm", "rgba16uint",    "rgba16unorm", "rgba32float",  "rgba32sint",  "rgba32uint",
+    "rgba8sint",   "rgba8snorm",    "rgba8uint",   "rgba8unorm",
 };
 
 /// An enumerator of builtin types.
@@ -336,6 +362,7 @@ enum class BuiltinType : uint8_t {
     kSubgroupMatrixLeft,
     kSubgroupMatrixResult,
     kSubgroupMatrixRight,
+    kTexelBuffer,
     kTexture1D,
     kTexture2D,
     kTexture2DArray,
@@ -459,6 +486,7 @@ constexpr std::string_view kBuiltinTypeStrings[] = {
     "subgroup_matrix_left",
     "subgroup_matrix_result",
     "subgroup_matrix_right",
+    "texel_buffer",
     "texture_1d",
     "texture_2d",
     "texture_2d_array",
@@ -500,6 +528,7 @@ enum class BuiltinValue : uint8_t {
     kUndefined,
     kCullDistance,  // Tint-internal enum entry - not parsed
     kPointSize,     // Tint-internal enum entry - not parsed
+    kBarycentricCoord,
     kClipDistances,
     kFragDepth,
     kFrontFacing,
@@ -509,6 +538,7 @@ enum class BuiltinValue : uint8_t {
     kLocalInvocationIndex,
     kNumWorkgroups,
     kPosition,
+    kPrimitiveId,
     kSampleIndex,
     kSampleMask,
     kSubgroupId,
@@ -537,11 +567,23 @@ auto& operator<<(STREAM& out, BuiltinValue value) {
 BuiltinValue ParseBuiltinValue(std::string_view str);
 
 constexpr std::string_view kBuiltinValueStrings[] = {
-    "clip_distances",         "frag_depth",     "front_facing",
-    "global_invocation_id",   "instance_index", "local_invocation_id",
-    "local_invocation_index", "num_workgroups", "position",
-    "sample_index",           "sample_mask",    "subgroup_id",
-    "subgroup_invocation_id", "subgroup_size",  "vertex_index",
+    "barycentric_coord",
+    "clip_distances",
+    "frag_depth",
+    "front_facing",
+    "global_invocation_id",
+    "instance_index",
+    "local_invocation_id",
+    "local_invocation_index",
+    "num_workgroups",
+    "position",
+    "primitive_id",
+    "sample_index",
+    "sample_mask",
+    "subgroup_id",
+    "subgroup_invocation_id",
+    "subgroup_size",
+    "vertex_index",
     "workgroup_id",
 };
 
@@ -624,10 +666,12 @@ enum class ParameterUsage : uint8_t {
     kDelta,
     kDepth,
     kDepthRef,
+    kDir,
     kDref,
     kE,
     kElements,
     kExp,
+    kGroupOperation,
     kHeight,
     kI,
     kId,
@@ -648,6 +692,7 @@ enum class ParameterUsage : uint8_t {
     kSampleIndex,
     kSampler,
     kSamples,
+    kScope,
     kSourceLaneIndex,
     kTexel,
     kTexture,
@@ -829,6 +874,7 @@ enum class BuiltinFn : uint8_t {
     kSubgroupMatrixStore,
     kSubgroupMatrixMultiply,
     kSubgroupMatrixMultiplyAccumulate,
+    kPrint,
     kNone,
 };
 
@@ -1001,6 +1047,7 @@ constexpr BuiltinFn kBuiltinFns[] = {
     BuiltinFn::kSubgroupMatrixStore,
     BuiltinFn::kSubgroupMatrixMultiply,
     BuiltinFn::kSubgroupMatrixMultiplyAccumulate,
+    BuiltinFn::kPrint,
 };
 
 /// All builtin function names
@@ -1154,6 +1201,7 @@ constexpr const char* kBuiltinFnStrings[] = {
     "subgroupMatrixStore",
     "subgroupMatrixMultiply",
     "subgroupMatrixMultiplyAccumulate",
+    "print",
 };
 
 /// Determines if the given `f` is a coarse derivative.

@@ -135,6 +135,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
                                ->GetAppliedShaderModelUnderToggles(device->GetTogglesState());
     req.hlsl.disableSymbolRenaming = device->IsToggleEnabled(Toggle::DisableSymbolRenaming);
     req.hlsl.dumpShaders = device->IsToggleEnabled(Toggle::DumpShaders);
+    req.hlsl.dumpShadersOnFailure = device->IsToggleEnabled(Toggle::DumpShadersOnFailure);
     req.hlsl.tintOptions.remapped_entry_point_name = device->GetIsolatedEntryPointName();
 
     req.bytecode.hasShaderF16Feature = device->HasFeature(Feature::ShaderF16);
@@ -192,17 +193,13 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
             if (bufferBindingInfo) {
                 switch (bufferBindingInfo->type) {
                     case wgpu::BufferBindingType::Uniform:
-                        bindings.uniform.emplace(
-                            srcBindingPoint, tint::hlsl::writer::binding::Uniform{
-                                                 dstBindingPoint.group, dstBindingPoint.binding});
+                        bindings.uniform.emplace(srcBindingPoint, dstBindingPoint);
                         break;
                     case kInternalStorageBufferBinding:
                     case wgpu::BufferBindingType::Storage:
                     case wgpu::BufferBindingType::ReadOnlyStorage:
                     case kInternalReadOnlyStorageBufferBinding:
-                        bindings.storage.emplace(
-                            srcBindingPoint, tint::hlsl::writer::binding::Storage{
-                                                 dstBindingPoint.group, dstBindingPoint.binding});
+                        bindings.storage.emplace(srcBindingPoint, dstBindingPoint);
                         break;
                     case wgpu::BufferBindingType::BindingNotUsed:
                     case wgpu::BufferBindingType::Undefined:
@@ -210,18 +207,12 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
                         break;
                 }
             } else if (std::holds_alternative<SamplerBindingInfo>(shaderBindingInfo.bindingInfo)) {
-                bindings.sampler.emplace(
-                    srcBindingPoint, tint::hlsl::writer::binding::Sampler{dstBindingPoint.group,
-                                                                          dstBindingPoint.binding});
+                bindings.sampler.emplace(srcBindingPoint, dstBindingPoint);
             } else if (std::holds_alternative<TextureBindingInfo>(shaderBindingInfo.bindingInfo)) {
-                bindings.texture.emplace(
-                    srcBindingPoint, tint::hlsl::writer::binding::Texture{dstBindingPoint.group,
-                                                                          dstBindingPoint.binding});
+                bindings.texture.emplace(srcBindingPoint, dstBindingPoint);
             } else if (std::holds_alternative<StorageTextureBindingInfo>(
                            shaderBindingInfo.bindingInfo)) {
-                bindings.storage_texture.emplace(
-                    srcBindingPoint, tint::hlsl::writer::binding::StorageTexture{
-                                         dstBindingPoint.group, dstBindingPoint.binding});
+                bindings.storage_texture.emplace(srcBindingPoint, dstBindingPoint);
             } else if (std::holds_alternative<ExternalTextureBindingInfo>(
                            shaderBindingInfo.bindingInfo)) {
                 const auto& etBindingMap = bgl->GetExternalTextureBindingExpansionMap();
@@ -229,18 +220,17 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
                 DAWN_ASSERT(expansion != etBindingMap.end());
 
                 const auto& bindingExpansion = expansion->second;
-                tint::hlsl::writer::binding::BindingInfo plane0{
+                tint::BindingPoint plane0{
                     static_cast<uint32_t>(group),
                     bgl->GetShaderRegister(bgl->GetBindingIndex(bindingExpansion.plane0))};
-                tint::hlsl::writer::binding::BindingInfo plane1{
+                tint::BindingPoint plane1{
                     static_cast<uint32_t>(group),
                     bgl->GetShaderRegister(bgl->GetBindingIndex(bindingExpansion.plane1))};
-                tint::hlsl::writer::binding::BindingInfo metadata{
+                tint::BindingPoint metadata{
                     static_cast<uint32_t>(group),
                     bgl->GetShaderRegister(bgl->GetBindingIndex(bindingExpansion.params))};
                 bindings.external_texture.emplace(
-                    srcBindingPoint,
-                    tint::hlsl::writer::binding::ExternalTexture{metadata, plane0, plane1});
+                    srcBindingPoint, tint::hlsl::writer::ExternalTexture{metadata, plane0, plane1});
             }
 
             if (bufferBindingInfo) {
@@ -340,6 +330,9 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     // read by the shader.
     req.hlsl.tintOptions.array_length_from_uniform = std::move(arrayLengthFromUniform);
 
+    req.hlsl.tintOptions.immediate_binding_point = tint::BindingPoint{
+        layout->GetImmediatesRegisterSpace(), layout->GetImmediatesShaderRegister()};
+
     if (stage == SingleShaderStage::Vertex) {
         // Now that only vertex shader can have interstage outputs.
         // Pass in the actually used interstage locations for tint to potentially truncate unused
@@ -361,6 +354,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         device->IsToggleEnabled(Toggle::ScalarizeMaxMinClamp);
     req.hlsl.tintOptions.polyfill_pack_unpack_4x8 =
         device->IsToggleEnabled(Toggle::D3D12PolyFillPackUnpack4x8);
+    req.hlsl.tintOptions.polyfill_subgroup_broadcast_f16 =
+        device->IsToggleEnabled(Toggle::EnableSubgroupsIntelGen9);
     req.hlsl.tintOptions.enable_integer_range_analysis =
         device->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
 

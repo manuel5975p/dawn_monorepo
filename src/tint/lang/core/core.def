@@ -65,9 +65,10 @@ enum builtin_value {
   subgroup_id
   subgroup_invocation_id
   subgroup_size
+  primitive_id
+  barycentric_coord
   @internal __point_size
   @internal __cull_distance
-
 }
 
 // https://www.w3.org/TR/WGSL/#interpolation
@@ -178,6 +179,8 @@ enum builtin_type {
   subgroup_matrix_result
   // sized_binding_array
   binding_array
+  // texel_buffers
+  texel_buffer
 
   // Internal types.
   __atomic_compare_exchange_result_i32
@@ -246,10 +249,12 @@ enum usages {
   coords
   count
   depth
+  dir
   dref
   compare_value
   elements
   exp
+  group_operation
   height
   i
   image
@@ -264,6 +269,7 @@ enum usages {
   result
   sample
   samples
+  scope
   texel
   width
   x
@@ -319,6 +325,7 @@ type texture_storage_2d<F: texel_format, A: access>
 type texture_storage_2d_array<F: texel_format, A: access>
 type texture_storage_3d<F: texel_format, A: access>
 type texture_external
+type texel_buffer<F: texel_format, A: access>
 type input_attachment<T>
 
 @display("__modf_result_{T}")        type __modf_result<T>
@@ -367,25 +374,47 @@ match subgroup_matrix_kind_result : subgroup_matrix_kind.result
 // https://gpuweb.github.io/gpuweb/wgsl/#texel-formats
 match f32_texel_format
   : texel_format.r8unorm
+  | texel_format.r8snorm
+  | texel_format.rg8unorm
+  | texel_format.rg8snorm
   | texel_format.bgra8unorm
   | texel_format.rgba8unorm
   | texel_format.rgba8snorm
+  | texel_format.r16unorm
+  | texel_format.r16snorm
+  | texel_format.rg16unorm
+  | texel_format.rg16snorm
+  | texel_format.rgba16unorm
+  | texel_format.rgba16snorm
+  | texel_format.r16float
+  | texel_format.rg16float
   | texel_format.rgba16float
   | texel_format.r32float
   | texel_format.rg32float
   | texel_format.rgba32float
+  | texel_format.rgb10a2unorm
+  | texel_format.rg11b10ufloat
 match i32_texel_format
-  : texel_format.rgba8sint
+  : texel_format.r8sint
+  | texel_format.rg8sint
+  | texel_format.rgba8sint
+  | texel_format.r16sint
+  | texel_format.rg16sint
   | texel_format.rgba16sint
   | texel_format.r32sint
   | texel_format.rg32sint
   | texel_format.rgba32sint
 match u32_texel_format
-  : texel_format.rgba8uint
+  : texel_format.r8uint
+  | texel_format.rg8uint
+  | texel_format.r16uint
+  | texel_format.rg16uint
+  | texel_format.rgba8uint
   | texel_format.rgba16uint
   | texel_format.r32uint
   | texel_format.rg32uint
   | texel_format.rgba32uint
+  | texel_format.rgb10a2uint
 
 match write: access.write
 match read_write: access.read_write
@@ -598,6 +627,7 @@ match workgroup
 @must_use implicit(F: texel_format, A: access) fn textureDimensions(texture: texture_storage_2d<F, A>) -> vec2<u32>
 @must_use implicit(F: texel_format, A: access) fn textureDimensions(texture: texture_storage_2d_array<F, A>) -> vec2<u32>
 @must_use implicit(F: texel_format, A: access) fn textureDimensions(texture: texture_storage_3d<F, A>) -> vec3<u32>
+@must_use implicit(F: texel_format, A: access) fn textureDimensions(texture: texel_buffer<F, A>) -> u32
 @must_use fn textureDimensions(texture: texture_external) -> vec2<u32>
 @must_use implicit(T: fiu32, C: iu32) fn textureGather(@const component: C, texture: texture_2d<T>, sampler: sampler, coords: vec2<f32>) -> vec4<T>
 @must_use implicit(T: fiu32, C: iu32) fn textureGather(@const component: C, texture: texture_2d<T>, sampler: sampler, coords: vec2<f32>, @const offset: vec2<i32>) -> vec4<T>
@@ -698,14 +728,17 @@ implicit(C: iu32) fn textureStore(texture: texture_storage_1d<f32_texel_format, 
 implicit(C: iu32) fn textureStore(texture: texture_storage_2d<f32_texel_format, writable>, coords: vec2<C>, value: vec4<f32>)
 implicit(C: iu32, A: iu32) fn textureStore(texture: texture_storage_2d_array<f32_texel_format, writable>, coords: vec2<C>, array_index: A, value: vec4<f32>)
 implicit(C: iu32) fn textureStore(texture: texture_storage_3d<f32_texel_format, writable>, coords: vec3<C>, value: vec4<f32>)
+implicit(C: iu32) fn textureStore(texture: texel_buffer<f32_texel_format, read_write>, coords: C, value: vec4<f32>)
 implicit(C: iu32) fn textureStore(texture: texture_storage_1d<i32_texel_format, writable>, coords: C, value: vec4<i32>)
 implicit(C: iu32) fn textureStore(texture: texture_storage_2d<i32_texel_format, writable>, coords: vec2<C>, value: vec4<i32>)
 implicit(C: iu32, A: iu32) fn textureStore(texture: texture_storage_2d_array<i32_texel_format, writable>, coords: vec2<C>, array_index: A, value: vec4<i32>)
 implicit(C: iu32) fn textureStore(texture: texture_storage_3d<i32_texel_format, writable>, coords: vec3<C>, value: vec4<i32>)
+implicit(C: iu32) fn textureStore(texture: texel_buffer<i32_texel_format, read_write>, coords: C, value: vec4<i32>)
 implicit(C: iu32) fn textureStore(texture: texture_storage_1d<u32_texel_format, writable>, coords: C, value: vec4<u32>)
 implicit(C: iu32) fn textureStore(texture: texture_storage_2d<u32_texel_format, writable>, coords: vec2<C>, value: vec4<u32>)
 implicit(C: iu32, A: iu32) fn textureStore(texture: texture_storage_2d_array<u32_texel_format, writable>, coords: vec2<C>, array_index: A, value: vec4<u32>)
 implicit(C: iu32) fn textureStore(texture: texture_storage_3d<u32_texel_format, writable>, coords: vec3<C>, value: vec4<u32>)
+implicit(C: iu32) fn textureStore(texture: texel_buffer<u32_texel_format, read_write>, coords: C, value: vec4<u32>)
 @must_use implicit(T: fiu32, C: iu32, L: iu32) fn textureLoad(texture: texture_1d<T>, coords: C, level: L) -> vec4<T>
 @must_use implicit(T: fiu32, C: iu32, L: iu32) fn textureLoad(texture: texture_2d<T>, coords: vec2<C>, level: L) -> vec4<T>
 @must_use implicit(T: fiu32, C: iu32, A: iu32, L: iu32) fn textureLoad(texture: texture_2d_array<T>, coords: vec2<C>, array_index: A, level: L) -> vec4<T>
@@ -727,6 +760,9 @@ implicit(C: iu32) fn textureStore(texture: texture_storage_3d<u32_texel_format, 
 @must_use implicit(C: iu32) fn textureLoad(texture: texture_storage_3d<f32_texel_format, readable>, coords: vec3<C>) -> vec4<f32>
 @must_use implicit(C: iu32) fn textureLoad(texture: texture_storage_3d<i32_texel_format, readable>, coords: vec3<C>) -> vec4<i32>
 @must_use implicit(C: iu32) fn textureLoad(texture: texture_storage_3d<u32_texel_format, readable>, coords: vec3<C>) -> vec4<u32>
+@must_use implicit(C: iu32) fn textureLoad(texture: texel_buffer<f32_texel_format, readable>, coords: C) -> vec4<f32>
+@must_use implicit(C: iu32) fn textureLoad(texture: texel_buffer<i32_texel_format, readable>, coords: C) -> vec4<i32>
+@must_use implicit(C: iu32) fn textureLoad(texture: texel_buffer<u32_texel_format, readable>, coords: C) -> vec4<u32>
 
 @stage("fragment") implicit(T: fiu32) fn inputAttachmentLoad(input_attachment: input_attachment<T>) -> vec4<T>
 
@@ -837,6 +873,10 @@ implicit(C: iu32) fn textureStore(texture: texture_storage_3d<u32_texel_format, 
   subgroup_matrix<subgroup_matrix_kind_right, T, C, K>,
   subgroup_matrix<subgroup_matrix_kind_result, TR, C, R>)
   -> subgroup_matrix<subgroup_matrix_kind_result, TR, C, R>
+
+// chromium_experimental_print
+implicit(T: scalar) fn print(T)
+implicit(N: num, T: scalar) fn print(vec<N, T>)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Value constructors                                                         //
@@ -1093,3 +1133,4 @@ ctor mat4x4<T: f32_f16>(T, T, T, T,
 
 @must_use @const implicit(T: iu32) op >> (T, u32) -> T
 @must_use @const implicit(T: iu32, N: num) op >> (vec<N, T>, vec<N, u32>) -> vec<N, T>
+

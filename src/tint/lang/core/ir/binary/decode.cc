@@ -691,6 +691,8 @@ struct Decoder {
                 return CreateTypeArray(type_in.array());
             case pb::Type::KindCase::kBindingArray:
                 return CreateTypeBindingArray(type_in.binding_array());
+            case pb::Type::KindCase::kTexelBuffer:
+                return CreateTypeTexelBuffer(type_in.texel_buffer());
             case pb::Type::KindCase::kDepthTexture:
                 return CreateTypeDepthTexture(type_in.depth_texture());
             case pb::Type::KindCase::kSampledTexture:
@@ -929,6 +931,12 @@ struct Decoder {
         auto texel_format = TexelFormat(texture_in.texel_format());
         auto access = AccessControl(texture_in.access());
         return mod_out_.Types().storage_texture(dimension, texel_format, access);
+    }
+
+    const type::TexelBuffer* CreateTypeTexelBuffer(const pb::TypeTexelBuffer& buffer_in) {
+        auto texel_format = TexelFormat(buffer_in.texel_format());
+        auto access = AccessControl(buffer_in.access());
+        return mod_out_.Types().texel_buffer(texel_format, access);
     }
 
     const type::ExternalTexture* CreateTypeExternalTexture(const pb::TypeExternalTexture&) {
@@ -1442,6 +1450,50 @@ struct Decoder {
                 return core::TexelFormat::kRgba8Uint;
             case pb::TexelFormat::rgba8_unorm:
                 return core::TexelFormat::kRgba8Unorm;
+            case pb::TexelFormat::r8_snorm:
+                return core::TexelFormat::kR8Snorm;
+            case pb::TexelFormat::r8_uint:
+                return core::TexelFormat::kR8Uint;
+            case pb::TexelFormat::r8_sint:
+                return core::TexelFormat::kR8Sint;
+            case pb::TexelFormat::rg8_unorm:
+                return core::TexelFormat::kRg8Unorm;
+            case pb::TexelFormat::rg8_snorm:
+                return core::TexelFormat::kRg8Snorm;
+            case pb::TexelFormat::rg8_uint:
+                return core::TexelFormat::kRg8Uint;
+            case pb::TexelFormat::rg8_sint:
+                return core::TexelFormat::kRg8Sint;
+            case pb::TexelFormat::r16_uint:
+                return core::TexelFormat::kR16Uint;
+            case pb::TexelFormat::r16_sint:
+                return core::TexelFormat::kR16Sint;
+            case pb::TexelFormat::r16_float:
+                return core::TexelFormat::kR16Float;
+            case pb::TexelFormat::rg16_uint:
+                return core::TexelFormat::kRg16Uint;
+            case pb::TexelFormat::rg16_sint:
+                return core::TexelFormat::kRg16Sint;
+            case pb::TexelFormat::rg16_float:
+                return core::TexelFormat::kRg16Float;
+            case pb::TexelFormat::rgb10a2_uint:
+                return core::TexelFormat::kRgb10A2Uint;
+            case pb::TexelFormat::rgb10a2_unorm:
+                return core::TexelFormat::kRgb10A2Unorm;
+            case pb::TexelFormat::rg11b10_ufloat:
+                return core::TexelFormat::kRg11B10Ufloat;
+            case pb::TexelFormat::r16_unorm:
+                return core::TexelFormat::kR16Unorm;
+            case pb::TexelFormat::r16_snorm:
+                return core::TexelFormat::kR16Snorm;
+            case pb::TexelFormat::rg16_unorm:
+                return core::TexelFormat::kRg16Unorm;
+            case pb::TexelFormat::rg16_snorm:
+                return core::TexelFormat::kRg16Snorm;
+            case pb::TexelFormat::rgba16_unorm:
+                return core::TexelFormat::kRgba16Unorm;
+            case pb::TexelFormat::rgba16_snorm:
+                return core::TexelFormat::kRgba16Snorm;
 
             case pb::TexelFormat::TexelFormat_INT_MIN_SENTINEL_DO_NOT_USE_:
             case pb::TexelFormat::TexelFormat_INT_MAX_SENTINEL_DO_NOT_USE_:
@@ -1555,6 +1607,10 @@ struct Decoder {
                 return core::BuiltinValue::kWorkgroupId;
             case pb::BuiltinValue::clip_distances:
                 return core::BuiltinValue::kClipDistances;
+            case pb::BuiltinValue::primitive_id:
+                return core::BuiltinValue::kPrimitiveId;
+            case pb::BuiltinValue::barycentric_coord:
+                return core::BuiltinValue::kBarycentricCoord;
             case pb::BuiltinValue::BuiltinValue_INT_MIN_SENTINEL_DO_NOT_USE_:
             case pb::BuiltinValue::BuiltinValue_INT_MAX_SENTINEL_DO_NOT_USE_:
                 break;
@@ -1867,6 +1923,9 @@ struct Decoder {
                 return core::BuiltinFn::kSubgroupMatrixMultiply;
             case pb::BuiltinFn::subgroup_matrix_multiply_accumulate:
                 return core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate;
+            case pb::BuiltinFn::print:
+                return core::BuiltinFn::kPrint;
+
             case pb::BuiltinFn::BuiltinFn_INT_MIN_SENTINEL_DO_NOT_USE_:
             case pb::BuiltinFn::BuiltinFn_INT_MAX_SENTINEL_DO_NOT_USE_:
                 break;

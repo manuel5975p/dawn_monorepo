@@ -51,6 +51,7 @@ func main() {
 	}
 
 	var nodePath string
+	var binDir string
 	lldb := false
 
 	flag.Usage = func() {
@@ -61,7 +62,7 @@ func main() {
 
 	flag.StringVar(&nodePath, "node", fileutils.NodePath(wrapper), "path to node executable")
 	flag.Var(&nodeFlags, "flag", "flag to pass to dawn-node as flag=value. multiple flags must be passed in individually")
-	flag.StringVar(&opts.BinDir, "bin", fileutils.BuildPath(wrapper), "path to the directory holding cts.js and dawn.node")
+	flag.StringVar(&binDir, "bin", fileutils.BuildPath(wrapper), "path to the directory holding cts.js and dawn.node")
 	flag.StringVar(&opts.Backend, "backend", "default", "backend to use: default|null|webgpu|d3d11|d3d12|metal|vulkan|opengl|opengles."+
 		" set to 'vulkan' if VK_ICD_FILENAMES environment variable is set, 'default' otherwise")
 	flag.StringVar(&opts.Adapter, "adapter", "", "name (or substring) of the GPU adapter to use")
@@ -79,14 +80,14 @@ func main() {
 		debugger = "lldb"
 	}
 
-	if err := run(opts.BinDir, nodePath, nodeFlags, flag.Args(), debugger); err != nil {
+	if err := run(binDir, nodePath, nodeFlags, flag.Args(), debugger, wrapper); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
 // run starts the
-func run(binPath, nodePath string, flags node.Flags, args []string, debugger string) error {
+func run(binPath, nodePath string, flags node.Flags, args []string, debugger string, fsReader oswrapper.FilesystemReader) error {
 	if len(args) == 0 {
 		return fmt.Errorf("missing path to .js file")
 	}
@@ -102,7 +103,7 @@ func run(binPath, nodePath string, flags node.Flags, args []string, debugger str
 	}
 
 	for _, file := range []string{"cts.js", "dawn.node"} {
-		if !fileutils.IsFile(filepath.Join(binPath, file)) {
+		if !fileutils.IsFile(filepath.Join(binPath, file), fsReader) {
 			return fmt.Errorf("'%v' does not contain '%v'", binPath, file)
 		}
 	}

@@ -26,6 +26,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import("../../../scripts/dawn_overrides_with_defaults.gni")
+import("../../../scripts/tint_overrides_with_defaults.gni")
 
 import("//testing/test.gni")
 import("${dawn_root}/generator/dawn_generator.gni")
@@ -334,6 +335,7 @@ dawn_test("dawn_unittests") {
     "unittests/ITypBitsetTests.cpp",
     "unittests/ITypSpanTests.cpp",
     "unittests/ITypVectorTests.cpp",
+    "unittests/LRUCacheTests.cpp",
     "unittests/LinkedListTests.cpp",
     "unittests/MathTests.cpp",
     "unittests/MutexProtectedTests.cpp",
@@ -411,6 +413,7 @@ dawn_test("dawn_unittests") {
     "unittests/validation/SamplerValidationTests.cpp",
     "unittests/validation/ShaderModuleValidationTests.cpp",
     "unittests/validation/StorageTextureValidationTests.cpp",
+    "unittests/validation/TexelBufferValidationTests.cpp",
     "unittests/validation/TextureSubresourceTests.cpp",
     "unittests/validation/TextureValidationTests.cpp",
     "unittests/validation/TextureViewValidationTests.cpp",
@@ -465,6 +468,10 @@ dawn_test("dawn_unittests") {
 
   if (dawn_enable_vulkan) {
     sources += [ "unittests/validation/YCbCrInfoValidationTests.cpp" ]
+  }
+
+  if (tint_build_spv_reader) {
+    deps += [ "${dawn_spirv_tools_dir}:spvtools_opt" ]
   }
 
   # When building inside Chromium, use their gtest main function because it is
@@ -652,6 +659,7 @@ source_set("end2end_tests_sources") {
     "end2end/PipelineLayoutTests.cpp",
     "end2end/PixelLocalStorageTests.cpp",
     "end2end/PolyfillBuiltinSimpleTests.cpp",
+    "end2end/PrimitiveIdTests.cpp",
     "end2end/PrimitiveStateTests.cpp",
     "end2end/PrimitiveTopologyTests.cpp",
     "end2end/QueryTests.cpp",
@@ -670,6 +678,7 @@ source_set("end2end_tests_sources") {
     "end2end/ShaderBuiltinPartialConstArgsErrorTests.cpp",
     "end2end/ShaderF16Tests.cpp",
     "end2end/ShaderModuleCachingTests.cpp",
+    "end2end/ShaderPrintTests.cpp",
     "end2end/ShaderTests.cpp",
     "end2end/ShaderValidationTests.cpp",
     "end2end/StorageTextureTests.cpp",
@@ -678,6 +687,7 @@ source_set("end2end_tests_sources") {
     "end2end/SubresourceRenderAttachmentTests.cpp",
     "end2end/SupportedFeatureArch.cpp",
     "end2end/Texture3DTests.cpp",
+    "end2end/TextureComponentSwizzleTests.cpp",
     "end2end/TextureCorruptionTests.cpp",
     "end2end/TextureFormatTests.cpp",
     "end2end/TextureFormatsTier1Tests.cpp",
@@ -928,6 +938,7 @@ dawn_test("dawn_perf_tests") {
 
   sources = [
     "perf_tests/BufferUploadPerf.cpp",
+    "perf_tests/ConcurrentExecutionTest.cpp",
     "perf_tests/DawnPerfTest.cpp",
     "perf_tests/DawnPerfTest.h",
     "perf_tests/DawnPerfTestPlatform.cpp",

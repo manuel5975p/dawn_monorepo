@@ -14570,5 +14570,3356 @@ TEST_F(IR_IntegerRangeAnalysisTest, ShiftRight_Failure_I32_NoLessThan32) {
     ASSERT_FALSE(info.IsValid());
 }
 
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Failure_F32) {
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().f32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        call_min = b.Call<f32>(BuiltinFn::kMin, param, 1.0_f);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:f32):void {
+  $B1: {
+    %3:f32 = min %param, 1.0f
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(param, 1.0f)`)
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Failure_Vector_I32) {
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().vec4<i32>());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* vec4_const = b.Construct(ty.vec4<i32>(), 1_i, 2_i, 3_i, 4_i);
+        call_min = b.Call<vec4<i32>>(BuiltinFn::kMin, param, vec4_const);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:vec4<i32>):void {
+  $B1: {
+    %3:vec4<i32> = construct 1i, 2i, 3i, 4i
+    %4:vec4<i32> = min %param, %3
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(param, vec4i(1, 2, 3, 4))`)
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Failure_Vector_U32) {
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().vec2<u32>());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* vec2_const = b.Construct(ty.vec2<u32>(), 1_u, 2_u);
+        call_min = b.Call<vec2<u32>>(BuiltinFn::kMin, param, vec2_const);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:vec2<u32>):void {
+  $B1: {
+    %3:vec2<u32> = construct 1u, 2u
+    %4:vec2<u32> = min %param, %3
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(param, vec2u(1, 2))`)
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Failure_BothInvalidRange_I32) {
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param1 = b.FunctionParam("param1", mod.Types().i32());
+    auto* param2 = b.FunctionParam("param2", mod.Types().i32());
+    func->AppendParam(param1);
+    func->AppendParam(param2);
+
+    b.Append(func->Block(), [&] {
+        call_min = b.Call<i32>(BuiltinFn::kMin, param1, param2);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param1:i32, %param2:i32):void {
+  $B1: {
+    %4:i32 = min %param1, %param2
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(param1, param2)`)
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Failure_BothInvalidRange_U32) {
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param1 = b.FunctionParam("param1", mod.Types().u32());
+    auto* param2 = b.FunctionParam("param2", mod.Types().u32());
+    func->AppendParam(param1);
+    func->AppendParam(param2);
+
+    b.Append(func->Block(), [&] {
+        call_min = b.Call<u32>(BuiltinFn::kMin, param1, param2);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param1:u32, %param2:u32):void {
+  $B1: {
+    %4:u32 = min %param1, %param2
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(param1, param2)`)
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Success_BothAreConstantValues_I32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = -4
+            idx = b.Var("idx", -4_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < -3
+            auto* binary = b.LessThan<bool>(b.Load(idx), -3_i);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            Var* idy = nullptr;
+            auto* loop2 = b.Loop();
+            b.Append(loop2->Initializer(), [&] {
+                // idy = 2
+                idy = b.Var("idy", 2_i);
+                b.NextIteration(loop2);
+            });
+            b.Append(loop2->Body(), [&] {
+                // idy < 3
+                auto* binary_inner = b.LessThan<bool>(b.Load(idy), 3_i);
+                auto* ifelse_inner = b.If(binary_inner);
+                b.Append(ifelse_inner->True(), [&] { b.ExitIf(ifelse_inner); });
+                b.Append(ifelse_inner->False(), [&] { b.ExitLoop(loop2); });
+                auto* loadx = b.Load(idx);
+                auto* loady = b.Load(idy);
+                // call_min = min(idx, idy);
+                call_min = b.Call<i32>(BuiltinFn::kMin, loadx, loady);
+                b.Continue(loop2);
+            });
+            b.Append(loop2->Continuing(), [&] {
+                // idy++
+                b.Store(idy, b.Add<i32>(b.Load(idy), 1_i));
+                b.NextIteration(loop2);
+            });
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var -4i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:i32 = load %idx
+        %4:bool = lt %3, -3i
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        loop [i: $B7, b: $B8, c: $B9] {  # loop_2
+          $B7: {  # initializer
+            %idy:ptr<function, i32, read_write> = var 2i
+            next_iteration  # -> $B8
+          }
+          $B8: {  # body
+            %6:i32 = load %idy
+            %7:bool = lt %6, 3i
+            if %7 [t: $B10, f: $B11] {  # if_2
+              $B10: {  # true
+                exit_if  # if_2
+              }
+              $B11: {  # false
+                exit_loop  # loop_2
+              }
+            }
+            %8:i32 = load %idx
+            %9:i32 = load %idy
+            %10:i32 = min %8, %9
+            continue  # -> $B9
+          }
+          $B9: {  # continuing
+            %11:i32 = load %idy
+            %12:i32 = add %11, 1i
+            store %idy, %12
+            next_iteration  # -> $B8
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %13:i32 = load %idx
+        %14:i32 = add %13, 1i
+        store %idx, %14
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(idx, idy)`)
+    // idx: [-4, -4] idy: [2, 2]
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::SignedIntegerRange>(info.range);
+    EXPECT_EQ(-4, range.min_bound);
+    EXPECT_EQ(-4, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Success_BothAreConstantValues_U32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 5u
+            idx = b.Var("idx", 5_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 6u
+            auto* binary = b.LessThan<bool>(b.Load(idx), 6_u);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            Var* idy = nullptr;
+            auto* loop2 = b.Loop();
+            b.Append(loop2->Initializer(), [&] {
+                // idy = 1u
+                idy = b.Var("idy", 1_u);
+                b.NextIteration(loop2);
+            });
+            b.Append(loop2->Body(), [&] {
+                // idy < 2u
+                auto* binary_inner = b.LessThan<bool>(b.Load(idy), 2_u);
+                auto* ifelse_inner = b.If(binary_inner);
+                b.Append(ifelse_inner->True(), [&] { b.ExitIf(ifelse_inner); });
+                b.Append(ifelse_inner->False(), [&] { b.ExitLoop(loop2); });
+                auto* loadx = b.Load(idx);
+                auto* loady = b.Load(idy);
+                // call_min = min(idx, idy);
+                call_min = b.Call<u32>(BuiltinFn::kMin, loadx, loady);
+                b.Continue(loop2);
+            });
+            b.Append(loop2->Continuing(), [&] {
+                // idy++
+                b.Store(idy, b.Add<u32>(b.Load(idy), 1_u));
+                b.NextIteration(loop2);
+            });
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 5u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:u32 = load %idx
+        %4:bool = lt %3, 6u
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        loop [i: $B7, b: $B8, c: $B9] {  # loop_2
+          $B7: {  # initializer
+            %idy:ptr<function, u32, read_write> = var 1u
+            next_iteration  # -> $B8
+          }
+          $B8: {  # body
+            %6:u32 = load %idy
+            %7:bool = lt %6, 2u
+            if %7 [t: $B10, f: $B11] {  # if_2
+              $B10: {  # true
+                exit_if  # if_2
+              }
+              $B11: {  # false
+                exit_loop  # loop_2
+              }
+            }
+            %8:u32 = load %idx
+            %9:u32 = load %idy
+            %10:u32 = min %8, %9
+            continue  # -> $B9
+          }
+          $B9: {  # continuing
+            %11:u32 = load %idy
+            %12:u32 = add %11, 1u
+            store %idy, %12
+            next_iteration  # -> $B8
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %13:u32 = load %idx
+        %14:u32 = add %13, 1u
+        store %idx, %14
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(idx, idy)`)
+    // idx: [5u, 5u] idy: [1u, 1u]
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(1u, range.min_bound);
+    EXPECT_EQ(1u, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Success_BothValidRange_I32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = -4
+            idx = b.Var("idx", -4_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 9
+            auto* binary = b.LessThan<bool>(b.Load(idx), 9_i);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            Var* idy = nullptr;
+            auto* loop2 = b.Loop();
+            b.Append(loop2->Initializer(), [&] {
+                // idy = 4
+                idy = b.Var("idy", 4_i);
+                b.NextIteration(loop2);
+            });
+            b.Append(loop2->Body(), [&] {
+                // idy < 6
+                auto* binary_inner = b.LessThan<bool>(b.Load(idy), 6_i);
+                auto* ifelse_inner = b.If(binary_inner);
+                b.Append(ifelse_inner->True(), [&] { b.ExitIf(ifelse_inner); });
+                b.Append(ifelse_inner->False(), [&] { b.ExitLoop(loop2); });
+                auto* loadx = b.Load(idx);
+                auto* loady = b.Load(idy);
+                // call_min = min(idx, idy);
+                call_min = b.Call<i32>(BuiltinFn::kMin, loadx, loady);
+                b.Continue(loop2);
+            });
+            b.Append(loop2->Continuing(), [&] {
+                // idy++
+                b.Store(idy, b.Add<i32>(b.Load(idy), 1_i));
+                b.NextIteration(loop2);
+            });
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var -4i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:i32 = load %idx
+        %4:bool = lt %3, 9i
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        loop [i: $B7, b: $B8, c: $B9] {  # loop_2
+          $B7: {  # initializer
+            %idy:ptr<function, i32, read_write> = var 4i
+            next_iteration  # -> $B8
+          }
+          $B8: {  # body
+            %6:i32 = load %idy
+            %7:bool = lt %6, 6i
+            if %7 [t: $B10, f: $B11] {  # if_2
+              $B10: {  # true
+                exit_if  # if_2
+              }
+              $B11: {  # false
+                exit_loop  # loop_2
+              }
+            }
+            %8:i32 = load %idx
+            %9:i32 = load %idy
+            %10:i32 = min %8, %9
+            continue  # -> $B9
+          }
+          $B9: {  # continuing
+            %11:i32 = load %idy
+            %12:i32 = add %11, 1i
+            store %idy, %12
+            next_iteration  # -> $B8
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %13:i32 = load %idx
+        %14:i32 = add %13, 1i
+        store %idx, %14
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(idx, idy)`)
+    // idx: [-4, 8] idy: [4, 5]
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::SignedIntegerRange>(info.range);
+    EXPECT_EQ(-4, range.min_bound);
+    EXPECT_EQ(5, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Success_BothValidRange_U32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 4u
+            idx = b.Var("idx", 4_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 9u
+            auto* binary = b.LessThan<bool>(b.Load(idx), 9_u);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            Var* idy = nullptr;
+            auto* loop2 = b.Loop();
+            b.Append(loop2->Initializer(), [&] {
+                // idy = 1u
+                idy = b.Var("idy", 1_u);
+                b.NextIteration(loop2);
+            });
+            b.Append(loop2->Body(), [&] {
+                // idy < 8u
+                auto* binary_inner = b.LessThan<bool>(b.Load(idy), 8_u);
+                auto* ifelse_inner = b.If(binary_inner);
+                b.Append(ifelse_inner->True(), [&] { b.ExitIf(ifelse_inner); });
+                b.Append(ifelse_inner->False(), [&] { b.ExitLoop(loop2); });
+                auto* loadx = b.Load(idx);
+                auto* loady = b.Load(idy);
+                // call_min = min(idx, idy);
+                call_min = b.Call<u32>(BuiltinFn::kMin, loadx, loady);
+                b.Continue(loop2);
+            });
+            b.Append(loop2->Continuing(), [&] {
+                // idy++
+                b.Store(idy, b.Add<u32>(b.Load(idy), 1_u));
+                b.NextIteration(loop2);
+            });
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 4u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:u32 = load %idx
+        %4:bool = lt %3, 9u
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        loop [i: $B7, b: $B8, c: $B9] {  # loop_2
+          $B7: {  # initializer
+            %idy:ptr<function, u32, read_write> = var 1u
+            next_iteration  # -> $B8
+          }
+          $B8: {  # body
+            %6:u32 = load %idy
+            %7:bool = lt %6, 8u
+            if %7 [t: $B10, f: $B11] {  # if_2
+              $B10: {  # true
+                exit_if  # if_2
+              }
+              $B11: {  # false
+                exit_loop  # loop_2
+              }
+            }
+            %8:u32 = load %idx
+            %9:u32 = load %idy
+            %10:u32 = min %8, %9
+            continue  # -> $B9
+          }
+          $B9: {  # continuing
+            %11:u32 = load %idy
+            %12:u32 = add %11, 1u
+            store %idy, %12
+            next_iteration  # -> $B8
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %13:u32 = load %idx
+        %14:u32 = add %13, 1u
+        store %idx, %14
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(idx, idy)`)
+    // idx: [4u, 8u] idy: [1u, 7u]
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(1u, range.min_bound);
+    EXPECT_EQ(7u, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Failure_FirstIsInvalidRange_InvalidResult_I32) {
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* max_i32 = b.Constant(i32::Highest());
+        call_min = b.Call<i32>(BuiltinFn::kMin, param, max_i32);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = min %param, 2147483647i
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(param, idx)`)
+    // max_i32 = i32::kHighestValue, param: [i32::kLowestValue, i32::kHighestValue]
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Failure_FirstIsInvalidRange_InvalidResult_U32) {
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* max_u32 = b.Constant(u32::Highest());
+        call_min = b.Call<u32>(BuiltinFn::kMin, param, max_u32);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    %3:u32 = min %param, 4294967295u
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(param, idx)`)
+    // max_u32 = u32::kHighestValue, param: [u32::kLowestValue, u32::kHighestValue]
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Failure_SecondIsInvalidRange_InvalidResult_I32) {
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* max_i32 = b.Constant(i32::Highest());
+        call_min = b.Call<i32>(BuiltinFn::kMin, max_i32, param);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = min 2147483647i, %param
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(idx, param)`)
+    // max_i32 = i32::kHighestValue, param: [i32::kLowestValue, i32::kHighestValue]
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Failure_SecondIsInvalidRange_InvalidResult_U32) {
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* max_u32 = b.Constant(u32::Highest());
+        call_min = b.Call<u32>(BuiltinFn::kMin, max_u32, param);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    %3:u32 = min 4294967295u, %param
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(idx, param)`)
+    // max_u32 = u32::kHighestValue, param: [u32::kLowestValue, u32::kHighestValue]
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Success_FirstIsInvalidRange_I32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 1
+            idx = b.Var("idx", 1_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 10
+            auto* binary = b.LessThan<bool>(b.Load(idx), 10_i);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            // call_min = min(param, idx);
+            auto* loadx = b.Load(idx);
+            call_min = b.Call<i32>(BuiltinFn::kMin, param, loadx);
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var 1i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %4:i32 = load %idx
+        %5:bool = lt %4, 10i
+        if %5 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        %6:i32 = load %idx
+        %7:i32 = min %param, %6
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %8:i32 = load %idx
+        %9:i32 = add %8, 1i
+        store %idx, %9
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(param, idx)`)
+    // idx: [1, 9], param: [i32::kLowestValue, i32::kHighestValue]
+    // call_min: [i32::kLowestValue, 9]
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::SignedIntegerRange>(info.range);
+    EXPECT_EQ(i32::kLowestValue, range.min_bound);
+    EXPECT_EQ(9, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Success_FirstIsInvalidRange_U32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 1u
+            idx = b.Var("idx", 1_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 10u
+            auto* binary = b.LessThan<bool>(b.Load(idx), 10_u);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            // call_min = min(param, idx);
+            auto* loadx = b.Load(idx);
+            call_min = b.Call<u32>(BuiltinFn::kMin, param, loadx);
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 1u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %4:u32 = load %idx
+        %5:bool = lt %4, 10u
+        if %5 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        %6:u32 = load %idx
+        %7:u32 = min %param, %6
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %8:u32 = load %idx
+        %9:u32 = add %8, 1u
+        store %idx, %9
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(param, idx)`)
+    // idx: [1, 9], param: [u32::kLowestValue, u32::kHighestValue]
+    // call_min: [u32::kLowestValue, 9]
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(u32::kLowestValue, range.min_bound);
+    EXPECT_EQ(9u, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Success_SecondIsInvalidRange_I32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = -10
+            idx = b.Var("idx", -10_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < -2
+            auto* binary = b.LessThan<bool>(b.Load(idx), -2_i);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            // call_min = min(idx, param);
+            auto* loadx = b.Load(idx);
+            call_min = b.Call<i32>(BuiltinFn::kMin, loadx, param);
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var -10i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %4:i32 = load %idx
+        %5:bool = lt %4, -2i
+        if %5 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        %6:i32 = load %idx
+        %7:i32 = min %6, %param
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %8:i32 = load %idx
+        %9:i32 = add %8, 1i
+        store %idx, %9
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(idx, param)`)
+    // idx: [-10, -3], param: [i32::kLowestValue, i32::kHighestValue]
+    // call_min: [i32::kLowestValue, -3]
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::SignedIntegerRange>(info.range);
+    EXPECT_EQ(i32::kLowestValue, range.min_bound);
+    EXPECT_EQ(-3, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Success_SecondIsInvalidRange_U32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 10u
+            idx = b.Var("idx", 10_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 20u
+            auto* binary = b.LessThan<bool>(b.Load(idx), 20_u);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            // call_min = min(idx, param);
+            auto* loadx = b.Load(idx);
+            call_min = b.Call<u32>(BuiltinFn::kMin, loadx, param);
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 10u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %4:u32 = load %idx
+        %5:bool = lt %4, 20u
+        if %5 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        %6:u32 = load %idx
+        %7:u32 = min %6, %param
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %8:u32 = load %idx
+        %9:u32 = add %8, 1u
+        store %idx, %9
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(idx, param)`)
+    // idx: [10, 19], param: [u32::kLowestValue, u32::kHighestValue]
+    // call_min: [u32::kLowestValue, 19]
+    const auto& info = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(u32::kLowestValue, range.min_bound);
+    EXPECT_EQ(19u, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Failure_F32) {
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().f32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        call_max = b.Call<f32>(BuiltinFn::kMax, param, 1.0_f);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:f32):void {
+  $B1: {
+    %3:f32 = max %param, 1.0f
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(param, 1.0f)`)
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Failure_Vector_I32) {
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().vec4<i32>());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* vec4_const = b.Construct(ty.vec4<i32>(), 1_i, 2_i, 3_i, 4_i);
+        call_max = b.Call<vec4<i32>>(BuiltinFn::kMax, param, vec4_const);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:vec4<i32>):void {
+  $B1: {
+    %3:vec4<i32> = construct 1i, 2i, 3i, 4i
+    %4:vec4<i32> = max %param, %3
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(param, vec4i(1, 2, 3, 4))`)
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Failure_Vector_U32) {
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().vec2<u32>());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* vec2_const = b.Construct(ty.vec2<u32>(), 1_u, 2_u);
+        call_max = b.Call<vec2<u32>>(BuiltinFn::kMax, param, vec2_const);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:vec2<u32>):void {
+  $B1: {
+    %3:vec2<u32> = construct 1u, 2u
+    %4:vec2<u32> = max %param, %3
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(param, vec2u(1, 2))`)
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Failure_BothInvalidRange_I32) {
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param1 = b.FunctionParam("param1", mod.Types().i32());
+    auto* param2 = b.FunctionParam("param2", mod.Types().i32());
+    func->AppendParam(param1);
+    func->AppendParam(param2);
+
+    b.Append(func->Block(), [&] {
+        call_max = b.Call<i32>(BuiltinFn::kMax, param1, param2);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param1:i32, %param2:i32):void {
+  $B1: {
+    %4:i32 = max %param1, %param2
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(param1, param2)`)
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Failure_BothInvalidRange_U32) {
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param1 = b.FunctionParam("param1", mod.Types().u32());
+    auto* param2 = b.FunctionParam("param2", mod.Types().u32());
+    func->AppendParam(param1);
+    func->AppendParam(param2);
+
+    b.Append(func->Block(), [&] {
+        call_max = b.Call<u32>(BuiltinFn::kMax, param1, param2);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param1:u32, %param2:u32):void {
+  $B1: {
+    %4:u32 = max %param1, %param2
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(param1, param2)`)
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Success_BothAreConstantValues_I32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = -4
+            idx = b.Var("idx", -4_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < -3
+            auto* binary = b.LessThan<bool>(b.Load(idx), -3_i);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            Var* idy = nullptr;
+            auto* loop2 = b.Loop();
+            b.Append(loop2->Initializer(), [&] {
+                // idy = 2
+                idy = b.Var("idy", 2_i);
+                b.NextIteration(loop2);
+            });
+            b.Append(loop2->Body(), [&] {
+                // idy < 3
+                auto* binary_inner = b.LessThan<bool>(b.Load(idy), 3_i);
+                auto* ifelse_inner = b.If(binary_inner);
+                b.Append(ifelse_inner->True(), [&] { b.ExitIf(ifelse_inner); });
+                b.Append(ifelse_inner->False(), [&] { b.ExitLoop(loop2); });
+                auto* loadx = b.Load(idx);
+                auto* loady = b.Load(idy);
+                // call_max = max(idx, idy);
+                call_max = b.Call<i32>(BuiltinFn::kMax, loadx, loady);
+                b.Continue(loop2);
+            });
+            b.Append(loop2->Continuing(), [&] {
+                // idy++
+                b.Store(idy, b.Add<i32>(b.Load(idy), 1_i));
+                b.NextIteration(loop2);
+            });
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var -4i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:i32 = load %idx
+        %4:bool = lt %3, -3i
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        loop [i: $B7, b: $B8, c: $B9] {  # loop_2
+          $B7: {  # initializer
+            %idy:ptr<function, i32, read_write> = var 2i
+            next_iteration  # -> $B8
+          }
+          $B8: {  # body
+            %6:i32 = load %idy
+            %7:bool = lt %6, 3i
+            if %7 [t: $B10, f: $B11] {  # if_2
+              $B10: {  # true
+                exit_if  # if_2
+              }
+              $B11: {  # false
+                exit_loop  # loop_2
+              }
+            }
+            %8:i32 = load %idx
+            %9:i32 = load %idy
+            %10:i32 = max %8, %9
+            continue  # -> $B9
+          }
+          $B9: {  # continuing
+            %11:i32 = load %idy
+            %12:i32 = add %11, 1i
+            store %idy, %12
+            next_iteration  # -> $B8
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %13:i32 = load %idx
+        %14:i32 = add %13, 1i
+        store %idx, %14
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(idx, idy)`)
+    // idx: [-4, -4] idy: [2, 2]
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::SignedIntegerRange>(info.range);
+    EXPECT_EQ(2, range.min_bound);
+    EXPECT_EQ(2, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Success_BothAreConstantValues_U32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 5u
+            idx = b.Var("idx", 5_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 6u
+            auto* binary = b.LessThan<bool>(b.Load(idx), 6_u);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            Var* idy = nullptr;
+            auto* loop2 = b.Loop();
+            b.Append(loop2->Initializer(), [&] {
+                // idy = 1u
+                idy = b.Var("idy", 1_u);
+                b.NextIteration(loop2);
+            });
+            b.Append(loop2->Body(), [&] {
+                // idy < 2u
+                auto* binary_inner = b.LessThan<bool>(b.Load(idy), 2_u);
+                auto* ifelse_inner = b.If(binary_inner);
+                b.Append(ifelse_inner->True(), [&] { b.ExitIf(ifelse_inner); });
+                b.Append(ifelse_inner->False(), [&] { b.ExitLoop(loop2); });
+                auto* loadx = b.Load(idx);
+                auto* loady = b.Load(idy);
+                // call_max = max(idx, idy);
+                call_max = b.Call<u32>(BuiltinFn::kMax, loadx, loady);
+                b.Continue(loop2);
+            });
+            b.Append(loop2->Continuing(), [&] {
+                // idy++
+                b.Store(idy, b.Add<u32>(b.Load(idy), 1_u));
+                b.NextIteration(loop2);
+            });
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 5u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:u32 = load %idx
+        %4:bool = lt %3, 6u
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        loop [i: $B7, b: $B8, c: $B9] {  # loop_2
+          $B7: {  # initializer
+            %idy:ptr<function, u32, read_write> = var 1u
+            next_iteration  # -> $B8
+          }
+          $B8: {  # body
+            %6:u32 = load %idy
+            %7:bool = lt %6, 2u
+            if %7 [t: $B10, f: $B11] {  # if_2
+              $B10: {  # true
+                exit_if  # if_2
+              }
+              $B11: {  # false
+                exit_loop  # loop_2
+              }
+            }
+            %8:u32 = load %idx
+            %9:u32 = load %idy
+            %10:u32 = max %8, %9
+            continue  # -> $B9
+          }
+          $B9: {  # continuing
+            %11:u32 = load %idy
+            %12:u32 = add %11, 1u
+            store %idy, %12
+            next_iteration  # -> $B8
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %13:u32 = load %idx
+        %14:u32 = add %13, 1u
+        store %idx, %14
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(idx, idy)`)
+    // idx: [5u, 5u] idy: [1u, 1u]
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(5u, range.min_bound);
+    EXPECT_EQ(5u, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Success_BothValidRange_I32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = -4
+            idx = b.Var("idx", -4_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 9
+            auto* binary = b.LessThan<bool>(b.Load(idx), 9_i);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            Var* idy = nullptr;
+            auto* loop2 = b.Loop();
+            b.Append(loop2->Initializer(), [&] {
+                // idy = 4
+                idy = b.Var("idy", 4_i);
+                b.NextIteration(loop2);
+            });
+            b.Append(loop2->Body(), [&] {
+                // idy < 6
+                auto* binary_inner = b.LessThan<bool>(b.Load(idy), 6_i);
+                auto* ifelse_inner = b.If(binary_inner);
+                b.Append(ifelse_inner->True(), [&] { b.ExitIf(ifelse_inner); });
+                b.Append(ifelse_inner->False(), [&] { b.ExitLoop(loop2); });
+                auto* loadx = b.Load(idx);
+                auto* loady = b.Load(idy);
+                // call_max = max(idx, idy);
+                call_max = b.Call<i32>(BuiltinFn::kMax, loadx, loady);
+                b.Continue(loop2);
+            });
+            b.Append(loop2->Continuing(), [&] {
+                // idy++
+                b.Store(idy, b.Add<i32>(b.Load(idy), 1_i));
+                b.NextIteration(loop2);
+            });
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var -4i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:i32 = load %idx
+        %4:bool = lt %3, 9i
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        loop [i: $B7, b: $B8, c: $B9] {  # loop_2
+          $B7: {  # initializer
+            %idy:ptr<function, i32, read_write> = var 4i
+            next_iteration  # -> $B8
+          }
+          $B8: {  # body
+            %6:i32 = load %idy
+            %7:bool = lt %6, 6i
+            if %7 [t: $B10, f: $B11] {  # if_2
+              $B10: {  # true
+                exit_if  # if_2
+              }
+              $B11: {  # false
+                exit_loop  # loop_2
+              }
+            }
+            %8:i32 = load %idx
+            %9:i32 = load %idy
+            %10:i32 = max %8, %9
+            continue  # -> $B9
+          }
+          $B9: {  # continuing
+            %11:i32 = load %idy
+            %12:i32 = add %11, 1i
+            store %idy, %12
+            next_iteration  # -> $B8
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %13:i32 = load %idx
+        %14:i32 = add %13, 1i
+        store %idx, %14
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(idx, idy)`)
+    // idx: [-4, 8] idy: [4, 5]
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::SignedIntegerRange>(info.range);
+    EXPECT_EQ(4, range.min_bound);
+    EXPECT_EQ(8, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Success_BothValidRange_U32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 4u
+            idx = b.Var("idx", 4_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 9u
+            auto* binary = b.LessThan<bool>(b.Load(idx), 9_u);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            Var* idy = nullptr;
+            auto* loop2 = b.Loop();
+            b.Append(loop2->Initializer(), [&] {
+                // idy = 1u
+                idy = b.Var("idy", 1_u);
+                b.NextIteration(loop2);
+            });
+            b.Append(loop2->Body(), [&] {
+                // idy < 8u
+                auto* binary_inner = b.LessThan<bool>(b.Load(idy), 8_u);
+                auto* ifelse_inner = b.If(binary_inner);
+                b.Append(ifelse_inner->True(), [&] { b.ExitIf(ifelse_inner); });
+                b.Append(ifelse_inner->False(), [&] { b.ExitLoop(loop2); });
+                auto* loadx = b.Load(idx);
+                auto* loady = b.Load(idy);
+                // call_max = max(idx, idy);
+                call_max = b.Call<u32>(BuiltinFn::kMax, loadx, loady);
+                b.Continue(loop2);
+            });
+            b.Append(loop2->Continuing(), [&] {
+                // idy++
+                b.Store(idy, b.Add<u32>(b.Load(idy), 1_u));
+                b.NextIteration(loop2);
+            });
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 4u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %3:u32 = load %idx
+        %4:bool = lt %3, 9u
+        if %4 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        loop [i: $B7, b: $B8, c: $B9] {  # loop_2
+          $B7: {  # initializer
+            %idy:ptr<function, u32, read_write> = var 1u
+            next_iteration  # -> $B8
+          }
+          $B8: {  # body
+            %6:u32 = load %idy
+            %7:bool = lt %6, 8u
+            if %7 [t: $B10, f: $B11] {  # if_2
+              $B10: {  # true
+                exit_if  # if_2
+              }
+              $B11: {  # false
+                exit_loop  # loop_2
+              }
+            }
+            %8:u32 = load %idx
+            %9:u32 = load %idy
+            %10:u32 = max %8, %9
+            continue  # -> $B9
+          }
+          $B9: {  # continuing
+            %11:u32 = load %idy
+            %12:u32 = add %11, 1u
+            store %idy, %12
+            next_iteration  # -> $B8
+          }
+        }
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %13:u32 = load %idx
+        %14:u32 = add %13, 1u
+        store %idx, %14
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(idx, idy)`)
+    // idx: [4u, 8u] idy: [1u, 7u]
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(4u, range.min_bound);
+    EXPECT_EQ(8u, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Failure_FirstIsInvalidRange_InvalidResult_I32) {
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* min_i32 = b.Constant(i32::Lowest());
+        call_max = b.Call<i32>(BuiltinFn::kMax, param, min_i32);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = max %param, -2147483648i
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(param, min_i32)`)
+    // min_i32 = i32::kLowestValue, param: [i32::kLowestValue, i32::kHighestValue]
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Failure_FirstIsInvalidRange_InvalidResult_U32) {
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* min_u32 = b.Constant(u32::Lowest());
+        call_max = b.Call<u32>(BuiltinFn::kMax, param, min_u32);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    %3:u32 = max %param, 0u
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(param, min_u32)`)
+    // min_u32 = u32::kLowestValue, param: [u32::kLowestValue, u32::kHighestValue]
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Failure_SecondIsInvalidRange_InvalidResult_I32) {
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* min_i32 = b.Constant(i32::Lowest());
+        call_max = b.Call<i32>(BuiltinFn::kMax, min_i32, param);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = max -2147483648i, %param
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(min_i32, param)`)
+    // min_i32 = i32::kLowestValue, param: [i32::kLowestValue, i32::kHighestValue]
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Failure_SecondIsInvalidRange_InvalidResult_U32) {
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* min_u32 = b.Constant(u32::Lowest());
+        call_max = b.Call<u32>(BuiltinFn::kMax, min_u32, param);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    %3:u32 = max 0u, %param
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(min_u32, param)`)
+    // min_u32 = u32::kHighestValue, param: [u32::kLowestValue, u32::kHighestValue]
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Success_FirstIsInvalidRange_I32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 1
+            idx = b.Var("idx", 1_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 10
+            auto* binary = b.LessThan<bool>(b.Load(idx), 10_i);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            // call_max = max(param, idx);
+            auto* loadx = b.Load(idx);
+            call_max = b.Call<i32>(BuiltinFn::kMax, param, loadx);
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var 1i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %4:i32 = load %idx
+        %5:bool = lt %4, 10i
+        if %5 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        %6:i32 = load %idx
+        %7:i32 = max %param, %6
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %8:i32 = load %idx
+        %9:i32 = add %8, 1i
+        store %idx, %9
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(param, idx)`)
+    // idx: [1, 9], param: [i32::kLowestValue, i32::kHighestValue]
+    // call_max: [1, i32::kHighestValue]
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::SignedIntegerRange>(info.range);
+    EXPECT_EQ(1, range.min_bound);
+    EXPECT_EQ(i32::kHighestValue, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Success_FirstIsInvalidRange_U32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 1u
+            idx = b.Var("idx", 1_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 10u
+            auto* binary = b.LessThan<bool>(b.Load(idx), 10_u);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            // call_max = max(param, idx);
+            auto* loadx = b.Load(idx);
+            call_max = b.Call<u32>(BuiltinFn::kMax, param, loadx);
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 1u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %4:u32 = load %idx
+        %5:bool = lt %4, 10u
+        if %5 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        %6:u32 = load %idx
+        %7:u32 = max %param, %6
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %8:u32 = load %idx
+        %9:u32 = add %8, 1u
+        store %idx, %9
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(param, idx)`)
+    // idx: [1, 9], param: [u32::kLowestValue, u32::kHighestValue]
+    // call_max: [1, u32::kHighestValue]
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(1u, range.min_bound);
+    EXPECT_EQ(u32::kHighestValue, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Success_SecondIsInvalidRange_I32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = -10
+            idx = b.Var("idx", -10_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < -2
+            auto* binary = b.LessThan<bool>(b.Load(idx), -2_i);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            // call_max = max(idx, param);
+            auto* loadx = b.Load(idx);
+            call_max = b.Call<i32>(BuiltinFn::kMax, loadx, param);
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var -10i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %4:i32 = load %idx
+        %5:bool = lt %4, -2i
+        if %5 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        %6:i32 = load %idx
+        %7:i32 = max %6, %param
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %8:i32 = load %idx
+        %9:i32 = add %8, 1i
+        store %idx, %9
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(idx, param)`)
+    // idx: [-10, -3], param: [i32::kLowestValue, i32::kHighestValue]
+    // call_max: [-10, i32::kHighestValue]
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::SignedIntegerRange>(info.range);
+    EXPECT_EQ(-10, range.min_bound);
+    EXPECT_EQ(i32::kHighestValue, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Success_SecondIsInvalidRange_U32) {
+    Var* idx = nullptr;
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 10u
+            idx = b.Var("idx", 10_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 20u
+            auto* binary = b.LessThan<bool>(b.Load(idx), 20_u);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            // call_max = max(idx, param);
+            auto* loadx = b.Load(idx);
+            call_max = b.Call<u32>(BuiltinFn::kMax, loadx, param);
+
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 10u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %4:u32 = load %idx
+        %5:bool = lt %4, 20u
+        if %5 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        %6:u32 = load %idx
+        %7:u32 = max %6, %param
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %8:u32 = load %idx
+        %9:u32 = add %8, 1u
+        store %idx, %9
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(idx, param)`)
+    // idx: [10, 19], param: [u32::kLowestValue, u32::kHighestValue]
+    // call_max: [10, u32::kHighestValue]
+    const auto& info = analysis.GetInfo(call_max);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(10u, range.min_bound);
+    EXPECT_EQ(u32::kHighestValue, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Builtin_Input_Success_I32) {
+    CoreBuiltinCall* call_min = nullptr;
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* bound1 = b.Constant(-5_i);
+        call_min = b.Call<i32>(BuiltinFn::kMin, bound1, param);
+        auto* bound2 = b.Constant(3_i);
+        call_max = b.Call<i32>(BuiltinFn::kMax, bound2, call_min);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = min -5i, %param
+    %4:i32 = max 3i, %3
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(bound1, param)`)
+    // bound1: [-5, -5] param: [i32::kLowestValue, i32::kHighestValue]
+    // call_min: [i32::kLowestValue, -5]
+    const auto& info_call_min = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info_call_min.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info_call_min.range));
+    const auto& range_call_min =
+        std::get<IntegerRangeInfo::SignedIntegerRange>(info_call_min.range);
+    EXPECT_EQ(i32::kLowestValue, range_call_min.min_bound);
+    EXPECT_EQ(-5, range_call_min.max_bound);
+
+    // Range of `call_max` (`max(bound2, call_min)`)
+    // bound2: [3, 3] call_min: [i32::kLowestValue, -5]
+    // call_max: [3, 3]
+    const auto& info_call_max = analysis.GetInfo(call_max);
+    ASSERT_TRUE(info_call_max.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info_call_max.range));
+    const auto& range_call_max =
+        std::get<IntegerRangeInfo::SignedIntegerRange>(info_call_max.range);
+    EXPECT_EQ(3, range_call_max.min_bound);
+    EXPECT_EQ(3, range_call_max.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Max_Builtin_Input_Success_U32) {
+    CoreBuiltinCall* call_min = nullptr;
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* bound1 = b.Constant(5_u);
+        call_min = b.Call<u32>(BuiltinFn::kMin, bound1, param);
+        auto* bound2 = b.Constant(3_u);
+        call_max = b.Call<u32>(BuiltinFn::kMax, bound2, call_min);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    %3:u32 = min 5u, %param
+    %4:u32 = max 3u, %3
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(bound1, param)`)
+    // bound1: [5u, 5u] param: [u32::kLowestValue, u32::kHighestValue]
+    // call_min: [u32::kLowestValue, 5u]
+    const auto& info_call_min = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info_call_min.IsValid());
+    ASSERT_TRUE(
+        std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info_call_min.range));
+    const auto& range_call_min =
+        std::get<IntegerRangeInfo::UnsignedIntegerRange>(info_call_min.range);
+    EXPECT_EQ(u32::kLowestValue, range_call_min.min_bound);
+    EXPECT_EQ(5u, range_call_min.max_bound);
+
+    // Range of `call_max` (`max(bound2, call_min)`)
+    // bound2: [3u, 3u] call_min: [u32::kLowestValue, 5u]
+    // call_max: [3u, 5u]
+    const auto& info_call_max = analysis.GetInfo(call_max);
+    ASSERT_TRUE(info_call_max.IsValid());
+    ASSERT_TRUE(
+        std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info_call_max.range));
+    const auto& range_call_max =
+        std::get<IntegerRangeInfo::UnsignedIntegerRange>(info_call_max.range);
+    EXPECT_EQ(3u, range_call_max.min_bound);
+    EXPECT_EQ(5u, range_call_max.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Builtin_Input_Success_I32) {
+    CoreBuiltinCall* call_min = nullptr;
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* bound1 = b.Constant(-3_i);
+        call_max = b.Call<i32>(BuiltinFn::kMax, bound1, param);
+        auto* bound2 = b.Constant(5_i);
+        call_min = b.Call<i32>(BuiltinFn::kMin, bound2, call_max);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = max -3i, %param
+    %4:i32 = min 5i, %3
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(bound1, param)`)
+    // bound1: [-3, -3] param: [i32::kLowestValue, i32::kHighestValue]
+    // call_max: [-3, i32::kHighestValue]
+    const auto& info_call_max = analysis.GetInfo(call_max);
+    ASSERT_TRUE(info_call_max.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info_call_max.range));
+    const auto& range_call_max =
+        std::get<IntegerRangeInfo::SignedIntegerRange>(info_call_max.range);
+    EXPECT_EQ(-3, range_call_max.min_bound);
+    EXPECT_EQ(i32::kHighestValue, range_call_max.max_bound);
+
+    // Range of `call_min` (`min(bound2, call_max)`)
+    // bound2: [5, 5] call_max: [-3, i32::kHighestValue]
+    // call_min: [-3, 5]
+    const auto& info_call_min = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info_call_min.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info_call_min.range));
+    const auto& range_call_min =
+        std::get<IntegerRangeInfo::SignedIntegerRange>(info_call_min.range);
+    EXPECT_EQ(-3, range_call_min.min_bound);
+    EXPECT_EQ(5, range_call_min.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, Builtin_Min_Builtin_Input_Success_U32) {
+    CoreBuiltinCall* call_min = nullptr;
+    CoreBuiltinCall* call_max = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        auto* bound1 = b.Constant(5_u);
+        call_max = b.Call<u32>(BuiltinFn::kMax, bound1, param);
+        auto* bound2 = b.Constant(3_u);
+        call_min = b.Call<u32>(BuiltinFn::kMin, bound2, call_max);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    %3:u32 = max 5u, %param
+    %4:u32 = min 3u, %3
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_max` (`max(bound1, param)`)
+    // bound1: [5u, 5u] param: [u32::kLowestValue, u32::kHighestValue]
+    // call_max: [5, u32::kHighestValue]
+    const auto& info_call_max = analysis.GetInfo(call_max);
+    ASSERT_TRUE(info_call_max.IsValid());
+    ASSERT_TRUE(
+        std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info_call_max.range));
+    const auto& range_call_max =
+        std::get<IntegerRangeInfo::UnsignedIntegerRange>(info_call_max.range);
+    EXPECT_EQ(5u, range_call_max.min_bound);
+    EXPECT_EQ(u32::kHighestValue, range_call_max.max_bound);
+
+    // Range of `call_min` (`min(bound2, call_max)`)
+    // bound2: [3u, 3u] call_max: [5u, u32::kHighestValue]
+    // call_min: [3u, 3u]
+    const auto& info_call_min = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info_call_min.IsValid());
+    ASSERT_TRUE(
+        std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info_call_min.range));
+    const auto& range_call_min =
+        std::get<IntegerRangeInfo::UnsignedIntegerRange>(info_call_min.range);
+    EXPECT_EQ(3u, range_call_min.min_bound);
+    EXPECT_EQ(3u, range_call_min.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Failure_LHS_RHS_F32) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().f32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // modulo = param % 2.0f
+        modulo = b.Modulo<f32>(param, 2_f);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:f32):void {
+  $B1: {
+    %3:f32 = mod %param, 2.0f
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `modulo` (`param % 2.0f`)
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Failure_LHS_RHS_Vec4I) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().vec4<i32>());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        auto* vec4_const = b.Construct(ty.vec4<i32>(), 1_i, 2_i, 3_i, 4_i);
+        // modulo = param %
+        modulo = b.Modulo<vec4<i32>>(param, vec4_const);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:vec4<i32>):void {
+  $B1: {
+    %3:vec4<i32> = construct 1i, 2i, 3i, 4i
+    %4:vec4<i32> = mod %param, %3
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `modulo` (`param % vec4i(1, 2, 3, 4)`)
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Failure_LHS_Negative_I32) {
+    Binary* modulo = nullptr;
+    CoreBuiltinCall* call_min = nullptr;
+
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+
+    b.Append(func->Block(), [&] {
+        // call_max = max(-3, param)
+        auto* call_max = b.Call<i32>(BuiltinFn::kMax, b.Constant(-3_i), param);
+
+        // call_min = min(5, call_max)
+        // The range of call_min is [-3, 5]
+        call_min = b.Call<i32>(BuiltinFn::kMin, b.Constant(5_i), call_max);
+
+        // modulo = call_min % 2
+        modulo = b.Modulo<i32>(call_min, 2_i);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = max -3i, %param
+    %4:i32 = min 5i, %3
+    %5:i32 = mod %4, 2i
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min` (`min(5, max(-3, param))`)
+    const auto& info_call_min = analysis.GetInfo(call_min);
+    ASSERT_TRUE(info_call_min.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info_call_min.range));
+    const auto& range_call_min =
+        std::get<IntegerRangeInfo::SignedIntegerRange>(info_call_min.range);
+    EXPECT_EQ(-3, range_call_min.min_bound);
+    EXPECT_EQ(5, range_call_min.max_bound);
+
+    // Range of `modulo` (`param % call_min`)
+    const auto& info_mod = analysis.GetInfo(modulo);
+    ASSERT_FALSE(info_mod.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Failure_RHS_NonConstant_I32) {
+    Binary* modulo = nullptr;
+    CoreBuiltinCall* call_min_param1 = nullptr;
+    CoreBuiltinCall* call_min_param2 = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param1 = b.FunctionParam("param1", mod.Types().i32());
+    auto* param2 = b.FunctionParam("param2", mod.Types().i32());
+
+    func->AppendParam(param1);
+    func->AppendParam(param2);
+    b.Append(func->Block(), [&] {
+        // call_max_param1 = max(3, param1)
+        auto* call_max_param1 = b.Call<i32>(BuiltinFn::kMax, b.Constant(3_i), param1);
+        // call_min_param1 = min(6, call_max_param1)
+        // The range of call_min_param1 is [3, 6]
+        call_min_param1 = b.Call<i32>(BuiltinFn::kMin, b.Constant(6_i), call_max_param1);
+
+        // call_max_param2 = max(2, param2)
+        auto* call_max_param2 = b.Call<i32>(BuiltinFn::kMax, b.Constant(2_i), param2);
+        // call_min_param2 = min(4, call_max_param2)
+        // The range of call_min is [2, 4]
+        call_min_param2 = b.Call<i32>(BuiltinFn::kMin, b.Constant(4_i), call_max_param2);
+
+        // modulo = call_min_param1 % call_min_param1
+        modulo = b.Modulo<i32>(call_min_param1, call_min_param2);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param1:i32, %param2:i32):void {
+  $B1: {
+    %4:i32 = max 3i, %param1
+    %5:i32 = min 6i, %4
+    %6:i32 = max 2i, %param2
+    %7:i32 = min 4i, %6
+    %8:i32 = mod %5, %7
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min_param2` (`min(4, max(2, param))`)
+    const auto& info_call_min_param2 = analysis.GetInfo(call_min_param2);
+    ASSERT_TRUE(info_call_min_param2.IsValid());
+    ASSERT_TRUE(
+        std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info_call_min_param2.range));
+    const auto& range_call_min_param2 =
+        std::get<IntegerRangeInfo::SignedIntegerRange>(info_call_min_param2.range);
+    EXPECT_EQ(2, range_call_min_param2.min_bound);
+    EXPECT_EQ(4, range_call_min_param2.max_bound);
+
+    // Range of `modulo` (`param % call_min_param2`)
+    const auto& info_mod = analysis.GetInfo(modulo);
+    ASSERT_FALSE(info_mod.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Failure_RHS_NonConstant_U32) {
+    Binary* modulo = nullptr;
+    CoreBuiltinCall* call_min_param1 = nullptr;
+    CoreBuiltinCall* call_min_param2 = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param1 = b.FunctionParam("param1", mod.Types().u32());
+    auto* param2 = b.FunctionParam("param2", mod.Types().u32());
+
+    func->AppendParam(param1);
+    func->AppendParam(param2);
+    b.Append(func->Block(), [&] {
+        // call_max_param1 = max(3, param1)
+        auto* call_max_param1 = b.Call<u32>(BuiltinFn::kMax, b.Constant(3_u), param1);
+        // call_min_param1 = min(6, call_max_param1)
+        // The range of call_min_param1 is [3, 6]
+        call_min_param1 = b.Call<u32>(BuiltinFn::kMin, b.Constant(6_u), call_max_param1);
+
+        // call_max_param2 = max(2, param2)
+        auto* call_max_param2 = b.Call<u32>(BuiltinFn::kMax, b.Constant(2_u), param2);
+        // call_min_param2 = min(4, call_max_param2)
+        // The range of call_min is [2, 4]
+        call_min_param2 = b.Call<u32>(BuiltinFn::kMin, b.Constant(4_u), call_max_param2);
+
+        // modulo = call_min_param1 % call_min_param2
+        modulo = b.Modulo<u32>(call_min_param1, call_min_param2);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param1:u32, %param2:u32):void {
+  $B1: {
+    %4:u32 = max 3u, %param1
+    %5:u32 = min 6u, %4
+    %6:u32 = max 2u, %param2
+    %7:u32 = min 4u, %6
+    %8:u32 = mod %5, %7
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    IntegerRangeAnalysis analysis(&mod);
+
+    // Range of `call_min_param2` (`min(4, max(2, param))`)
+    const auto& info_call_min_param2 = analysis.GetInfo(call_min_param2);
+    ASSERT_TRUE(info_call_min_param2.IsValid());
+    ASSERT_TRUE(
+        std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info_call_min_param2.range));
+    const auto& range_call_min_param2 =
+        std::get<IntegerRangeInfo::UnsignedIntegerRange>(info_call_min_param2.range);
+    EXPECT_EQ(2u, range_call_min_param2.min_bound);
+    EXPECT_EQ(4u, range_call_min_param2.max_bound);
+
+    // Range of `modulo` (`param % call_min_param2`)
+    const auto& info_mod = analysis.GetInfo(modulo);
+    ASSERT_FALSE(info_mod.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Failure_RHS_Negative_I32) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // call_max = max(3, param)
+        auto* call_max = b.Call<i32>(BuiltinFn::kMax, b.Constant(3_i), param);
+        // call_min = min(6, call_max)
+        // The range of call_min is [3, 6]
+        auto* call_min = b.Call<i32>(BuiltinFn::kMin, b.Constant(6_i), call_max);
+
+        // modulo = call_min % (-6)
+        modulo = b.Modulo<i32>(call_min, b.Constant(-6_i));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = max 3i, %param
+    %4:i32 = min 6i, %3
+    %5:i32 = mod %4, -6i
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `modulo` (`call_min % (-6)`)
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Failure_RHS_Zero_I32) {
+    Binary* modulo = nullptr;
+    Var* idx = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // call_max = max(3, param)
+        auto* call_max = b.Call<i32>(BuiltinFn::kMax, b.Constant(3_i), param);
+        // call_min = min(6, call_max)
+        // The range of call_min is [3, 6]
+        auto* call_min = b.Call<i32>(BuiltinFn::kMin, b.Constant(6_i), call_max);
+
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 0
+            idx = b.Var("idx", 0_i);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 1
+            auto* binary = b.LessThan<bool>(b.Load(idx), 1_i);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            // modulo = call_min % idx
+            modulo = b.Modulo<i32>(call_min, b.Load(idx));
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<i32>(b.Load(idx), 1_i));
+            b.NextIteration(loop);
+        });
+
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = max 3i, %param
+    %4:i32 = min 6i, %3
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, i32, read_write> = var 0i
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %6:i32 = load %idx
+        %7:bool = lt %6, 1i
+        if %7 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        %8:i32 = load %idx
+        %9:i32 = mod %4, %8
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %10:i32 = load %idx
+        %11:i32 = add %10, 1i
+        store %idx, %11
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // The range of idx is [0, 0]
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info_idx = analysis.GetInfo(idx);
+    ASSERT_TRUE(info_idx.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info_idx.range));
+    const auto& range_idx = std::get<IntegerRangeInfo::SignedIntegerRange>(info_idx.range);
+    EXPECT_EQ(0, range_idx.min_bound);
+    EXPECT_EQ(0, range_idx.max_bound);
+
+    // Range of `modulo` (`call_min % idx`)
+    const auto& info_modulo = analysis.GetInfo(modulo);
+    ASSERT_FALSE(info_modulo.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Failure_RHS_Zero_U32) {
+    Binary* modulo = nullptr;
+    Var* idx = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // call_max = max(3u, param)
+        auto* call_max = b.Call<u32>(BuiltinFn::kMax, b.Constant(3_u), param);
+        // call_min = min(6u, call_max)
+        // The range of call_min is [3u, 6u]
+        auto* call_min = b.Call<u32>(BuiltinFn::kMin, b.Constant(6_u), call_max);
+
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] {
+            // idx = 0u
+            idx = b.Var("idx", 0_u);
+            b.NextIteration(loop);
+        });
+        b.Append(loop->Body(), [&] {
+            // idx < 1u
+            auto* binary = b.LessThan<bool>(b.Load(idx), 1_u);
+            auto* ifelse = b.If(binary);
+            b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+            b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
+
+            // modulo = call_min % idx
+            modulo = b.Modulo<u32>(call_min, b.Load(idx));
+            b.Continue(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            // idx++
+            b.Store(idx, b.Add<u32>(b.Load(idx), 1_u));
+            b.NextIteration(loop);
+        });
+
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    %3:u32 = max 3u, %param
+    %4:u32 = min 6u, %3
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        %idx:ptr<function, u32, read_write> = var 0u
+        next_iteration  # -> $B3
+      }
+      $B3: {  # body
+        %6:u32 = load %idx
+        %7:bool = lt %6, 1u
+        if %7 [t: $B5, f: $B6] {  # if_1
+          $B5: {  # true
+            exit_if  # if_1
+          }
+          $B6: {  # false
+            exit_loop  # loop_1
+          }
+        }
+        %8:u32 = load %idx
+        %9:u32 = mod %4, %8
+        continue  # -> $B4
+      }
+      $B4: {  # continuing
+        %10:u32 = load %idx
+        %11:u32 = add %10, 1u
+        store %idx, %11
+        next_iteration  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // The range of idx is [0u, 0u]
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info_idx = analysis.GetInfo(idx);
+    ASSERT_TRUE(info_idx.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info_idx.range));
+    const auto& range_idx = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info_idx.range);
+    EXPECT_EQ(0u, range_idx.min_bound);
+    EXPECT_EQ(0u, range_idx.max_bound);
+
+    // Range of `modulo` (`call_min % idx`)
+    const auto& info_modulo = analysis.GetInfo(modulo);
+    ASSERT_FALSE(info_modulo.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Failure_LHS_NoRange_I32) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // modulo = param % 3
+        modulo = b.Modulo<i32>(param, 3_i);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = mod %param, 3i
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `param` is [i32::kLowestValue, i32::kHighestValue]
+    // Range of `modulo` (`param % 3i`)
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_FALSE(info.IsValid());
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Success_LHS_NoRange_U32) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // modulo = param % 3u
+        modulo = b.Modulo<u32>(param, 3_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    %3:u32 = mod %param, 3u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `param` is [u32::kLowestValue, u32::kHighestValue]
+    // Range of `modulo` (`param % 3u`) is [0u, 2u]
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(0u, range.min_bound);
+    EXPECT_EQ(2u, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest,
+       BinaryModulo_Success_MinLHS_Divide_RHS_LessThan_MaxLHS_Divide_RHS_I32) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // call_max = max(6, param)
+        auto* call_max = b.Call<i32>(BuiltinFn::kMax, b.Constant(6_i), param);
+        // call_min = min(12, call_max)
+        // The range of call_min is [6, 12]
+        auto* call_min = b.Call<i32>(BuiltinFn::kMin, b.Constant(12_i), call_max);
+
+        // modulo = call_min % 5
+        modulo = b.Modulo<i32>(call_min, b.Constant(5_i));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = max 6i, %param
+    %4:i32 = min 12i, %3
+    %5:i32 = mod %4, 5i
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `call_min` is [6, 12]
+    // Range of `modulo` (`call_min % 5`) is [0, 4] (10 % 5 == 0, and 9 % 5 == 4)
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::SignedIntegerRange>(info.range);
+    EXPECT_EQ(0, range.min_bound);
+    EXPECT_EQ(4, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest,
+       BinaryModulo_Success_MinLHS_Divide_RHS_LessThan_MaxLHS_Divide_RHS_U32) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // call_max = max(6, param)
+        auto* call_max = b.Call<u32>(BuiltinFn::kMax, b.Constant(6_u), param);
+        // call_min = min(12, call_max)
+        // The range of call_min is [6, 12]
+        auto* call_min = b.Call<u32>(BuiltinFn::kMin, b.Constant(12_u), call_max);
+
+        // modulo = call_min % 6
+        modulo = b.Modulo<u32>(call_min, b.Constant(6_u));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    %3:u32 = max 6u, %param
+    %4:u32 = min 12u, %3
+    %5:u32 = mod %4, 6u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `call_min` is [6u, 12u]
+    // Range of `modulo` (`call_min % 6u`) is [0u, 5u] (12 % 6 == 0, and 11 % 6 == 5)
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(0u, range.min_bound);
+    EXPECT_EQ(5u, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest,
+       BinaryModulo_Success_MinLHS_Divide_RHS_Equal_MaxLHS_Divide_RHS_I32) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // call_max = max(8, param)
+        auto* call_max = b.Call<i32>(BuiltinFn::kMax, b.Constant(8_i), param);
+        // call_min = min(12, call_max)
+        // The range of call_min is [8, 12]
+        auto* call_min = b.Call<i32>(BuiltinFn::kMin, b.Constant(12_i), call_max);
+
+        // modulo = call_min % 7
+        modulo = b.Modulo<i32>(call_min, b.Constant(7_i));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = max 8i, %param
+    %4:i32 = min 12i, %3
+    %5:i32 = mod %4, 7i
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `call_min` is [8, 12]
+    // Range of `modulo` (`call_min % 7`) is [1, 5] (8 % 7 == 1, 12 % 7 == 5)
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::SignedIntegerRange>(info.range);
+    EXPECT_EQ(1, range.min_bound);
+    EXPECT_EQ(5, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest,
+       BinaryModulo_Success_MinLHS_Divide_RHS_Equal_MaxLHS_Divide_RHS_U32) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // call_max = max(8, param)
+        auto* call_max = b.Call<u32>(BuiltinFn::kMax, b.Constant(8_u), param);
+        // call_min = min(12, call_max)
+        // The range of call_min is [8, 12]
+        auto* call_min = b.Call<u32>(BuiltinFn::kMin, b.Constant(12_u), call_max);
+
+        // modulo = call_min % 7
+        modulo = b.Modulo<u32>(call_min, b.Constant(7_u));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    %3:u32 = max 8u, %param
+    %4:u32 = min 12u, %3
+    %5:u32 = mod %4, 7u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `call_min` is [8u, 12u]
+    // Range of `modulo` (`call_min % 7u`) is [1u, 5u] (8 % 7 == 1, 12 % 7 == 5)
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(1u, range.min_bound);
+    EXPECT_EQ(5u, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Success_RHS_Is_One_I32) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // call_max = max(8, param)
+        auto* call_max = b.Call<i32>(BuiltinFn::kMax, b.Constant(8_i), param);
+        // call_min = min(9, call_max)
+        // The range of call_min is [8, 9]
+        auto* call_min = b.Call<i32>(BuiltinFn::kMin, b.Constant(9_i), call_max);
+
+        // modulo = call_min % 1
+        modulo = b.Modulo<i32>(call_min, b.Constant(1_i));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = max 8i, %param
+    %4:i32 = min 9i, %3
+    %5:i32 = mod %4, 1i
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `call_min` is [8, 9]
+    // Range of `modulo` (`call_min % 1`) is [0, 0]
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::SignedIntegerRange>(info.range);
+    EXPECT_EQ(0, range.min_bound);
+    EXPECT_EQ(0, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Success_RHS_Is_One_U32) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // modulo = param % 1u
+        modulo = b.Modulo<u32>(param, 1_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    %3:u32 = mod %param, 1u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `param` is [u32::kLowestValue, u32::kHighestValue]
+    // Range of `modulo` (`param % 1u`) is [0u, 0u]
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(0u, range.min_bound);
+    EXPECT_EQ(0u, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Success_RHS_Is_Highest_I32) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().i32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // call_max = max(0, param)
+        auto* call_max = b.Call<i32>(BuiltinFn::kMax, b.Constant(0_i), param);
+
+        // modulo = call_max % i32::kHighestValue
+        modulo = b.Modulo<i32>(call_max, i32::Highest());
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:i32):void {
+  $B1: {
+    %3:i32 = max 0i, %param
+    %4:i32 = mod %3, 2147483647i
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `call_max` is [0, i32::kHighestValue]
+    // Range of `modulo` (`call_max % i32::kHighestValue`) is [0, i32::kHighestValue - 1]
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::SignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::SignedIntegerRange>(info.range);
+    EXPECT_EQ(0, range.min_bound);
+    EXPECT_EQ(i32::kHighestValue - 1, range.max_bound);
+}
+
+TEST_F(IR_IntegerRangeAnalysisTest, BinaryModulo_Success_RHS_Is_Highest_U32) {
+    Binary* modulo = nullptr;
+    auto* func = b.Function("func", ty.void_());
+    auto* param = b.FunctionParam("param", mod.Types().u32());
+    func->AppendParam(param);
+    b.Append(func->Block(), [&] {
+        // modulo = param % u32::kHighestValue
+        modulo = b.Modulo<u32>(param, u32::Highest());
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%func = func(%param:u32):void {
+  $B1: {
+    %3:u32 = mod %param, 4294967295u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+    EXPECT_EQ(Validate(mod), Success);
+
+    // Range of `param` is [u32::kLowestValue, u32::kHighestValue]
+    // Range of `modulo` (`param % u32::kHighestValue`) is [0u, u32::kHighestValue - 1u]
+    IntegerRangeAnalysis analysis(&mod);
+    const auto& info = analysis.GetInfo(modulo);
+    ASSERT_TRUE(info.IsValid());
+    ASSERT_TRUE(std::holds_alternative<IntegerRangeInfo::UnsignedIntegerRange>(info.range));
+    const auto& range = std::get<IntegerRangeInfo::UnsignedIntegerRange>(info.range);
+    EXPECT_EQ(0u, range.min_bound);
+    EXPECT_EQ(u32::kHighestValue - 1u, range.max_bound);
+}
+
 }  // namespace
 }  // namespace tint::core::ir::analysis

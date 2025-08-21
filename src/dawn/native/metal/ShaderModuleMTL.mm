@@ -28,6 +28,7 @@
 #include "dawn/native/metal/ShaderModuleMTL.h"
 
 #include "dawn/common/MatchVariant.h"
+#include "dawn/common/Range.h"
 #include "dawn/native/Adapter.h"
 #include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/CacheRequest.h"
@@ -125,11 +126,12 @@ MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult) {
 
 namespace {
 
-tint::msl::writer::Bindings generateBindingInfo(
+tint::msl::writer::Bindings GenerateBindingInfo(
     SingleShaderStage stage,
     const PipelineLayout* layout,
     const BindingInfoArray& moduleBindingInfo,
-    tint::msl::writer::ArrayLengthFromUniformOptions& arrayLengthFromUniform) {
+    tint::msl::writer::ArrayLengthOptions& arrayLengthFromConstants,
+    bool useArgumentBuffers) {
     tint::msl::writer::Bindings bindings;
 
     for (BindGroupIndex group : layout->GetBindGroupLayoutsMask()) {
@@ -141,35 +143,37 @@ tint::msl::writer::Bindings generateBindingInfo(
             const auto& binding = currentModuleBindingInfo.first;
             const auto& shaderBindingInfo = currentModuleBindingInfo.second;
 
-            tint::BindingPoint srcBindingPoint{static_cast<uint32_t>(group),
-                                               static_cast<uint32_t>(binding)};
+            tint::BindingPoint srcBindingPoint{
+                .group = uint32_t(group),
+                .binding = uint32_t(binding),
+            };
 
             BindingIndex bindingIndex = bgl->GetBindingIndex(binding);
             auto& bindingIndexInfo = layout->GetBindingIndexInfo(stage)[group];
             uint32_t shaderIndex = bindingIndexInfo[bindingIndex];
 
-            tint::BindingPoint dstBindingPoint{0, shaderIndex};
+            tint::BindingPoint dstBindingPoint{
+                .group = useArgumentBuffers ? uint32_t(group) : 0,
+                .binding = shaderIndex,
+            };
 
             MatchVariant(
                 shaderBindingInfo.bindingInfo,
                 [&](const BufferBindingInfo& bindingInfo) {
                     switch (bindingInfo.type) {
                         case wgpu::BufferBindingType::Uniform:
-                            bindings.uniform.emplace(
-                                srcBindingPoint,
-                                tint::msl::writer::binding::Uniform{dstBindingPoint.binding});
+                            bindings.uniform.emplace(srcBindingPoint, dstBindingPoint);
                             break;
                         case kInternalStorageBufferBinding:
                         case wgpu::BufferBindingType::Storage:
                         case wgpu::BufferBindingType::ReadOnlyStorage:
                         case kInternalReadOnlyStorageBufferBinding:
-                            bindings.storage.emplace(
-                                srcBindingPoint,
-                                tint::msl::writer::binding::Storage{dstBindingPoint.binding});
+                            bindings.storage.emplace(srcBindingPoint, dstBindingPoint);
+
                             // Use the ShaderIndex as the indices for the buffer size lookups in
                             // the array length uniform transform. This is used to compute the
                             // size of variable length arrays in storage buffers.
-                            arrayLengthFromUniform.bindpoint_to_size_index.emplace(
+                            arrayLengthFromConstants.bindpoint_to_size_index.emplace(
                                 srcBindingPoint, dstBindingPoint.binding);
                             break;
                         case wgpu::BufferBindingType::BindingNotUsed:
@@ -179,17 +183,13 @@ tint::msl::writer::Bindings generateBindingInfo(
                     }
                 },
                 [&](const SamplerBindingInfo& bindingInfo) {
-                    bindings.sampler.emplace(srcBindingPoint, tint::msl::writer::binding::Sampler{
-                                                                  dstBindingPoint.binding});
+                    bindings.sampler.emplace(srcBindingPoint, dstBindingPoint);
                 },
                 [&](const TextureBindingInfo& bindingInfo) {
-                    bindings.texture.emplace(srcBindingPoint, tint::msl::writer::binding::Texture{
-                                                                  dstBindingPoint.binding});
+                    bindings.texture.emplace(srcBindingPoint, dstBindingPoint);
                 },
                 [&](const StorageTextureBindingInfo& bindingInfo) {
-                    bindings.storage_texture.emplace(
-                        srcBindingPoint,
-                        tint::msl::writer::binding::StorageTexture{dstBindingPoint.binding});
+                    bindings.storage_texture.emplace(srcBindingPoint, dstBindingPoint);
                 },
                 [&](const ExternalTextureBindingInfo& bindingInfo) {
                     const auto& etBindingMap = bgl->GetExternalTextureBindingExpansionMap();
@@ -197,16 +197,22 @@ tint::msl::writer::Bindings generateBindingInfo(
                     DAWN_ASSERT(expansion != etBindingMap.end());
 
                     const auto& bindingExpansion = expansion->second;
-                    tint::msl::writer::binding::BindingInfo plane0{
-                        bindingIndexInfo[bgl->GetBindingIndex(bindingExpansion.plane0)]};
-                    tint::msl::writer::binding::BindingInfo plane1{
-                        bindingIndexInfo[bgl->GetBindingIndex(bindingExpansion.plane1)]};
-                    tint::msl::writer::binding::BindingInfo metadata{
-                        bindingIndexInfo[bgl->GetBindingIndex(bindingExpansion.params)]};
+                    tint::BindingPoint plane0{
+                        .group = dstBindingPoint.group,
+                        .binding = bindingIndexInfo[bgl->GetBindingIndex(bindingExpansion.plane0)],
+                    };
+                    tint::BindingPoint plane1{
+                        .group = dstBindingPoint.group,
+                        .binding = bindingIndexInfo[bgl->GetBindingIndex(bindingExpansion.plane1)],
+                    };
+                    tint::BindingPoint metadata{
+                        .group = dstBindingPoint.group,
+                        .binding = bindingIndexInfo[bgl->GetBindingIndex(bindingExpansion.params)],
+                    };
 
                     bindings.external_texture.emplace(
                         srcBindingPoint,
-                        tint::msl::writer::binding::ExternalTexture{metadata, plane0, plane1});
+                        tint::msl::writer::ExternalTexture{metadata, plane0, plane1});
                 },
                 [](const InputAttachmentBindingInfo&) { DAWN_UNREACHABLE(); });
         }
@@ -214,12 +220,61 @@ tint::msl::writer::Bindings generateBindingInfo(
     return bindings;
 }
 
+std::unordered_map<uint32_t, tint::msl::writer::ArgumentBufferInfo> GenerateArgumentBufferInfo(
+    SingleShaderStage stage,
+    const PipelineLayout* layout,
+    const BindingInfoArray& moduleBindingInfo,
+    bool useArgumentBuffers) {
+    if (!useArgumentBuffers) {
+        return {};
+    }
+
+    // TODO(363031535): The dynamic offsets should all move to be immediates and contained into a
+    // single buffer.
+    std::unordered_map<uint32_t, tint::msl::writer::ArgumentBufferInfo> info = {};
+
+    uint32_t curBufferIdx = kArgumentBufferSlotMax;
+    for (BindGroupIndex group : layout->GetBindGroupLayoutsMask()) {
+        const BindGroupLayout* bgl = ToBackend(layout->GetBindGroupLayout(group));
+
+        // Node, this buffer index value needs to match up to the value set in the
+        // CommandBufferMTL #argument-buffer-index
+        tint::msl::writer::ArgumentBufferInfo argBufferInfo = {
+            .id = curBufferIdx--,
+        };
+
+        uint32_t curDynamicOffset = 0;
+
+        for (BindingIndex bindingIndex : Range(bgl->GetBindingCount())) {
+            const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
+
+            MatchVariant(
+                bindingInfo.bindingLayout,  //
+                [&](const BufferBindingInfo& binding) {
+                    if (binding.hasDynamicOffset) {
+                        argBufferInfo.dynamic_buffer_id = curBufferIdx--;
+
+                        argBufferInfo.binding_info_to_offset_index.insert(
+                            {static_cast<uint32_t>(bindingInfo.binding), curDynamicOffset++});
+                    }
+                },
+                [&](const SamplerBindingInfo& bindingInfo) {},
+                [&](const StaticSamplerBindingInfo& bindingInfo) {},
+                [&](const TextureBindingInfo& bindingInfo) {},
+                [&](const StorageTextureBindingInfo& bindingInfo) {},
+                [](const InputAttachmentBindingInfo&) { DAWN_CHECK(false); });
+        }
+        info.insert({static_cast<uint32_t>(group), argBufferInfo});
+    }
+
+    return info;
+}
+
 ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     DeviceBase* device,
     const ProgrammableStage& programmableStage,
     SingleShaderStage stage,
     const PipelineLayout* layout,
-    ShaderModule::MetalFunctionData* out,
     uint32_t sampleMask,
     const RenderPipeline* renderPipeline,
     const BindingInfoArray& moduleBindingInfo,
@@ -227,11 +282,16 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     std::ostringstream errorStream;
     errorStream << "Tint MSL failure:\n";
 
-    tint::msl::writer::ArrayLengthFromUniformOptions arrayLengthFromUniform;
-    arrayLengthFromUniform.ubo_binding = kBufferLengthBufferSlot;
+    tint::msl::writer::ArrayLengthOptions arrayLengthFromConstants;
+    arrayLengthFromConstants.ubo_binding = kBufferLengthBufferSlot;
 
-    tint::msl::writer::Bindings bindings =
-        generateBindingInfo(stage, layout, moduleBindingInfo, arrayLengthFromUniform);
+    bool useArgumentBuffers = device->IsToggleEnabled(Toggle::MetalUseArgumentBuffers);
+
+    tint::msl::writer::Bindings bindings = GenerateBindingInfo(
+        stage, layout, moduleBindingInfo, arrayLengthFromConstants, useArgumentBuffers);
+
+    std::unordered_map<uint32_t, tint::msl::writer::ArgumentBufferInfo> argumentBufferInfo =
+        GenerateArgumentBufferInfo(stage, layout, moduleBindingInfo, useArgumentBuffers);
 
     OptionalVertexPullingTransformConfig vertexPullingTransformConfig;
     if (stage == SingleShaderStage::Vertex &&
@@ -243,18 +303,25 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
             uint32_t metalIndex = renderPipeline->GetMtlVertexBufferIndex(slot);
 
             // Tell Tint to map (kPullingBufferBindingSet, slot) to this MSL buffer index.
-            tint::BindingPoint srcBindingPoint{static_cast<uint32_t>(kPullingBufferBindingSet),
-                                               static_cast<uint8_t>(slot)};
-            tint::BindingPoint dstBindingPoint{0, metalIndex};
+            tint::BindingPoint srcBindingPoint{
+                .group = uint32_t(kPullingBufferBindingSet),
+                .binding = uint8_t(slot),
+            };
+            tint::BindingPoint dstBindingPoint{
+                .group = 0,
+                .binding = metalIndex,
+            };
             if (srcBindingPoint != dstBindingPoint) {
-                bindings.storage.emplace(
-                    srcBindingPoint, tint::msl::writer::binding::Storage{dstBindingPoint.binding});
+                bindings.storage.emplace(srcBindingPoint, tint::BindingPoint{
+                                                              .group = 0,
+                                                              .binding = dstBindingPoint.binding,
+                                                          });
             }
 
             // Use the ShaderIndex as the indices for the buffer size lookups in the array
             // length uniform transform.
-            arrayLengthFromUniform.bindpoint_to_size_index.emplace(srcBindingPoint,
-                                                                   dstBindingPoint.binding);
+            arrayLengthFromConstants.bindpoint_to_size_index.emplace(srcBindingPoint,
+                                                                     dstBindingPoint.binding);
         }
     }
 
@@ -293,7 +360,7 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     req.tintOptions.emit_vertex_point_size =
         stage == SingleShaderStage::Vertex &&
         renderPipeline->GetPrimitiveTopology() == wgpu::PrimitiveTopology::PointList;
-    req.tintOptions.array_length_from_uniform = std::move(arrayLengthFromUniform);
+    req.tintOptions.array_length_from_constants = std::move(arrayLengthFromConstants);
     req.tintOptions.pixel_local_attachments = std::move(pixelLocalAttachments);
     req.tintOptions.bindings = std::move(bindings);
     req.tintOptions.disable_polyfill_integer_div_mod =
@@ -301,9 +368,15 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     req.tintOptions.scalarize_max_min_clamp = device->IsToggleEnabled(Toggle::ScalarizeMaxMinClamp);
     req.tintOptions.disable_module_constant_f16 =
         device->IsToggleEnabled(Toggle::MetalDisableModuleConstantF16);
+    req.tintOptions.polyfill_subgroup_broadcast_f16 =
+        device->IsToggleEnabled(Toggle::EnableSubgroupsIntelGen9);
+    req.tintOptions.polyfill_unpack_2x16_snorm =
+        device->IsToggleEnabled(Toggle::MetalPolyfillUnpack2x16snorm);
     req.tintOptions.vertex_pulling_config = std::move(vertexPullingTransformConfig);
     req.tintOptions.enable_integer_range_analysis =
         device->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
+    req.tintOptions.use_argument_buffers = useArgumentBuffers;
+    req.tintOptions.group_to_argument_buffer_info = std::move(argumentBufferInfo);
 
     req.limits = LimitsForCompilationRequest::Create(device->GetLimits().v1);
     req.adapterSupportedLimits = UnsafeUnserializedValue(
@@ -316,14 +389,17 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
         [](MslCompilationRequest r) -> ResultOrError<MslCompilation> {
             TRACE_EVENT0(r.platform.UnsafeGetValue(), General, "tint::msl::writer::Generate");
             // Requires Tint Program here right before actual using.
-            auto inputProgram = r.inputProgram.UnsafeGetValue()->GetTintProgram();
+            auto shaderModule = r.inputProgram.UnsafeGetValue();
+            auto inputProgram = shaderModule->GetTintProgram();
             const tint::Program* tintInputProgram = &(inputProgram->program);
             // Convert the AST program to an IR module.
             tint::Result<tint::core::ir::Module> ir;
             {
                 SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(r.platform.UnsafeGetValue(),
                                                    "ShaderModuleProgramToIR");
-                ir = tint::wgsl::reader::ProgramToLoweredIR(*tintInputProgram);
+                ir = tint::wgsl::reader::ProgramToLoweredIR(
+                    *tintInputProgram,
+                    shaderModule->GetDevice()->GetTintInternalCompilerErrorCallback());
                 DAWN_INVALID_IF(ir != tint::Success,
                                 "An error occurred while generating Tint IR\n%s",
                                 ir.Failure().reason);
@@ -442,10 +518,10 @@ MaybeError ShaderModule::CreateFunction(SingleShaderStage stage,
     }
 
     CacheResult<MslCompilation> mslCompilation;
-    DAWN_TRY_ASSIGN(mslCompilation,
-                    TranslateToMSL(GetDevice(), programmableStage, stage, layout, out, sampleMask,
-                                   renderPipeline, GetEntryPoint(entryPointName).bindings,
-                                   GetStrictMath().value_or(false)));
+    DAWN_TRY_ASSIGN(
+        mslCompilation,
+        TranslateToMSL(GetDevice(), programmableStage, stage, layout, sampleMask, renderPipeline,
+                       GetEntryPoint(entryPointName).bindings, GetStrictMath().value_or(false)));
 
     out->needsStorageBufferLength = mslCompilation->needsStorageBufferLength;
     out->workgroupAllocations = std::move(mslCompilation->workgroupAllocations);
@@ -461,10 +537,29 @@ MaybeError ShaderModule::CreateFunction(SingleShaderStage stage,
         (*compileOptions).preserveInvariance = true;
     }
 
+    // TODO(433534277): Warn if the pipeline uses print but it is not available or enabled.
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
+    if (GetDevice()->IsToggleEnabled(Toggle::EnableShaderPrint)) {
+        if (@available(macOS 15.0, iOS 18.0, *)) {
+            (*compileOptions).enableLogging = true;
+            (*compileOptions).languageVersion = MTLLanguageVersion3_2;
+        }
+    }
+#endif
+
     // If possible we will use relaxed math as a pragma in the source rather than this fast math
     // global compiler option. See crbug.com/425650181
-    if (!@available(macOS 15.0, iOS 18.0, *)) {
+    if (@available(macOS 15.0, iOS 18.0, *)) {
+        // This empty bock is intentional due to the mechanism to support @available.
+        // (the @available must be in a plain 'if' statement)
+        // Without this empty block one would get '-Wunsupported-availability-guard'
+    } else {
+// Silence the warning that fastMathEnabled is deprecated since we cannot remove it until the
+// minimum support macOS version is macOS 15.0.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         (*compileOptions).fastMathEnabled = !GetStrictMath().value_or(false);
+#pragma clang diagnostic pop
     }
 
     auto mtlDevice = ToBackend(GetDevice())->GetMTLDevice();
@@ -480,9 +575,13 @@ MaybeError ShaderModule::CreateFunction(SingleShaderStage stage,
     }
 
     if (error != nullptr) {
+        // clang-format formats the `mslCompilation->msl` below oddly as `mslCompilation -> msl`.
+        // clang-format off
         DAWN_INVALID_IF(error.code != MTLLibraryErrorCompileWarning,
-                        "Unable to create library object: %s.",
-                        [error.localizedDescription UTF8String]);
+                        "ShaderModuleMTL: Unable to create library object: %s from "
+                        "produced MSL shader below:\n\n%s",
+                        [error.localizedDescription UTF8String], mslCompilation->msl);
+        // clang-format on
     }
     DAWN_ASSERT(library != nil);
     timer.RecordMicroseconds("Metal.newLibraryWithSource.CacheMiss");
@@ -501,7 +600,6 @@ MaybeError ShaderModule::CreateFunction(SingleShaderStage stage,
                 availableFunctions += "\n - \"";
                 availableFunctions += [fn UTF8String];
             }
-
             return DAWN_FORMAT_INTERNAL_ERROR(
                 "ShaderModuleMTL: failed to get the MTLFunction \'%s\' from produced MSL "
                 "shader below:\n\n%s\n\nAvailable functions are:%s",
@@ -518,6 +616,9 @@ MaybeError ShaderModule::CreateFunction(SingleShaderStage stage,
         GetEntryPoint(entryPointName).usedVertexInputs.any()) {
         out->needsStorageBufferLength = true;
     }
+
+    // For emitting MSL in error message if render pipeline creation fails.
+    out->msl = std::move(mslCompilation->msl);
 
     return {};
 }

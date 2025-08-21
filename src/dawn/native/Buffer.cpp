@@ -116,6 +116,11 @@ wgpu::BufferUsage ComputeInternalBufferUsages(const DeviceBase* device,
         usage |= kReadOnlyStorageBuffer;
     }
 
+    // Texel buffers support read-only access without requiring storage usage.
+    if (usage & wgpu::BufferUsage::TexelBuffer) {
+        usage |= kReadOnlyTexelBuffer;
+    }
+
     // The query resolve buffer need to be used as a storage buffer in the internal compute
     // pipeline which does timestamp uint conversion for timestamp query, it requires the buffer
     // has Storage usage in the binding group. Implicitly add an InternalStorage usage which is
@@ -307,6 +312,11 @@ ResultOrError<UnpackedPtr<BufferDescriptor>> ValidateBufferDescriptor(
 
     DAWN_INVALID_IF(usage == wgpu::BufferUsage::None, "Buffer usages must not be 0.");
 
+    if (usage & wgpu::BufferUsage::TexelBuffer) {
+        DAWN_INVALID_IF(!device->AreTexelBuffersEnabled(), "%s is not enabled.",
+                        wgpu::WGSLLanguageFeatureName::TexelBuffers);
+    }
+
     if (!device->HasFeature(Feature::BufferMapExtendedUsages)) {
         const wgpu::BufferUsage kMapWriteAllowedUsages =
             wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc;
@@ -346,7 +356,7 @@ BufferBase::BufferBase(DeviceBase* device, const UnpackedPtr<BufferDescriptor>& 
       mSize(descriptor->size),
       mUsage(descriptor->usage),
       mInternalUsage(ComputeInternalBufferUsages(device, descriptor->usage, descriptor->size)),
-      mState(descriptor.Get<BufferHostMappedPointer>() ? BufferState::HostMappedPersistent
+      mState(descriptor.Has<BufferHostMappedPointer>() ? BufferState::HostMappedPersistent
                                                        : BufferState::Unmapped) {
     GetObjectTrackingList()->Track(this);
 }
@@ -373,6 +383,7 @@ BufferBase::BufferBase(DeviceBase* device,
 BufferBase::~BufferBase() {
     BufferState state = mState.load(std::memory_order::acquire);
     DAWN_ASSERT(state == BufferState::Unmapped || state == BufferState::Destroyed ||
+                state == BufferState::SharedMemoryNoAccess ||
                 // Happens if the buffer was created mappedAtCreation *after* device destroy.
                 // TODO(crbug.com/42241190): This shouldn't be needed once the issue above is fixed,
                 // because then bufferState will just be Destroyed.
@@ -381,15 +392,13 @@ BufferBase::~BufferBase() {
 }
 
 void BufferBase::DestroyImpl() {
-    Ref<MapAsyncEvent> event;
-
     switch (mState.load(std::memory_order::acquire)) {
         case BufferState::Mapped:
         case BufferState::PendingMap: {
             [[maybe_unused]] bool hadError = GetDevice()->ConsumedError(
                 UnmapInternal(WGPUMapAsyncStatus_Aborted,
                               "Buffer was destroyed before mapping was resolved."),
-                &event, "calling %s.Destroy().", this);
+                "calling %s.Destroy().", this);
             break;
         }
         case BufferState::MappedAtCreation: {
@@ -399,7 +408,7 @@ void BufferBase::DestroyImpl() {
                 [[maybe_unused]] bool hadError = GetDevice()->ConsumedError(
                     UnmapInternal(WGPUMapAsyncStatus_Aborted,
                                   "Buffer was destroyed before mapping was resolved."),
-                    &event, "calling %s.Destroy().", this);
+                    "calling %s.Destroy().", this);
             }
             break;
         }
@@ -408,15 +417,7 @@ void BufferBase::DestroyImpl() {
     }
     mState.store(BufferState::Destroyed, std::memory_order::release);
 
-    // This is the error cases where re-entrant API calls, specifically Unmap will fail since
-    // this function is called in two places, via Buffer::APIDestroy and Device::Destroy, both which
-    // currently hold the device-wide lock which we don't yet have a way to circumvent and release
-    // before the callback is called (spontaneously). That said, this only happens if a user is
-    // calling Unmap in the MapAsync callback even though the callback was Aborted which is an
-    // invalid use case.
-    if (event) {
-        GetInstance()->GetEventManager()->SetFutureReady(event.Get());
-    }
+    mTexelBufferViews.Destroy();
 }
 
 // static
@@ -584,7 +585,7 @@ Future BufferBase::APIMapAsync(wgpu::MapMode mode,
 
     Ref<MapAsyncEvent> event;
     {
-        auto deviceLock(GetDevice()->GetScopedLock());
+        auto deviceGuard = GetDevice()->GetGuard();
 
         // Handle the defaulting of size required by WebGPU, even if in webgpu_cpp.h it is not
         // possible to default the function argument (because there is the callback later in the
@@ -692,21 +693,13 @@ MaybeError BufferBase::CopyFromStagingBuffer() {
 }
 
 void BufferBase::APIUnmap() {
-    Ref<MapAsyncEvent> event;
-    {
-        auto deviceLock(GetDevice()->GetScopedLock());
-        if (GetDevice()->ConsumedError(ValidateUnmap(), "calling %s.Unmap().", this)) {
-            return;
-        }
-        [[maybe_unused]] bool hadError = GetDevice()->ConsumedError(
-            UnmapInternal(WGPUMapAsyncStatus_Aborted,
-                          "Buffer was unmapped before mapping was resolved."),
-            &event, "calling %s.Unmap().", this);
+    if (GetDevice()->ConsumedError(ValidateUnmap(), "calling %s.Unmap().", this)) {
+        return;
     }
-
-    if (event) {
-        GetInstance()->GetEventManager()->SetFutureReady(event.Get());
-    }
+    [[maybe_unused]] bool hadError = GetDevice()->ConsumedError(
+        UnmapInternal(WGPUMapAsyncStatus_Aborted,
+                      "Buffer was unmapped before mapping was resolved."),
+        "calling %s.Unmap().", this);
 }
 
 MaybeError BufferBase::Unmap() {
@@ -736,31 +729,33 @@ MaybeError BufferBase::Unmap() {
     return {};
 }
 
-ResultOrError<Ref<BufferBase::MapAsyncEvent>> BufferBase::UnmapInternal(WGPUMapAsyncStatus status,
-                                                                        std::string_view message) {
-    Ref<MapAsyncEvent> event;
-
+MaybeError BufferBase::UnmapInternal(WGPUMapAsyncStatus status, std::string_view message) {
     BufferState state = mState.load(std::memory_order::acquire);
 
     // If the buffer is already destroyed, we don't need to do anything.
     if (state == BufferState::Destroyed) {
-        return nullptr;
+        return {};
     }
 
-    // For pending maps, set the pending event statuses, and return it. The caller is responsible
-    // for setting the event to be ready once we no longer are holding the device-wide lock.
     if (state == BufferState::PendingMap) {
         // For pending maps, we update the pending event, and only set it to ready after releasing
         // the buffer state lock so that spontaneous callbacks with re-entrant calls work properly.
-        event = std::get<Ref<MapAsyncEvent>>(std::exchange(mMapData, static_cast<void*>(nullptr)));
+        Ref<MapAsyncEvent> event =
+            std::get<Ref<MapAsyncEvent>>(std::exchange(mMapData, static_cast<void*>(nullptr)));
+
         event->UnmapEarly(status, message);
         UnmapImpl();
         mState.store(BufferState::Unmapped, std::memory_order::release);
-        return std::move(event);
+
+        GetDevice()->DeferIfLocked(
+            [eventManager = GetInstance()->GetEventManager(), mapEvent = std::move(event)]() {
+                eventManager->SetFutureReady(mapEvent.Get());
+            });
+        return {};
     }
 
     DAWN_TRY(Unmap());
-    return nullptr;
+    return {};
 }
 
 MaybeError BufferBase::ValidateMapAsync(wgpu::MapMode mode,
@@ -943,6 +938,10 @@ void BufferBase::DumpMemoryStatistics(MemoryDump* dump, const char* prefix) cons
                     GetAllocatedSize());
     dump->AddString(name.c_str(), "label", GetLabel());
     dump->AddString(name.c_str(), "usage", absl::StrFormat("%s", GetInternalUsage()));
+}
+
+ApiObjectList* BufferBase::GetTexelBufferViewTrackingList() {
+    return &mTexelBufferViews;
 }
 
 }  // namespace dawn::native

@@ -34,11 +34,12 @@
 #include "dawn/native/Device.h"
 #include "dawn/native/ToBackend.h"
 #include "dawn/native/webgpu/Forward.h"
+#include "dawn/native/webgpu/ObjectWGPU.h"
 #include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native::webgpu {
 
-class Device final : public DeviceBase {
+class Device final : public DeviceBase, public ObjectWGPU<WGPUDevice> {
   public:
     static ResultOrError<Ref<Device>> Create(AdapterBase* adapter,
                                              WGPUAdapter innerAdapter,
@@ -54,8 +55,6 @@ class Device final : public DeviceBase {
 
     float GetTimestampPeriodInNS() const override;
 
-    WGPUDevice GetInnerHandle() const;
-
     WGPUInstance GetInnerInstance() const;
 
     const DawnProcTable& wgpu;
@@ -68,9 +67,9 @@ class Device final : public DeviceBase {
            Ref<DeviceBase::DeviceLostEvent>&& lostEvent);
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
-        const BindGroupDescriptor* descriptor) override;
+        const UnpackedPtr<BindGroupDescriptor>& descriptor) override;
     ResultOrError<Ref<BindGroupLayoutInternalBase>> CreateBindGroupLayoutImpl(
-        const BindGroupLayoutDescriptor* descriptor) override;
+        const UnpackedPtr<BindGroupLayoutDescriptor>& descriptor) override;
     ResultOrError<Ref<BufferBase>> CreateBufferImpl(
         const UnpackedPtr<BufferDescriptor>& descriptor) override;
     ResultOrError<Ref<CommandBufferBase>> CreateCommandBuffer(
@@ -112,9 +111,6 @@ class Device final : public DeviceBase {
                                             const Extent3D& copySizePixels) override;
 
     void DestroyImpl() override;
-
-    // The "lower layer" implementation device that actually manages calls to GPU driver.
-    WGPUDevice mInnerDevice = nullptr;
 };
 
 }  // namespace dawn::native::webgpu

@@ -711,6 +711,26 @@ wgpu::TextureUsage AddInternalUsages(const DeviceBase* device,
     return internalUsage;
 }
 
+wgpu::ComponentSwizzle ComposeSwizzleComponent(wgpu::ComponentSwizzle component,
+                                               wgpu::TextureComponentSwizzle swizzle) {
+    switch (component) {
+        case wgpu::ComponentSwizzle::Zero:
+            return wgpu::ComponentSwizzle::Zero;
+        case wgpu::ComponentSwizzle::One:
+            return wgpu::ComponentSwizzle::One;
+        case wgpu::ComponentSwizzle::R:
+            return swizzle.r;
+        case wgpu::ComponentSwizzle::G:
+            return swizzle.g;
+        case wgpu::ComponentSwizzle::B:
+            return swizzle.b;
+        case wgpu::ComponentSwizzle::A:
+            return swizzle.a;
+        case wgpu::ComponentSwizzle::Undefined:
+            return wgpu::ComponentSwizzle::Undefined;
+    }
+}
+
 }  // anonymous namespace
 
 MaybeError ValidateTextureDescriptor(
@@ -1577,6 +1597,14 @@ TextureViewBase::TextureViewBase(TextureBase* texture,
                             texture->GetSampleCount(),
                             texture->GetNumMipLevels(),
                             texture->GetArrayLayers())) {
+    if (auto* swizzleDesc = descriptor.Get<TextureComponentSwizzleDescriptor>()) {
+        auto swizzle = swizzleDesc->swizzle.WithTrivialFrontendDefaults();
+        mSwizzleRed = swizzle.r;
+        mSwizzleGreen = swizzle.g;
+        mSwizzleBlue = swizzle.b;
+        mSwizzleAlpha = swizzle.a;
+    }
+
     GetObjectTrackingList()->Track(this);
 
     // Emit a warning if invalid usages were removed for this view.
@@ -1689,6 +1717,42 @@ wgpu::TextureUsage TextureViewBase::GetUsage() const {
 wgpu::TextureUsage TextureViewBase::GetInternalUsage() const {
     DAWN_ASSERT(!IsError());
     return mInternalUsage;
+}
+
+wgpu::ComponentSwizzle TextureViewBase::GetSwizzleRed() const {
+    return mSwizzleRed;
+}
+
+wgpu::ComponentSwizzle TextureViewBase::GetSwizzleGreen() const {
+    return mSwizzleGreen;
+}
+
+wgpu::ComponentSwizzle TextureViewBase::GetSwizzleBlue() const {
+    return mSwizzleBlue;
+}
+
+wgpu::ComponentSwizzle TextureViewBase::GetSwizzleAlpha() const {
+    return mSwizzleAlpha;
+}
+
+bool TextureViewBase::UsesNonDefaultSwizzle() const {
+    // TODO(414312052): Refine this condition. A view might not be strictly necessary
+    // in case of the given swizzle works identically to default with the original
+    // format, e.g. a R8Unorm texture with swizzle.r set to R and swizzle.g set to One.
+    // This current check provides a correct, though potentially overly broad,
+    // first approximation.
+    return mSwizzleRed != wgpu::ComponentSwizzle::R || mSwizzleGreen != wgpu::ComponentSwizzle::G ||
+           mSwizzleBlue != wgpu::ComponentSwizzle::B || mSwizzleAlpha != wgpu::ComponentSwizzle::A;
+}
+
+wgpu::TextureComponentSwizzle TextureViewBase::ComposeSwizzle(
+    wgpu::TextureComponentSwizzle swizzle) const {
+    wgpu::TextureComponentSwizzle result;
+    result.r = ComposeSwizzleComponent(mSwizzleRed, swizzle);
+    result.g = ComposeSwizzleComponent(mSwizzleGreen, swizzle);
+    result.b = ComposeSwizzleComponent(mSwizzleBlue, swizzle);
+    result.a = ComposeSwizzleComponent(mSwizzleAlpha, swizzle);
+    return result;
 }
 
 bool TextureViewBase::IsYCbCr() const {

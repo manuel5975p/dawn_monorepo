@@ -146,6 +146,16 @@ enum class BuiltinFn : uint8_t {
     kCooperativeMatrixLoad,
     kCooperativeMatrixStore,
     kCooperativeMatrixMulAdd,
+    kGroupNonUniformBroadcast,
+    kGroupNonUniformBroadcastFirst,
+    kGroupNonUniformQuadBroadcast,
+    kGroupNonUniformQuadSwap,
+    kGroupNonUniformShuffle,
+    kGroupNonUniformShuffleXor,
+    kGroupNonUniformShuffleDown,
+    kGroupNonUniformShuffleUp,
+    kGroupNonUniformSMin,
+    kGroupNonUniformSMax,
     kNone,
 };
 

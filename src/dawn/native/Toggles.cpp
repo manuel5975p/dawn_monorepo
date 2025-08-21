@@ -211,6 +211,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Dump shaders for debugging purposes. Dumped shaders will be log via EmitLog, thus printed "
       "in Chrome console or consumed by user-defined callback function.",
       "https://crbug.com/dawn/792", ToggleStage::Device}},
+    {Toggle::DumpShadersOnFailure,
+     {"dump_shaders_on_failure",
+      "Dump shaders only on failure. Used for logging purposes. Dumped shaders will be log via "
+      "EmitLog, thus printed in Chrome console or consumed by user-defined callback function.",
+      "https://crbug.com/dawn/792", ToggleStage::Device}},
     {Toggle::DisableWorkgroupInit,
      {"disable_workgroup_init",
       "Disables the workgroup memory zero-initialization for compute shaders.",
@@ -378,6 +383,10 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "subresource are completely initialized, and StoreOp::Discard is always translated as a "
       "Store.",
       "https://crbug.com/dawn/838", ToggleStage::Device}},
+    {Toggle::MetalPolyfillUnpack2x16snorm,
+     {"metal_polyfill_unpack_2x16_snorm",
+      "Polyfill unpack2x16snorm for MSL due to CTS failures on Mac AMD devices.",
+      "https://crbug.com/407109055", ToggleStage::Device}},
     {Toggle::MetalFillEmptyOcclusionQueriesWithZero,
      {"metal_fill_empty_occlusion_queries_with_zero",
       "Apple GPUs leave stale results in the visibility result buffer instead of writing zero if "
@@ -538,6 +547,10 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "workaround issues where FXC can miscompile code that depends on special float values (NaN, "
       "INF, etc).",
       "https://crbug.com/tint/976", ToggleStage::Device}},
+    {Toggle::D3DSkipShaderOptimizations,
+     {"d3d_skip_shader_optimizations",
+      "Sets the D3DCOMPILE_SKIP_OPTIMIZATION compilation flag when compiling HLSL code.",
+      "https://crbug.com/439845637", ToggleStage::Device}},
     {Toggle::PolyFillPacked4x8DotProduct,
      {"polyfill_packed_4x8_dot_product",
       "Always use the polyfill version of dot4I8Packed() and dot4U8Packed().",
@@ -547,6 +560,10 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Always use the polyfill version of pack4x8snorm, pack4x8unorm, unpack4x8snorm, "
       "unpack4x8unorm.",
       "https://crbug.com/379551588", ToggleStage::Device}},
+    {Toggle::EnableSubgroupsIntelGen9,
+     {"enable_subgroups_intel_gen9",
+      "Enables subgroups on Intel Gen9 by polyfilling subgroupBroadcast(f16).",
+      "https://crbug.com/42251286", ToggleStage::Adapter}},
     {Toggle::D3D12PolyFillPackUnpack4x8,
      {"d3d12_polyfill_pack_unpack_4x8",
       "Always use the polyfill version of pack4xI8(), pack4xU8(), pack4xI8Clamp(), unpack4xI8() "
@@ -570,6 +587,10 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
     {Toggle::ScalarizeMaxMinClamp,
      {"scalarize_max_min_clamp", "Scalarize max, min, and clamp builtins.",
       "https://crbug.com/422144514", ToggleStage::Device}},
+    {Toggle::SubgroupShuffleClamped,
+     {"subgroup_shuffle_clamped",
+      "Polyfill subgroupShuffle by clamping the id param to within maximum possible subgroup size.",
+      "https://crbug.com/dawn/2502", ToggleStage::Device}},
     {Toggle::MetalDisableModuleConstantF16,
      {"metal_disable_module_constant_f16",
       "Disable module constant hoisting for values that contain f16 types.",
@@ -660,6 +681,16 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
     {Toggle::UseSpirv14,
      {"use_spirv_1_4", "Use SPIR-V 1.4 if available", "https://crbug.com/422421915",
       ToggleStage::Device}},
+    {Toggle::MetalUseArgumentBuffers,
+     {"metal_use_argument_buffers", "Enables the use of Argument Buffers on Metal.",
+      "https://crbug.com/dawn/363031535", ToggleStage::Device}},
+    {Toggle::EnableShaderPrint,
+     {"enable_shader_print", "Enable print functions to produce output on supported devices.",
+      "https://crbug.com/433534277", ToggleStage::Device}},
+    {Toggle::BlobCacheHashValidation,
+     {"blob_cache_hash_validation",
+      "Enable hash validation when loading/storing from/to the blob cache",
+      "https://crbug.com/429938352", ToggleStage::Device}},
     {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
      {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
       "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "

@@ -60,9 +60,9 @@ class QueueMock : public QueueBase {
     MOCK_METHOD(bool, HasPendingCommands, (), (const, override));
     MOCK_METHOD(MaybeError, SubmitPendingCommandsImpl, (), (override));
     MOCK_METHOD(void, ForceEventualFlushOfCommands, (), (override));
-    MOCK_METHOD(MaybeError, WaitForIdleForDestruction, (), (override));
-    MOCK_METHOD(ResultOrError<bool>,
-                WaitForQueueSerial,
+    MOCK_METHOD(MaybeError, WaitForIdleForDestructionImpl, (), (override));
+    MOCK_METHOD(ResultOrError<ExecutionSerial>,
+                WaitForQueueSerialImpl,
                 (ExecutionSerial, Nanoseconds),
                 (override));
 };

@@ -126,6 +126,10 @@ wgpu::TextureFormat TintImageFormatToTextureFormat(
             return wgpu::TextureFormat::RG32Sint;
         case tint::inspector::ResourceBinding::TexelFormat::kRg32Float:
             return wgpu::TextureFormat::RG32Float;
+        case tint::inspector::ResourceBinding::TexelFormat::kRgba16Unorm:
+            return wgpu::TextureFormat::RGBA16Unorm;
+        case tint::inspector::ResourceBinding::TexelFormat::kRgba16Snorm:
+            return wgpu::TextureFormat::RGBA16Snorm;
         case tint::inspector::ResourceBinding::TexelFormat::kRgba16Uint:
             return wgpu::TextureFormat::RGBA16Uint;
         case tint::inspector::ResourceBinding::TexelFormat::kRgba16Sint:
@@ -140,6 +144,46 @@ wgpu::TextureFormat TintImageFormatToTextureFormat(
             return wgpu::TextureFormat::RGBA32Float;
         case tint::inspector::ResourceBinding::TexelFormat::kR8Unorm:
             return wgpu::TextureFormat::R8Unorm;
+        case tint::inspector::ResourceBinding::TexelFormat::kR8Snorm:
+            return wgpu::TextureFormat::R8Snorm;
+        case tint::inspector::ResourceBinding::TexelFormat::kR8Uint:
+            return wgpu::TextureFormat::R8Uint;
+        case tint::inspector::ResourceBinding::TexelFormat::kR8Sint:
+            return wgpu::TextureFormat::R8Sint;
+        case tint::inspector::ResourceBinding::TexelFormat::kRg8Unorm:
+            return wgpu::TextureFormat::RG8Unorm;
+        case tint::inspector::ResourceBinding::TexelFormat::kRg8Snorm:
+            return wgpu::TextureFormat::RG8Snorm;
+        case tint::inspector::ResourceBinding::TexelFormat::kRg8Uint:
+            return wgpu::TextureFormat::RG8Uint;
+        case tint::inspector::ResourceBinding::TexelFormat::kRg8Sint:
+            return wgpu::TextureFormat::RG8Sint;
+        case tint::inspector::ResourceBinding::TexelFormat::kR16Unorm:
+            return wgpu::TextureFormat::R16Unorm;
+        case tint::inspector::ResourceBinding::TexelFormat::kR16Snorm:
+            return wgpu::TextureFormat::R16Snorm;
+        case tint::inspector::ResourceBinding::TexelFormat::kR16Uint:
+            return wgpu::TextureFormat::R16Uint;
+        case tint::inspector::ResourceBinding::TexelFormat::kR16Sint:
+            return wgpu::TextureFormat::R16Sint;
+        case tint::inspector::ResourceBinding::TexelFormat::kR16Float:
+            return wgpu::TextureFormat::R16Float;
+        case tint::inspector::ResourceBinding::TexelFormat::kRg16Unorm:
+            return wgpu::TextureFormat::RG16Unorm;
+        case tint::inspector::ResourceBinding::TexelFormat::kRg16Snorm:
+            return wgpu::TextureFormat::RG16Snorm;
+        case tint::inspector::ResourceBinding::TexelFormat::kRg16Uint:
+            return wgpu::TextureFormat::RG16Uint;
+        case tint::inspector::ResourceBinding::TexelFormat::kRg16Sint:
+            return wgpu::TextureFormat::RG16Sint;
+        case tint::inspector::ResourceBinding::TexelFormat::kRg16Float:
+            return wgpu::TextureFormat::RG16Float;
+        case tint::inspector::ResourceBinding::TexelFormat::kRgb10A2Uint:
+            return wgpu::TextureFormat::RGB10A2Uint;
+        case tint::inspector::ResourceBinding::TexelFormat::kRgb10A2Unorm:
+            return wgpu::TextureFormat::RGB10A2Unorm;
+        case tint::inspector::ResourceBinding::TexelFormat::kRg11B10Ufloat:
+            return wgpu::TextureFormat::RG11B10Ufloat;
         case tint::inspector::ResourceBinding::TexelFormat::kNone:
             return wgpu::TextureFormat::Undefined;
 
@@ -413,24 +457,33 @@ MaybeError ParseSPIRV(const std::vector<uint32_t>& spirv,
                       const WGSLAllowedFeatures& allowedFeatures,
                       ShaderModuleParseResult* outputParseResult,
                       bool allowNonUniformDerivatives) {
-    tint::spirv::reader::Options options;
+    tint::Result<tint::core::ir::Module> irResult = tint::spirv::reader::ReadIR(spirv);
+    if (irResult != tint::Success) {
+        outputParseResult->SetValidationError(
+            DAWN_VALIDATION_ERROR("Error while parsing SPIR-V: %s\n", irResult.Failure().reason));
+        DAWN_ASSERT(!outputParseResult->HasTintProgram() && outputParseResult->HasError());
+        return {};
+    }
+
+    tint::wgsl::writer::ProgramOptions options;
     options.allow_non_uniform_derivatives = allowNonUniformDerivatives;
     options.allowed_features = allowedFeatures.ToTint();
+    auto wgslResult = tint::wgsl::writer::ProgramFromIR(irResult.Get(), options);
 
-    tint::Program program = tint::spirv::reader::Read(spirv, options);
+    // If WGSL generation succeeded, store the generated Tint program with no validation error.
+    if (wgslResult == tint::Success) {
+        tint::Program program = wgslResult.Move();
 
-    // Store the compilation messages into outputParseResult.
-    DAWN_TRY(outputParseResult->compilationMessages.AddMessages(program.Diagnostics()));
+        // Store the compilation messages into outputParseResult.
+        DAWN_TRY(outputParseResult->compilationMessages.AddMessages(program.Diagnostics()));
 
-    // If SpirV parsing succeed, store the generated Tint program with no validation error.
-    if (program.IsValid()) {
         outputParseResult->tintProgram = UnsafeUnserializedValue<std::optional<Ref<TintProgram>>>(
             AcquireRef(new TintProgram(std::move(program), nullptr)));
         DAWN_ASSERT(outputParseResult->HasTintProgram() && !outputParseResult->HasError());
     } else {
         // Otherwise, store the validation error messages to outputParseResult.
-        outputParseResult->SetValidationError(
-            DAWN_VALIDATION_ERROR("Error while parsing SPIR-V: %s\n", program.Diagnostics().Str()));
+        outputParseResult->SetValidationError(DAWN_VALIDATION_ERROR(
+            "Error while generating WGSL: %s\n", wgslResult.Failure().reason));
         DAWN_ASSERT(!outputParseResult->HasTintProgram() && outputParseResult->HasError());
     }
 
@@ -443,11 +496,11 @@ std::vector<uint64_t> GetBindGroupMinBufferSizes(const BindingGroupInfoMap& shad
     std::vector<uint64_t> requiredBufferSizes(layout->GetUnverifiedBufferCount());
     uint32_t packedIdx = 0;
 
-    for (BindingIndex bindingIndex{0}; bindingIndex < layout->GetBufferCount(); ++bindingIndex) {
+    for (BindingIndex bindingIndex : layout->GetBufferIndices()) {
         const BindingInfo& bindingInfo = layout->GetBindingInfo(bindingIndex);
-        const auto* bufferBindingLayout =
-            std::get_if<BufferBindingInfo>(&bindingInfo.bindingLayout);
-        if (bufferBindingLayout == nullptr || bufferBindingLayout->minBindingSize > 0) {
+        const auto& bufferBindingLayout = std::get<BufferBindingInfo>(bindingInfo.bindingLayout);
+
+        if (bufferBindingLayout.minBindingSize > 0) {
             // Skip bindings that have minimum buffer size set in the layout
             continue;
         }
@@ -1241,25 +1294,6 @@ void ReflectShaderUsingTint(const ShaderModuleParseDeviceInfo& deviceInfo,
 }  // anonymous namespace
 
 ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
-    const tint::Program& program,
-    const char* entryPointName,
-    bool usesSubgroupMatrix,
-    uint32_t maxSubgroupSize,
-    const LimitsForCompilationRequest& limits,
-    const LimitsForCompilationRequest& adaterSupportedlimits) {
-    tint::inspector::Inspector inspector(program);
-
-    // At this point the entry point must exist and must have workgroup size values.
-    tint::inspector::EntryPoint entryPoint = inspector.GetEntryPoint(entryPointName);
-    DAWN_ASSERT(entryPoint.workgroup_size.has_value());
-    const tint::inspector::WorkgroupSize& workgroup_size = entryPoint.workgroup_size.value();
-
-    return ValidateComputeStageWorkgroupSize(workgroup_size.x, workgroup_size.y, workgroup_size.z,
-                                             entryPoint.workgroup_storage_size, usesSubgroupMatrix,
-                                             maxSubgroupSize, limits, adaterSupportedlimits);
-}
-
-ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
     uint32_t x,
     uint32_t y,
     uint32_t z,
@@ -1382,7 +1416,7 @@ void DumpShaderFromDescriptor(LogEmitter* logEmitter,
     }
 #else   // TINT_BUILD_SPV_READER
     // SPIR-V is not enabled, so the descriptor should not contain it.
-    DAWN_ASSERT(shaderModuleDesc.Get<ShaderSourceSPIRV>() == nullptr);
+    DAWN_ASSERT(!shaderModuleDesc.Has<ShaderSourceSPIRV>());
 #endif  // TINT_BUILD_SPV_READER
 
     // Dump WGSL.
@@ -1401,8 +1435,9 @@ ResultOrError<ShaderModuleParseResult> ParseShaderModule(ShaderModuleParseReques
 #if TINT_BUILD_SPV_READER
     // Handling SPIR-V if enabled.
     if (std::holds_alternative<ShaderModuleParseSpirvDescription>(req.shaderDescription)) {
-        // SpirV toggle should have been validated before checking cache.
+        // SPIRV toggle and instance feature should have been validated before checking cache.
         DAWN_ASSERT(!deviceInfo.toggles.Has(Toggle::DisallowSpirv));
+        // (No assert for wgpu::InstanceFeatureName::ShaderSourceSPIRV since there's no instance.)
 
         ShaderModuleParseSpirvDescription& spirvDesc =
             std::get<ShaderModuleParseSpirvDescription>(req.shaderDescription);

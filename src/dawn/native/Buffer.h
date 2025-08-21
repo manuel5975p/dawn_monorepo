@@ -56,15 +56,16 @@ ResultOrError<UnpackedPtr<BufferDescriptor>> ValidateBufferDescriptor(
 
 static constexpr wgpu::BufferUsage kReadOnlyBufferUsages =
     wgpu::BufferUsage::MapRead | wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::Index |
-    wgpu::BufferUsage::Vertex | wgpu::BufferUsage::Uniform | kReadOnlyStorageBuffer |
-    kIndirectBufferForFrontendValidation | kIndirectBufferForBackendResourceTracking;
+    wgpu::BufferUsage::Vertex | wgpu::BufferUsage::Uniform | kReadOnlyTexelBuffer |
+    kReadOnlyStorageBuffer | kIndirectBufferForFrontendValidation |
+    kIndirectBufferForBackendResourceTracking;
 
 static constexpr wgpu::BufferUsage kMappableBufferUsages =
     wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite;
 
 static constexpr wgpu::BufferUsage kShaderBufferUsages =
-    wgpu::BufferUsage::Uniform | wgpu::BufferUsage::Storage | kInternalStorageBuffer |
-    kReadOnlyStorageBuffer;
+    wgpu::BufferUsage::Uniform | wgpu::BufferUsage::Storage | wgpu::BufferUsage::TexelBuffer |
+    kInternalStorageBuffer | kReadOnlyStorageBuffer | kReadOnlyTexelBuffer;
 
 static constexpr wgpu::BufferUsage kReadOnlyShaderBufferUsages =
     kShaderBufferUsages & kReadOnlyBufferUsages;
@@ -142,6 +143,8 @@ class BufferBase : public SharedResource {
     wgpu::BufferMapState APIGetMapState() const;
     uint64_t APIGetSize() const;
 
+    ApiObjectList* GetTexelBufferViewTrackingList();
+
   protected:
     BufferBase(DeviceBase* device, const UnpackedPtr<BufferDescriptor>& descriptor);
     BufferBase(DeviceBase* device, const BufferDescriptor* descriptor, ObjectBase::ErrorTag tag);
@@ -175,11 +178,7 @@ class BufferBase : public SharedResource {
                                 WGPUMapAsyncStatus* status) const;
     MaybeError ValidateUnmap() const;
     bool CanGetMappedRange(bool writable, size_t offset, size_t size) const;
-
-    // Unmaps the buffer and returns a MapAsyncEvent that should be set to ready if the buffer had a
-    // pending map event.
-    ResultOrError<Ref<MapAsyncEvent>> UnmapInternal(WGPUMapAsyncStatus status,
-                                                    std::string_view message);
+    MaybeError UnmapInternal(WGPUMapAsyncStatus status, std::string_view message);
 
     // Updates internal state to reflect that the buffer is now mapped.
     void SetMapped(BufferState newState);
@@ -212,6 +211,10 @@ class BufferBase : public SharedResource {
     // unmapped. Because this buffer itself is directly mappable, it will not create another
     // staging buffer recursively.
     Ref<BufferBase> mStagingBuffer = nullptr;
+
+    // Track texel buffer views created from this buffer so they can be destroyed
+    // when the buffer is destroyed.
+    ApiObjectList mTexelBufferViews;
 
     // Mapping specific states.
     wgpu::MapMode mMapMode = wgpu::MapMode::None;

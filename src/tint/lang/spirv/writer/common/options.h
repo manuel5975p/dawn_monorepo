@@ -37,86 +37,39 @@
 #include "src/tint/utils/reflection.h"
 
 namespace tint::spirv::writer {
-namespace binding {
-
-/// Generic binding point
-struct BindingInfo {
-    /// The group
-    uint32_t group = 0;
-    /// The binding
-    uint32_t binding = 0;
-
-    /// Equality operator
-    /// @param rhs the BindingInfo to compare against
-    /// @returns true if this BindingInfo is equal to `rhs`
-    inline bool operator==(const BindingInfo& rhs) const {
-        return group == rhs.group && binding == rhs.binding;
-    }
-    /// Inequality operator
-    /// @param rhs the BindingInfo to compare against
-    /// @returns true if this BindingInfo is not equal to `rhs`
-    inline bool operator!=(const BindingInfo& rhs) const { return !(*this == rhs); }
-
-    /// @returns the hash code of the BindingInfo
-    tint::HashCode HashCode() const { return Hash(group, binding); }
-
-    /// Reflect the fields of this class so that it can be used by tint::ForeachField()
-    TINT_REFLECT(BindingInfo, group, binding);
-};
-
-using Uniform = BindingInfo;
-using Storage = BindingInfo;
-using Texture = BindingInfo;
-using StorageTexture = BindingInfo;
-using Sampler = BindingInfo;
-using InputAttachment = BindingInfo;
 
 /// An external texture
 struct ExternalTexture {
     /// Metadata
-    BindingInfo metadata{};
+    BindingPoint metadata{};
     /// Plane0 binding data
-    BindingInfo plane0{};
+    BindingPoint plane0{};
     /// Plane1 binding data
-    BindingInfo plane1{};
+    BindingPoint plane1{};
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(ExternalTexture, metadata, plane0, plane1);
 };
 
-}  // namespace binding
-
-// Maps the WGSL binding point to the SPIR-V group,binding for uniforms
-using UniformBindings = std::unordered_map<BindingPoint, binding::Uniform>;
-// Maps the WGSL binding point to the SPIR-V group,binding for storage
-using StorageBindings = std::unordered_map<BindingPoint, binding::Storage>;
-// Maps the WGSL binding point to the SPIR-V group,binding for textures
-using TextureBindings = std::unordered_map<BindingPoint, binding::Texture>;
-// Maps the WGSL binding point to the SPIR-V group,binding for storage textures
-using StorageTextureBindings = std::unordered_map<BindingPoint, binding::StorageTexture>;
-// Maps the WGSL binding point to the SPIR-V group,binding for samplers
-using SamplerBindings = std::unordered_map<BindingPoint, binding::Sampler>;
-// Maps the WGSL binding point to the plane0, plane1, and metadata information for external textures
-using ExternalTextureBindings = std::unordered_map<BindingPoint, binding::ExternalTexture>;
-// Maps the WGSL binding point to the SPIR-V group,binding for input attachments
-using InputAttachmentBindings = std::unordered_map<BindingPoint, binding::InputAttachment>;
+using BindingMap = std::unordered_map<BindingPoint, BindingPoint>;
+using ExternalTextureBindings = std::unordered_map<BindingPoint, ExternalTexture>;
 
 /// Binding information
 struct Bindings {
     /// Uniform bindings
-    UniformBindings uniform{};
+    BindingMap uniform{};
     /// Storage bindings
-    StorageBindings storage{};
+    BindingMap storage{};
     /// Texture bindings
-    TextureBindings texture{};
+    BindingMap texture{};
     /// Storage texture bindings
-    StorageTextureBindings storage_texture{};
+    BindingMap storage_texture{};
     /// Sampler bindings
-    SamplerBindings sampler{};
+    BindingMap sampler{};
     /// External bindings
     ExternalTextureBindings external_texture{};
     /// Input attachment bindings
-    InputAttachmentBindings input_attachment{};
+    BindingMap input_attachment{};
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(Bindings,
@@ -130,10 +83,16 @@ struct Bindings {
 };
 
 /// Supported SPIR-V binary versions.
+/// If a new version is added here, also add it to:
+/// * Writer::CanGenerate
+/// * Printer::Code
+/// Fully usable version will also need additions to:
+/// * --spir-version on the command line
+/// * Dawn in the Vulkan backend
 enum class SpvVersion : uint32_t {
-    kSpv13 = 0x10300u,  // SPIR-V 1.3
-    kSpv14 = 0x10400u,  // SPIR-V 1.4
-    kSpv15 = 0x10500u,  // SPIR-V 1.5, for testing purposes only
+    kSpv13,  // SPIR-V 1.3
+    kSpv14,  // SPIR-V 1.4
+    kSpv15,  // SPIR-V 1.5, for testing purposes only
 };
 
 /// Configuration options used for generating SPIR-V.
@@ -202,6 +161,12 @@ struct Options {
     /// `unpack4x8unorm` builtins
     bool polyfill_pack_unpack_4x8_norm = false;
 
+    /// Set to `true` to generate a polyfill clamp of `id` param of subgroupShuffle to within the
+    /// spec max subgroup size.
+    bool subgroup_shuffle_clamped = false;
+    /// Set to `true` to generate polyfill for `subgroupBroadcast(f16)`
+    bool polyfill_subgroup_broadcast_f16 = false;
+
     /// Set to `true` to disable the polyfills on integer division and modulo.
     bool disable_polyfill_integer_div_mod = false;
 
@@ -238,6 +203,8 @@ struct Options {
                  pass_matrix_by_pointer,
                  polyfill_dot_4x8_packed,
                  polyfill_pack_unpack_4x8_norm,
+                 subgroup_shuffle_clamped,
+                 polyfill_subgroup_broadcast_f16,
                  disable_polyfill_integer_div_mod,
                  scalarize_max_min_clamp,
                  use_vulkan_memory_model,

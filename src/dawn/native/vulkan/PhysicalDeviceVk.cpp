@@ -333,6 +333,12 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::ClipDistances);
     }
 
+    // primitive_id is currently exposed if we support geometry shaders.
+    // TODO(342172182): We could also potentially use tessellation or mesh shaders.
+    if (mDeviceInfo.features.geometryShader == VK_TRUE) {
+        EnableFeature(Feature::ChromiumExperimentalPrimitiveId);
+    }
+
     bool shaderF16Enabled = false;
     if (mDeviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
         mDeviceInfo.HasExt(DeviceExt::_16BitStorage) &&
@@ -467,10 +473,6 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::AdapterPropertiesVk);
     EnableFeature(Feature::DawnLoadResolveTexture);
 
-    // The function subgroupBroadcast(f16) fails for some edge cases on intel gen-9 devices.
-    // See crbug.com/391680973
-    const bool kForceDisableSubgroups = gpu_info::IsIntelGen9(GetVendorId(), GetDeviceId());
-
     // Enable Subgroups feature if:
     // 1. Vulkan API version is 1.1 or later, and
     // 2. subgroupSupportedStages includes compute and fragment stage bit, and
@@ -504,8 +506,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     // Some devices (PowerVR GE8320) can apparently report subgroup size of 1.
     const bool allowSubgroupSizeRanges =
         mSubgroupMinSize >= kDefaultSubgroupMinSize && mSubgroupMaxSize <= kDefaultSubgroupMaxSize;
-    if (!kForceDisableSubgroups && hasBaseSubgroupSupport && hasRequiredF16Support &&
-        allowSubgroupSizeRanges) {
+    if (hasBaseSubgroupSupport && hasRequiredF16Support && allowSubgroupSizeRanges) {
         EnableFeature(Feature::Subgroups);
     }
 
@@ -548,8 +549,40 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::SharedTextureMemoryOpaqueFD);
     }
 
-    if (SupportsBufferMapExtendedUsages(mDeviceInfo)) {
+    // Using mappable buffers on NVIDIA was found to be significantly slower in some tests. The
+    // memory heap size is also small (~250MB) on many devices which leads to OOMs when allocating
+    // large mappable buffers, see https://crbug.com/432044227 for details.
+    if (!gpu_info::IsNvidia(GetVendorId()) && SupportsBufferMapExtendedUsages(mDeviceInfo)) {
         EnableFeature(Feature::BufferMapExtendedUsages);
+    }
+
+    if (mDeviceInfo.features.shaderStorageImageExtendedFormats == VK_TRUE) {
+        bool supportTier1AndTier2 = true;
+
+        for (const auto& format :
+             {VK_FORMAT_R16_UNORM, VK_FORMAT_R16_SNORM, VK_FORMAT_R16G16_UNORM,
+              VK_FORMAT_R16G16_SNORM, VK_FORMAT_R16G16B16A16_UNORM, VK_FORMAT_R16G16B16A16_SNORM,
+              VK_FORMAT_R8_SNORM, VK_FORMAT_R8G8_SNORM, VK_FORMAT_R8G8B8A8_SNORM,
+              VK_FORMAT_B10G11R11_UFLOAT_PACK32}) {
+            VkFormatProperties properties;
+            mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(mVkPhysicalDevice,
+                                                                              format, &properties);
+            if (!IsSubset(
+                    static_cast<VkFormatFeatureFlags>(VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                                                      VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT),
+                    properties.optimalTilingFeatures)) {
+                supportTier1AndTier2 = false;
+                break;
+            }
+        }
+
+        // We cannot enable TextureFormatsTier2 if TextureFormatsTier1 is not enabled.
+        // TextureFormatsTier2 only requires shaderStorageImageExtendedFormats from Vulkan
+        // so we don't have to check anything else.
+        if (supportTier1AndTier2) {
+            EnableFeature(Feature::TextureFormatsTier1);
+            EnableFeature(Feature::TextureFormatsTier2);
+        }
     }
 
 #if DAWN_PLATFORM_IS(ANDROID)
@@ -575,6 +608,74 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 
     if (mDeviceInfo.HasExt(DeviceExt::ImageDrmFormatModifier)) {
         EnableFeature(Feature::DawnDrmFormatCapabilities);
+    }
+
+    EnableFeature(Feature::TextureComponentSwizzle);
+
+    // Enable support for bindless if WebGPU semantics are supported:
+    //  - We can update descriptor sets while pending.
+    //  - Descriptor set may have variable size and be partially bound.
+    //  - We can declare runtime-sized arrays of resources in SPIRV.
+    //  - Limits are large enough for WebGPU.
+    // Bindless support for WebGPU requires checking a LOT of things, use runtimeDescriptorArray as
+    // good proxy to whether bindless will be available, and do the proper check using separate
+    // boolean variables instead of a giant if-statement. runtimeDescriptorArray checks if we can
+    // declare runtime-sized arrays of resources in SPIRV.
+    if (mDeviceInfo.HasExt(DeviceExt::DescriptorIndexing) &&
+        mDeviceInfo.descriptorIndexingFeatures.runtimeDescriptorArray) {
+        const auto& vkFeatures = mDeviceInfo.descriptorIndexingFeatures;
+        const auto& vkProperties = mDeviceInfo.descriptorIndexingProperties;
+
+        // All shader resource types support update-after-bind, except uniform buffers and input
+        // attachments that are not supported in WebGPU"s bindless.
+        bool hasUpdateAfterBind = vkFeatures.descriptorBindingSampledImageUpdateAfterBind &&
+                                  vkFeatures.descriptorBindingStorageImageUpdateAfterBind &&
+                                  vkFeatures.descriptorBindingStorageBufferUpdateAfterBind &&
+                                  vkFeatures.descriptorBindingStorageTexelBufferUpdateAfterBind;
+
+        // We can modify descriptor sets after binding them, they can have variable size and be
+        // sparse.
+        bool hasOtherFeatures = vkFeatures.descriptorBindingUpdateUnusedWhilePending &&
+                                vkFeatures.descriptorBindingPartiallyBound &&
+                                vkFeatures.descriptorBindingVariableDescriptorCount;
+
+        // We need to check a dozen Vulkan limits against the WebGPU limit for dynamic binding
+        // arrays.
+        constexpr uint32_t kRequiredLimit =
+            kMaxDynamicBindingArraySize + kReservedDynamicBindingArrayEntries;
+        bool hasLimit =
+            vkProperties.maxPerStageDescriptorUpdateAfterBindSamplers >= kRequiredLimit &&
+            vkProperties.maxPerStageDescriptorUpdateAfterBindStorageBuffers >= kRequiredLimit &&
+            vkProperties.maxPerStageDescriptorUpdateAfterBindSampledImages >= kRequiredLimit &&
+            vkProperties.maxPerStageDescriptorUpdateAfterBindStorageImages >= kRequiredLimit &&
+            vkProperties.maxPerStageUpdateAfterBindResources >= kRequiredLimit &&
+            vkProperties.maxDescriptorSetUpdateAfterBindSamplers >= kRequiredLimit &&
+            vkProperties.maxDescriptorSetUpdateAfterBindStorageBuffers >= kRequiredLimit &&
+            vkProperties.maxDescriptorSetUpdateAfterBindSampledImages >= kRequiredLimit &&
+            vkProperties.maxDescriptorSetUpdateAfterBindStorageImages >= kRequiredLimit &&
+            vkProperties.maxUpdateAfterBindDescriptorsInAllPools >= kRequiredLimit;
+
+        // Drivers may not support robust buffer access with UpdateAfterBind (presumably because
+        // they only pass a GPU virtual memory address in the descriptor and not the size of the
+        // binding). This is denoted with robustBufferAccessUpdateAfterBind and when this is false
+        // Vulkan 1.0 robustness and the later robustness2 feature must not be used at all. While
+        // Dawn can emulate most robustness, doing it for vertex inputs would be too onerous.
+        //
+        // Luckily, the extension VK_EXT_pipeline_robustness (promoted to 1.4, made originally for
+        // ANGLE) allows enabling robustness per-pipeline and more importantly per buffer type.
+        // Without robustBufferAccessUpdateAfterBind, all the buffer robustness is disallowed,
+        // except vertexInputs, the one we actually care about.
+        //
+        // Note that we could add this requirement only when robustness is enabled, but doing so
+        // would make some GPUAdapter potentially advertise bindless support but fail to create a
+        // GPUDevice with it (because it cannot be supported with robustness).
+        bool canSupportRobustness = vkProperties.robustBufferAccessUpdateAfterBind ||
+                                    (mDeviceInfo.HasExt(DeviceExt::PipelineRobustness) &&
+                                     mDeviceInfo.pipelineRobustnessFeatures.pipelineRobustness);
+
+        if (hasUpdateAfterBind && hasOtherFeatures && hasLimit && canSupportRobustness) {
+            EnableFeature(Feature::ChromiumExperimentalBindless);
+        }
     }
 }
 
@@ -768,17 +869,38 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsInternal(wgpu::FeatureLevel 
     // Vulkan needs to have enough push constant range size for all
     // internal and external immediate data usages.
     constexpr uint32_t kVkGuaranteedMaxPushConstantsSize = 128;  // from Vulkan spec
+    constexpr uint32_t kMaxInternalConstants =
+        std::max(sizeof(RenderImmediateConstants) - sizeof(UserImmediateConstants),
+                 sizeof(ComputeImmediateConstants) - sizeof(UserImmediateConstants));
     static_assert(kVkGuaranteedMaxPushConstantsSize >=
-                  kDefaultMaxImmediateDataBytes + std::max(sizeof(RenderImmediateConstants),
-                                                           sizeof(ComputeImmediateConstants)));
+                  kMaxSupportedImmediateDataBytes + kMaxInternalConstants);
     DAWN_ASSERT(vkLimits.maxPushConstantsSize >= kVkGuaranteedMaxPushConstantsSize);
-    limits->v1.maxImmediateSize = kDefaultMaxImmediateDataBytes;
+    limits->v1.maxImmediateSize = kMaxSupportedImmediateDataBytes;
 
     if (mDeviceInfo.HasExt(DeviceExt::ExternalMemoryHost) &&
         mDeviceInfo.externalMemoryHostProperties.minImportedHostPointerAlignment <=
             kMinimumHostMappedPointerAlignment) {
         limits->hostMappedPointerLimits.hostMappedPointerAlignment =
             kMinimumHostMappedPointerAlignment;
+    }
+
+    // Compute the limits for bindless, it requires checking a dozen vulkan limits.
+    if (mDeviceInfo.HasExt(DeviceExt::DescriptorIndexing)) {
+        const auto& vkProperties = mDeviceInfo.descriptorIndexingProperties;
+        uint32_t vkMax = 0;
+        vkMax = std::max(vkMax, vkProperties.maxPerStageDescriptorUpdateAfterBindSamplers);
+        vkMax = std::max(vkMax, vkProperties.maxPerStageDescriptorUpdateAfterBindStorageBuffers);
+        vkMax = std::max(vkMax, vkProperties.maxPerStageDescriptorUpdateAfterBindSampledImages);
+        vkMax = std::max(vkMax, vkProperties.maxPerStageDescriptorUpdateAfterBindStorageImages);
+        vkMax = std::max(vkMax, vkProperties.maxPerStageUpdateAfterBindResources);
+        vkMax = std::max(vkMax, vkProperties.maxDescriptorSetUpdateAfterBindSamplers);
+        vkMax = std::max(vkMax, vkProperties.maxDescriptorSetUpdateAfterBindStorageBuffers);
+        vkMax = std::max(vkMax, vkProperties.maxDescriptorSetUpdateAfterBindSampledImages);
+        vkMax = std::max(vkMax, vkProperties.maxDescriptorSetUpdateAfterBindStorageImages);
+        vkMax = std::max(vkMax, vkProperties.maxUpdateAfterBindDescriptorsInAllPools);
+
+        limits->dynamicBindingArrayLimits.maxDynamicBindingArraySize =
+            vkMax - kReservedDynamicBindingArrayEntries;
     }
 
     return {};
@@ -882,6 +1004,12 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(Toggle::VulkanDirectVariableAccessTransformHandle, true);
     }
 
+    if (IsIntelMesa()) {
+        // Polyfill a clamp of `id` param in subgroupShuffle to follow spec limitations.
+        // See crbug.com/435246627
+        deviceToggles->Default(Toggle::SubgroupShuffleClamped, true);
+    }
+
     if (IsIntelMesa() && gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId())) {
         // dawn:1688: Intel Mesa driver has a bug about reusing the VkDeviceMemory that was
         // previously bound to a 2D VkImage. To work around that bug we have to disable the resource
@@ -979,24 +1107,29 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     // insertion of the placeholder fragment shader.
     deviceToggles->Default(Toggle::UsePlaceholderFragmentInVertexOnlyPipeline, true);
 
-    // The environment can only request to use VK_EXT_robustness2 when the extension is available.
-    // Override the decision if it is not applicable or robustImageAccess2 is false.
+    // By default try to skip injecting robustness checks on textures using VK_EXT_robustness2. But
+    // disable that optimization when the feature is not available.
     if (!GetDeviceInfo().HasExt(DeviceExt::Robustness2) ||
         GetDeviceInfo().robustness2Features.robustImageAccess2 == VK_FALSE) {
         deviceToggles->ForceSet(Toggle::VulkanUseImageRobustAccess2, false);
+    } else {
+        deviceToggles->Default(Toggle::VulkanUseImageRobustAccess2, true);
     }
-    // By default try to skip robustness transform on textures according to the Vulkan extension
-    // VK_EXT_robustness2.
-    deviceToggles->Default(Toggle::VulkanUseImageRobustAccess2, true);
-    // The environment can only request to use VK_EXT_robustness2 when the extension is available.
-    // Override the decision if it is not applicable or robustBufferAccess2 is false.
+
+    // By default try to skip injecting robustness checks on buffers using VK_EXT_robustness2. But
+    // disable that optimization when the feature is not available or if it conflicts with bindless
+    // support (see comment in the detection of bindless support for more details).
     if (!GetDeviceInfo().HasExt(DeviceExt::Robustness2) ||
         GetDeviceInfo().robustness2Features.robustBufferAccess2 == VK_FALSE) {
         deviceToggles->ForceSet(Toggle::VulkanUseBufferRobustAccess2, false);
+    } else if (GetDeviceInfo().HasExt(DeviceExt::DescriptorIndexing) &&
+               !GetDeviceInfo().descriptorIndexingProperties.robustBufferAccessUpdateAfterBind) {
+        // TODO(https://issues.chromium.org/435317394): Only disable the toggle if the bindless
+        // extension is actually requested.
+        deviceToggles->ForceSet(Toggle::VulkanUseBufferRobustAccess2, false);
+    } else {
+        deviceToggles->Default(Toggle::VulkanUseBufferRobustAccess2, true);
     }
-    // By default try to disable index clamping on the runtime-sized arrays on storage buffers in
-    // Tint robustness transform according to the Vulkan extension VK_EXT_robustness2.
-    deviceToggles->Default(Toggle::VulkanUseBufferRobustAccess2, true);
 
     // Enable the polyfill versions of dot4I8Packed() and dot4U8Packed() when the SPIR-V capability
     // `DotProductInput4x8BitPackedKHR` is not supported.
@@ -1030,10 +1163,30 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
 FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
     wgpu::FeatureName feature,
     const TogglesState& toggles) const {
-    if (feature == wgpu::FeatureName::ChromiumExperimentalSubgroupMatrix &&
-        !toggles.IsEnabled(Toggle::UseVulkanMemoryModel)) {
-        return FeatureValidationResult(
-            absl::StrFormat("Feature %s requires VulkanMemoryModel toggle on Vulkan.", feature));
+    switch (feature) {
+        // Subgroup matrices require the vulkan memory model to be used.
+        case wgpu::FeatureName::ChromiumExperimentalSubgroupMatrix:
+            if (!toggles.IsEnabled(Toggle::UseVulkanMemoryModel)) {
+                return FeatureValidationResult(absl::StrFormat(
+                    "Feature %s requires VulkanMemoryModel toggle on Vulkan.", feature));
+            }
+            break;
+
+        // The function subgroupBroadcast(f16) fails for some edge cases on Intel Gen-9 devices.
+        // See crbug.com/391680973. We disable subgroups on this device unless the user has
+        // explicitly enabled the 'enable_subgroups_intel_gen9' toggle.
+        case wgpu::FeatureName::Subgroups:
+            if (gpu_info::IsIntelGen9(GetVendorId(), GetDeviceId()) &&
+                !toggles.IsEnabled(Toggle::EnableSubgroupsIntelGen9)) {
+                return FeatureValidationResult(
+                    absl::StrFormat("Intel Gen-9 devices require `enable_subgroups_intel_gen9`"
+                                    " to enable %s.",
+                                    feature));
+            }
+            break;
+
+        default:
+            break;
     }
 
     return {};

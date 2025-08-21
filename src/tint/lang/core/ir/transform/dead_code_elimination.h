@@ -40,11 +40,13 @@ namespace tint::core::ir::transform {
 
 /// The capabilities that the transform can support.
 const core::ir::Capabilities kDeadCodeEliminationCapabilities{
+    core::ir::Capability::kAllowMultipleEntryPoints,
     core::ir::Capability::kAllowOverrides,
     core::ir::Capability::kAllowVectorElementPointer,
     core::ir::Capability::kAllowPhonyInstructions,
     core::ir::Capability::kAllowUnannotatedModuleIOVariables,
     core::ir::Capability::kAllowNonCoreTypes,
+    core::ir::Capability::kAllowStructMatrixDecorations,
 };
 
 /// DeadCodeElimination is a transform that removes dead code from the given IR module.

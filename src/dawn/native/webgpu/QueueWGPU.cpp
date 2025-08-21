@@ -45,14 +45,8 @@ ResultOrError<Ref<Queue>> Queue::Create(Device* device, const QueueDescriptor* d
 }
 
 Queue::Queue(Device* device, const QueueDescriptor* descriptor)
-    : QueueBase(device, descriptor),
-      mInnerQueue(device->wgpu.deviceGetQueue(device->GetInnerHandle())) {}
-
-Queue::~Queue() {
-    if (mInnerQueue) {
-        ToBackend(GetDevice())->wgpu.queueRelease(mInnerQueue);
-        mInnerQueue = nullptr;
-    }
+    : QueueBase(device, descriptor), ObjectWGPU(device->wgpu.queueRelease) {
+    mInnerHandle = device->wgpu.deviceGetQueue(device->GetInnerHandle());
 }
 
 MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) {
@@ -67,7 +61,7 @@ MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* co
         innerCommandBuffers[i] = ToBackend(commands[i])->Encode();
     }
 
-    wgpu.queueSubmit(mInnerQueue, commandCount, innerCommandBuffers.data());
+    wgpu.queueSubmit(mInnerHandle, commandCount, innerCommandBuffers.data());
 
     for (uint32_t i = 0; i < commandCount; ++i) {
         wgpu.commandBufferRelease(innerCommandBuffers[i]);
@@ -83,7 +77,7 @@ MaybeError Queue::WriteBufferImpl(BufferBase* buffer,
                                   size_t size) {
     auto innerBuffer = ToBackend(buffer)->GetInnerHandle();
     ToBackend(GetDevice())
-        ->wgpu.queueWriteBuffer(mInnerQueue, innerBuffer, bufferOffset, data, size);
+        ->wgpu.queueWriteBuffer(mInnerHandle, innerBuffer, bufferOffset, data, size);
     buffer->MarkUsedInPendingCommands();
     return {};
 }
@@ -108,8 +102,6 @@ ResultOrError<ExecutionSerial> Queue::CheckAndUpdateCompletedSerials() {
             fenceSerial = tentativeSerial;
 
             futuresInFlight->pop_front();
-
-            DAWN_ASSERT(fenceSerial > GetCompletedCommandSerial());
         }
         return fenceSerial;
     });
@@ -137,7 +129,7 @@ MaybeError Queue::SubmitFutureSync() {
     WGPUFuture future =
         ToBackend(GetDevice())
             ->wgpu.queueOnSubmittedWorkDone(
-                mInnerQueue,
+                mInnerHandle,
                 {nullptr, WGPUCallbackMode_AllowSpontaneous,
                  [](WGPUQueueWorkDoneStatus, WGPUStringView, void*, void*) {}, nullptr, nullptr});
     if (future.id == kNullFutureID) {
@@ -151,17 +143,20 @@ MaybeError Queue::SubmitFutureSync() {
     return {};
 }
 
-ResultOrError<bool> Queue::WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) {
-    return mFuturesInFlight.Use([&](auto futuresInFlight) -> ResultOrError<bool> {
+ResultOrError<ExecutionSerial> Queue::WaitForQueueSerialImpl(ExecutionSerial waitSerial,
+                                                             Nanoseconds timeout) {
+    return mFuturesInFlight.Use([&](auto futuresInFlight) -> ResultOrError<ExecutionSerial> {
         WGPUFuture future = {kNullFutureID};
+        ExecutionSerial completedSerial = kWaitSerialTimeout;
         for (const auto& f : *futuresInFlight) {
-            if (f.second >= serial) {
+            if (f.second >= waitSerial) {
                 future = f.first;
+                completedSerial = f.second;
                 break;
             }
         }
         if (future.id == kNullFutureID) {
-            return true;
+            return waitSerial;
         }
 
         WGPUFutureWaitInfo waitInfo = {future, false};
@@ -172,9 +167,9 @@ ResultOrError<bool> Queue::WaitForQueueSerial(ExecutionSerial serial, Nanosecond
 
         switch (status) {
             case WGPUWaitStatus_TimedOut:
-                return false;
+                return kWaitSerialTimeout;
             case WGPUWaitStatus_Success:
-                return true;
+                return completedSerial;
             default:
                 return DAWN_FORMAT_INTERNAL_ERROR("inner instanceWaitAny status is (%s).",
                                                   FromAPI(status));
@@ -182,7 +177,7 @@ ResultOrError<bool> Queue::WaitForQueueSerial(ExecutionSerial serial, Nanosecond
     });
 }
 
-MaybeError Queue::WaitForIdleForDestruction() {
+MaybeError Queue::WaitForIdleForDestructionImpl() {
     auto& wgpu = ToBackend(GetDevice())->wgpu;
     mFuturesInFlight.Use([&](auto futuresInFlight) {
         while (!futuresInFlight->empty()) {

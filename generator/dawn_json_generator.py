@@ -57,7 +57,7 @@ class Name:
             self.chunks = name.split(' ')
 
     def __lt__(self, other):
-        return self.get() < other.get()
+        return self.concatcase().lower() < other.concatcase().lower()
 
     def get(self):
         return self.name
@@ -102,12 +102,31 @@ def concat_names(*names):
     return ' '.join([name.canonical_case() for name in names])
 
 
+def validate_and_get_tags(json_data):
+    allowed_tags = {
+        'dawn',
+        'emscripten',
+        'native',
+        'compat',
+        'deprecated',
+        'art',
+    }
+
+    tags = json_data.get('tags')
+    if tags != None:
+        for tag in tags:
+            assert tag in allowed_tags, f'unrecognized tag "{tag}"'
+    return tags
+
+
 class Type:
     def __init__(self, name, json_data, native=False):
         self.json_data = json_data
         self.dict_name = name
         self.name = Name(name, native=native)
         self.category = json_data['category']
+        self.is_nullable_pointer = json_data.get('is nullable pointer',
+                                                 self.category == 'object')
         self.is_wire_transparent = False
 
     def __lt__(self, other):
@@ -123,34 +142,36 @@ class EnumType(Type):
 
         self.values = []
         self.hasUndefined = False
-        self.contiguousFromZero = True
-        lastValue = -1
+        self.contiguous = True
+        self.startValue = None
+        lastValue = None
         for m in self.json_data['values']:
             if not is_enabled(m):
                 continue
             value = m['value']
             value_name = m['name']
-            tags = m.get('tags', [])
+            tags = validate_and_get_tags(m)
+            if tags == None:
+                tags = []
 
             prefix = 0
             if 'compat' in tags:
                 assert prefix == 0
                 prefix = 0x0002_0000
 
-            if 'upstream' not in tags:
-                if 'dawn' in tags:
-                    # Dawn-only or Dawn+Emscripten
-                    assert prefix == 0
-                    prefix = 0x0005_0000
-                elif 'emscripten' in tags:
-                    # Emscripten-only
-                    assert prefix == 0
-                    prefix = 0x0004_0000
+            if 'dawn' in tags:
+                # Dawn-only or Dawn+Emscripten
+                assert prefix == 0
+                prefix = 0x0005_0000
+            elif 'emscripten' in tags:
+                # Emscripten-only
+                assert prefix == 0
+                prefix = 0x0004_0000
 
             if prefix == 0 and 'native' in tags:
                 prefix = 0x0001_0000
 
-            if 'deprecated' not in tags and 'upstream' not in tags:
+            if 'deprecated' not in tags:
                 # Emscripten implements some Dawn extensions, and some upstream things that
                 # aren't in Dawn yet.
                 if 'emscripten' in tags and 'dawn' not in tags:
@@ -162,8 +183,10 @@ class EnumType(Type):
 
             if value_name == "undefined":
                 self.hasUndefined = True
-            if value != lastValue + 1:
-                self.contiguousFromZero = False
+            if lastValue == None:
+                self.startValue = value
+            elif value != lastValue + 1:
+                self.contiguous = False
             lastValue = value
             self.values.append(
                 EnumValue(Name(value_name), value, m.get('valid', True), m))
@@ -330,7 +353,7 @@ class Record:
 
 class StructureType(Record, Type):
     def __init__(self, is_enabled, name, json_data):
-        tags = json_data.get('tags', [])
+        tags = validate_and_get_tags(json_data)
         if tags == ['emscripten']:
             if name != 'INTERNAL_HAVE_EMDAWNWEBGPU_HEADER':
                 assert name.startswith('emscripten'), name
@@ -496,7 +519,7 @@ def link_object(obj, types):
         return method
 
     obj.methods = [make_method(m) for m in obj.json_data.get('methods', [])]
-    obj.methods.sort(key=lambda method: method.name.concatcase().lower())
+    obj.methods.sort(key=lambda method: method.name)
 
 def link_structure(struct, types):
     struct.members = linked_record_members(struct.json_data['members'], types)
@@ -640,10 +663,13 @@ def parse_json(json, enabled_tags, disabled_tags=None):
     for function in by_category['function']:
         link_function(function, types)
 
+    # Sort everything by name
     for category in by_category.keys():
-        by_category[category] = sorted(
-            by_category[category],
-            key=lambda typ: typ.name.concatcase().lower())
+        by_category[category] = sorted(by_category[category],
+                                       key=lambda typ: typ.name)
+    # Then sort GetProcAddress last
+    by_category['function'].sort(
+        key=lambda f: f.name.get() == 'get proc address')
 
     by_category['structure'] = topo_sort_structure(by_category['structure'])
 
@@ -783,9 +809,9 @@ def compute_kotlin_params(loaded_json, kotlin_json):
             if member.name.get() == 'userdata':
                 continue
 
-            # Dawn uses 'annotation = *' for output parameters, for example to return arrays.
-            # We convert the return type and strip out the parameters.
-            if member.annotation == '*':
+            # Dawn sometimes uses 'annotation = *' for output parameters, for example to return
+            # arrays. We convert the return type and strip out the parameters.
+            if member.annotation == '*' and member.length == 'constant':
                 continue
 
             yield member
@@ -806,22 +832,22 @@ def compute_kotlin_params(loaded_json, kotlin_json):
                         and argument.type.category == 'structure'):
                     return argument
 
-        return method.returns
+        # Return values are not treated as optional to keep the Kotlin API simple.
+        # Methods are expected to return an object if declared. If they can't, dawn may raise an
+        # error (converted to a Kotlin exception); otherwise JNI will throw NullPointerException.
+        # In either case the optional type is redundant.
+        return AnnotatedTypedMember(
+            method.returns.type, method.returns.annotation, False,
+            method.json_data) if method.returns else None
 
     # TODO(b/352047733): Replace methods that require special handling with an exceptions list.
     def include_method(method):
-        if method.name.canonical_case().endswith(" free members"):
-            return False
         if method.returns and method.returns.type.category == 'function pointer':
             # Kotlin doesn't support returning functions.
             return False
-        for argument in method.arguments:
-            # Any method that has unsupported structures as parameters is itself unsupported.
-            if argument.type.category == 'structure' and not include_structure(
-                    argument.type):
-                return False
         return True
 
+    # Whether to create structure converters (or use handwritten converters).
     def include_structure(structure):
         if structure.name.canonical_case() == "string view":
             return False
@@ -947,35 +973,39 @@ def convert_cType_to_cppType(typ, annotation, arg, indent=0):
                                                     annotation, arg)
 
 
-def decorate(typ, arg, make_const=False):
-    maybe_const = ' const' if make_const else ''
-    if arg.annotation == 'value':
-        return typ + maybe_const
-    elif arg.annotation == '*':
-        return typ + ' *' + maybe_const
-    elif arg.annotation == 'const*':
-        return typ + ' const *' + maybe_const
-    elif arg.annotation == 'const*const*':
-        return 'const ' + typ + '* const *' + maybe_const
-    else:
-        assert False
+def decorate(typ, arg, *, with_nullability):
+    s = typ
+    if arg.annotation != 'value' or arg.type.is_nullable_pointer:
+        if arg.annotation == '*':
+            s = typ + ' *'
+        elif arg.annotation == 'const*':
+            s = typ + ' const *'
+        elif arg.annotation == 'const*const*':
+            s = 'const ' + typ + '* const *'
+        if with_nullability:
+            nullability = 'WGPU_NULLABLE ' if arg.optional else ''
+            s = nullability + s
+    return s
 
 
-def annotated(typ, arg, make_const=False):
-    result = decorate(typ, arg, make_const)
-    if isinstance(arg, RecordMember): result += ' ' + as_varName(arg.name)
+def annotate(typ, arg, *, make_const_member=False, with_nullability=False):
+    result = decorate(typ, arg, with_nullability=with_nullability)
+    if isinstance(arg, RecordMember):
+        if make_const_member:
+            result += ' const'
+        result += ' ' + as_varName(arg.name)
     return result
 
 
 def item_is_enabled(enabled_tags, json_data):
-    tags = json_data.get('tags')
+    tags = validate_and_get_tags(json_data)
     if tags is None: return True
     return any(tag in enabled_tags for tag in tags)
 
 
 def item_is_disabled(disabled_tags, json_data):
     if disabled_tags is None: return False
-    tags = json_data.get('tags')
+    tags = validate_and_get_tags(json_data)
     if tags is None: return False
 
     return any(tag in disabled_tags for tag in tags)
@@ -1125,10 +1155,12 @@ def make_base_render_params(metadata):
 
     return {
             'Name': lambda name: Name(name),
+            'as_nullability_annotated_cType': \
+                lambda arg: 'void' if arg is None else annotate(as_cTypeEnumSpecialCase(arg.type), arg, with_nullability=True),
             'as_annotated_cType': \
-                lambda arg, make_const=False: 'void' if arg is None else annotated(as_cTypeEnumSpecialCase(arg.type), arg, make_const),
+                lambda arg: 'void' if arg is None else annotate(as_cTypeEnumSpecialCase(arg.type), arg),
             'as_annotated_cppType': \
-                lambda arg, make_const=False: 'void' if arg is None else annotated(as_cppType(arg.type.name), arg, make_const),
+                lambda arg, make_const_member=False: 'void' if arg is None else annotate(as_cppType(arg.type.name), arg, make_const_member=make_const_member),
             'as_cEnum': as_cEnum,
             'as_cppEnum': as_cppEnum,
             'as_cMethod': as_cMethod,
@@ -1143,7 +1175,7 @@ def make_base_render_params(metadata):
             'as_wasmType': as_wasmType,
             'convert_cType_to_cppType': convert_cType_to_cppType,
             'as_varName': as_varName,
-            'decorate': decorate,
+            'decorate': lambda typ, arg: decorate(typ, arg, with_nullability=False),
             'as_ktName': as_ktName,
             'has_callbackInfoStruct': has_callbackInfoStruct,
             'find_by_name': find_by_name,
@@ -1281,7 +1313,7 @@ class MultiGeneratorFromDawnJSON(Generator):
 
         if 'webgpu_headers' in targets:
             params_upstream = parse_json(loaded_json,
-                                         enabled_tags=['upstream', 'native'],
+                                         enabled_tags=['native'],
                                          disabled_tags=['dawn'])
             imported_templates.append('BSD_LICENSE')
             renders.append(
@@ -1368,7 +1400,7 @@ class MultiGeneratorFromDawnJSON(Generator):
                     # TODO: as_frontendType and co. take a Type, not a Name :(
                     'as_frontendType': lambda typ: as_frontendType(metadata, typ),
                     'as_annotated_frontendType': \
-                        lambda arg: annotated(as_frontendType(metadata, arg.type), arg),
+                        lambda arg: annotate(as_frontendType(metadata, arg.type), arg),
                 }
             ]
 
@@ -1465,7 +1497,7 @@ class MultiGeneratorFromDawnJSON(Generator):
                 RENDER_PARAMS_BASE, params_dawn_wire, {
                     'as_wireType': lambda type : as_wireType(metadata, type),
                     'as_annotated_wireType': \
-                        lambda arg: annotated(as_wireType(metadata, arg.type), arg),
+                        lambda arg: annotate(as_wireType(metadata, arg.type), arg),
                     'is_wire_serializable': lambda type : is_wire_serializable(type),
                 }, additional_params
             ]

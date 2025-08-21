@@ -125,8 +125,8 @@
 #define EXPECT_TEXTURE_FLOAT16_EQ(...) \
     AddTextureExpectation<float, uint16_t>(__FILE__, __LINE__, __VA_ARGS__)
 
-#define EXPECT_TEXTURE_SNORM_BETWEEN(...) \
-    AddSnormTextureBoundsExpectation<int8_t>(__FILE__, __LINE__, __VA_ARGS__)
+#define EXPECT_TEXTURE_NORM_BETWEEN(...) \
+    AddSnormTextureBoundsExpectation(__FILE__, __LINE__, __VA_ARGS__)
 
 // Matcher for C++ types to verify that their internal C-handles are identical.
 MATCHER_P(CHandleIs, cType, "") {
@@ -678,6 +678,10 @@ class DawnTestBase {
     virtual void GetRequiredLimits(const dawn::utils::ComboLimits& supported,
                                    dawn::utils::ComboLimits& required);
 
+    // Called in SetUp() to check if 'SetUseTieredLimits' should be set to true on the backend
+    // adapter.
+    virtual bool GetRequireUseTieredLimits();
+
     const TestAdapterProperties& GetAdapterProperties() const;
 
     const dawn::utils::ComboLimits& GetAdapterLimits();
@@ -767,6 +771,7 @@ class DawnTestBase {
     // Assuming the data is mapped, checks all expectations
     void ResolveExpectations();
 
+    bool mRequireUseTieredLimits = false;
     native::Adapter mBackendAdapter;
     WGPUDevice mLastCreatedBackendDevice;
 
@@ -968,7 +973,12 @@ class ExpectBetweenSnormTextureBounds : public Expectation {
     std::vector<T> expectedLower;
     std::vector<T> expectedUpper;
 };
+template <typename T>
+ExpectBetweenSnormTextureBounds(const std::vector<T>&, const std::vector<T>&)
+    -> ExpectBetweenSnormTextureBounds<T>;
 extern template class ExpectBetweenSnormTextureBounds<int8_t>;
+extern template class ExpectBetweenSnormTextureBounds<int16_t>;
+extern template class ExpectBetweenSnormTextureBounds<uint16_t>;
 
 class CustomTextureExpectation : public Expectation {
   public:

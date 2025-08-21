@@ -111,6 +111,7 @@ enum class DeviceExt {
     VulkanMemoryModel,
     ShaderFloatControls,
     Spirv14,
+    DescriptorIndexing,
 
     // Promoted to 1.3
     ShaderIntegerDotProduct,
@@ -118,6 +119,9 @@ enum class DeviceExt {
     DemoteToHelperInvocation,
     Maintenance4,
     SubgroupSizeControl,
+
+    // Promoted to 1.4
+    PipelineRobustness,
 
     // Others
     DepthClipEnable,

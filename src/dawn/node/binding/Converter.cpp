@@ -29,6 +29,7 @@
 
 #include <cassert>
 #include <sstream>
+#include <string>
 
 #include "src/dawn/node/binding/GPUBuffer.h"
 #include "src/dawn/node/binding/GPUPipelineLayout.h"
@@ -690,6 +691,37 @@ bool Converter::Convert(wgpu::TextureUsage& out, const interop::GPUTextureUsageF
     return true;
 }
 
+bool Converter::Convert(wgpu::TextureComponentSwizzle& out,
+                        const interop::GPUTextureComponentSwizzle& in) {
+    return Convert(out.r, in.r) && Convert(out.g, in.g) && Convert(out.b, in.b) &&
+           Convert(out.a, in.a);
+}
+
+bool Converter::Convert(wgpu::ComponentSwizzle& out, const interop::GPUComponentSwizzle& in) {
+    out = wgpu::ComponentSwizzle::Undefined;
+    switch (in) {
+        case interop::GPUComponentSwizzle::kZero:
+            out = wgpu::ComponentSwizzle::Zero;
+            return true;
+        case interop::GPUComponentSwizzle::kOne:
+            out = wgpu::ComponentSwizzle::One;
+            return true;
+        case interop::GPUComponentSwizzle::kR:
+            out = wgpu::ComponentSwizzle::R;
+            return true;
+        case interop::GPUComponentSwizzle::kG:
+            out = wgpu::ComponentSwizzle::G;
+            return true;
+        case interop::GPUComponentSwizzle::kB:
+            out = wgpu::ComponentSwizzle::B;
+            return true;
+        case interop::GPUComponentSwizzle::kA:
+            out = wgpu::ComponentSwizzle::A;
+            return true;
+    }
+    return Throw("invalid value for ComponentSwizzle");
+}
+
 bool Converter::Convert(interop::GPUTextureUsageFlags& out, wgpu::TextureUsage in) {
     out = interop::GPUTextureUsageFlags(static_cast<uint32_t>(in));
     return true;
@@ -1274,28 +1306,54 @@ bool Converter::Convert(wgpu::VertexFormat& out, const interop::GPUVertexFormat&
     return Throw("invalid value for GPUVertexFormat");
 }
 
+bool Converter::Convert(wgpu::TextureView& outView,
+                        const std::variant<interop::Interface<interop::GPUTexture>,
+                                           interop::Interface<interop::GPUTextureView>>& in,
+                        const char* name) {
+    if (auto* view = std::get_if<interop::Interface<interop::GPUTextureView>>(&in)) {
+        if (!Convert(outView, *view)) {
+            return false;
+        }
+    } else if (auto* tex = std::get_if<interop::Interface<interop::GPUTexture>>(&in)) {
+        wgpu::Texture texture;
+        if (!Convert(texture, *tex)) {
+            return false;
+        }
+        outView = texture.CreateView();
+    } else {
+        return Throw((std::stringstream() << "invalid value for " << name).str());
+    }
+    return true;
+}
+
 bool Converter::Convert(wgpu::RenderPassColorAttachment& out,
                         const interop::GPURenderPassColorAttachment& in) {
     out = {};
-    return Convert(out.view, in.view) &&                    //
-           Convert(out.depthSlice, in.depthSlice) &&        //
-           Convert(out.resolveTarget, in.resolveTarget) &&  //
-           Convert(out.clearValue, in.clearValue) &&        //
-           Convert(out.loadOp, in.loadOp) &&                //
+
+    if (in.resolveTarget &&
+        !Convert(out.resolveTarget, *in.resolveTarget, "RenderPassColorAttachment.resolveTarget")) {
+        return false;
+    }
+
+    return Convert(out.view, in.view, "RenderPassColorAttachment.view") &&  //
+           Convert(out.depthSlice, in.depthSlice) &&                        //
+           Convert(out.clearValue, in.clearValue) &&                        //
+           Convert(out.loadOp, in.loadOp) &&                                //
            Convert(out.storeOp, in.storeOp);
 }
 
 bool Converter::Convert(wgpu::RenderPassDepthStencilAttachment& out,
                         const interop::GPURenderPassDepthStencilAttachment& in) {
     out = {};
-    return Convert(out.view, in.view) &&                            //
-           Convert(out.depthClearValue, in.depthClearValue) &&      //
-           Convert(out.depthLoadOp, in.depthLoadOp) &&              //
-           Convert(out.depthStoreOp, in.depthStoreOp) &&            //
-           Convert(out.depthReadOnly, in.depthReadOnly) &&          //
-           Convert(out.stencilClearValue, in.stencilClearValue) &&  //
-           Convert(out.stencilLoadOp, in.stencilLoadOp) &&          //
-           Convert(out.stencilStoreOp, in.stencilStoreOp) &&        //
+
+    return Convert(out.view, in.view, "RenderPassDepthStencilAttachment.view") &&  //
+           Convert(out.depthClearValue, in.depthClearValue) &&                     //
+           Convert(out.depthLoadOp, in.depthLoadOp) &&                             //
+           Convert(out.depthStoreOp, in.depthStoreOp) &&                           //
+           Convert(out.depthReadOnly, in.depthReadOnly) &&                         //
+           Convert(out.stencilClearValue, in.stencilClearValue) &&                 //
+           Convert(out.stencilLoadOp, in.stencilLoadOp) &&                         //
+           Convert(out.stencilStoreOp, in.stencilStoreOp) &&                       //
            Convert(out.stencilReadOnly, in.stencilReadOnly);
 }
 
@@ -1347,6 +1405,14 @@ bool Converter::Convert(wgpu::BindGroupEntry& out, const interop::GPUBindGroupEn
 
     if (auto* res = std::get_if<interop::Interface<interop::GPUSampler>>(&in.resource)) {
         return Convert(out.sampler, *res);
+    }
+    if (auto* res = std::get_if<interop::Interface<interop::GPUTexture>>(&in.resource)) {
+        wgpu::Texture texture;
+        if (!Convert(texture, *res)) {
+            return false;
+        }
+        out.textureView = texture.CreateView();
+        return true;
     }
     if (auto* res = std::get_if<interop::Interface<interop::GPUTextureView>>(&in.resource)) {
         return Convert(out.textureView, *res);
@@ -1555,6 +1621,15 @@ bool Converter::Convert(wgpu::FeatureName& out, interop::GPUFeatureName in) {
         case interop::GPUFeatureName::kTextureFormatsTier1:
             out = wgpu::FeatureName::TextureFormatsTier1;
             return true;
+        case interop::GPUFeatureName::kTextureFormatsTier2:
+            out = wgpu::FeatureName::TextureFormatsTier2;
+            return true;
+        case interop::GPUFeatureName::kTextureComponentSwizzle:
+            out = wgpu::FeatureName::TextureComponentSwizzle;
+            return true;
+        case interop::GPUFeatureName::kChromiumExperimentalPrimitiveId:
+            out = wgpu::FeatureName::ChromiumExperimentalPrimitiveId;
+            return true;
     }
     return false;
 }
@@ -1587,6 +1662,9 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         CASE(ClipDistances, kClipDistances);
         CASE(ChromiumExperimentalSubgroupMatrix, kChromiumExperimentalSubgroupMatrix);
         CASE(TextureFormatsTier1, kTextureFormatsTier1);
+        CASE(TextureFormatsTier2, kTextureFormatsTier2);
+        CASE(TextureComponentSwizzle, kTextureComponentSwizzle);
+        CASE(ChromiumExperimentalPrimitiveId, kChromiumExperimentalPrimitiveId);
 
 #undef CASE
 
@@ -1645,7 +1723,7 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::DawnPartialLoadResolveTexture:
         case wgpu::FeatureName::DawnTexelCopyBufferRowAlignment:
         case wgpu::FeatureName::FlexibleTextureViews:
-        case wgpu::FeatureName::TextureComponentSwizzle:
+        case wgpu::FeatureName::ChromiumExperimentalBindless:
             return false;
     }
     return false;
@@ -1671,6 +1749,9 @@ bool Converter::Convert(wgpu::WGSLLanguageFeatureName& out, interop::WGSLLanguag
         case interop::WGSLLanguageFeatureName::kTexelBuffers:
             out = wgpu::WGSLLanguageFeatureName::TexelBuffers;
             return true;
+        case interop::WGSLLanguageFeatureName::kChromiumPrint:
+            out = wgpu::WGSLLanguageFeatureName::ChromiumPrint;
+            return true;
     }
     return false;
 }
@@ -1694,6 +1775,9 @@ bool Converter::Convert(interop::WGSLLanguageFeatureName& out, wgpu::WGSLLanguag
             return true;
         case wgpu::WGSLLanguageFeatureName::TexelBuffers:
             out = interop::WGSLLanguageFeatureName::kTexelBuffers;
+            return true;
+        case wgpu::WGSLLanguageFeatureName::ChromiumPrint:
+            out = interop::WGSLLanguageFeatureName::kChromiumPrint;
             return true;
 
         case wgpu::WGSLLanguageFeatureName::ChromiumTestingUnimplemented:

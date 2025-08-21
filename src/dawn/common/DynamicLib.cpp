@@ -27,6 +27,7 @@
 
 #include "dawn/common/DynamicLib.h"
 
+#include <span>
 #include <utility>
 
 #include "dawn/common/Platform.h"
@@ -102,6 +103,18 @@ bool DynamicLib::Open(const std::string& filename, std::string* error) {
 #endif
 
     return mHandle != nullptr;
+}
+
+bool DynamicLib::Open(const std::string& filename,
+                      std::span<const std::string> searchPaths,
+                      std::string* error) {
+    for (const std::string& path : searchPaths) {
+        const std::string fullPath = path + filename;
+        if (Open(fullPath, error)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void DynamicLib::Close() {

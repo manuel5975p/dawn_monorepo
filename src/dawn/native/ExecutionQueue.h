@@ -58,8 +58,14 @@ class ExecutionQueueBase {
     // Whether the execution queue has scheduled commands to be submitted or executing.
     bool HasScheduledCommands() const;
 
-    // Check for passed fences and set the new completed serial.
+    // Check for passed fences and set the new completed serial. Note that the two functions below
+    // effectively do the same thing initially, however, |UpdateCompletedSerials| requires
+    // that the device-wide lock is NOT held since it may additionally trigger user callbacks. Note
+    // that for the purpose of going forwards, |CheckPassedSerials| should not be used anymore since
+    // it assumes that the device-wide lock IS held.
+    // TODO(crbug.com/42240396): Remove |CheckPassedSerials| in favor of |UpdateCompletedSerial|.
     MaybeError CheckPassedSerials();
+    MaybeError UpdateCompletedSerial();
 
     // For the commands being internally recorded in backend, that were not urgent to submit, this
     // method makes them to be submitted as soon as possible in next ticks.
@@ -79,15 +85,14 @@ class ExecutionQueueBase {
     // Increment mLastSubmittedSerial when we submit the next serial
     void IncrementLastSubmittedCommandSerial();
 
-    // WaitForIdleForDestruction waits for GPU to finish, checks errors and gets ready for
-    // destruction. This is only used when properly destructing the device. For a real
-    // device loss, this function doesn't need to be called since the driver already closed all
-    // resources.
-    virtual MaybeError WaitForIdleForDestruction() = 0;
+    // Waits for GPU to finish, checks errors and gets ready for destruction. This is only used when
+    // properly destructing the device. For a real device loss, this function doesn't need to be
+    // called since the driver already closed all resources.
+    MaybeError WaitForIdleForDestruction();
 
     // Wait at most `timeout` synchronously for the ExecutionSerial to pass. Returns true
     // if the serial passed.
-    virtual ResultOrError<bool> WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) = 0;
+    ResultOrError<bool> WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout);
 
     // Tracks a new task to complete when |serial| is reached.
     void TrackSerialTask(ExecutionSerial serial, Task&& task);
@@ -97,13 +102,6 @@ class ExecutionQueueBase {
     // example, until the client has explictly issued a submission.
     enum class SubmitMode { Normal, Passive };
 
-    // Currently, the queue has two paths for serial updating, one is via DeviceBase::Tick which
-    // calls into the backend specific polling mechanisms implemented in
-    // CheckAndUpdateCompletedSerials. Alternatively, the backend can actively call
-    // UpdateCompletedSerial when a new serial is complete to make forward progress proactively.
-    // TODO(crbug.com/421945313): This shouldn't need to be public once we fix lock ordering.
-    void UpdateCompletedSerial(ExecutionSerial completedSerial);
-
     // Tracks whether we are in a submit to avoid submit reentrancy. Reentrancy could otherwise
     // happen when allocating resources or staging memory during submission (for workarounds, or
     // emulation) and the heuristics ask for an early submit to happen (which would cause a
@@ -112,10 +110,28 @@ class ExecutionQueueBase {
     // at which point this member can be private.
     bool mInSubmit = false;
 
+  protected:
+    static constexpr ExecutionSerial kWaitSerialTimeout = kBeginningOfGPUTime;
+
+    // Currently, the queue has two paths for serial updating, one is via DeviceBase::Tick which
+    // calls into the backend specific polling mechanisms implemented in
+    // CheckAndUpdateCompletedSerials. Alternatively, the backend can actively call
+    // UpdateCompletedSerial when a new serial is complete to make forward progress proactively.
+    void UpdateCompletedSerialTo(ExecutionSerial completedSerial);
+
   private:
     // Each backend should implement to check their passed fences if there are any and return a
     // completed serial. Return 0 should indicate no fences to check.
     virtual ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() = 0;
+
+    // Backend specific wait function, returns kWaitSerialTimeout if we did not successfully wait
+    // for |waitSerial|.
+    virtual ResultOrError<ExecutionSerial> WaitForQueueSerialImpl(ExecutionSerial waitSerial,
+                                                                  Nanoseconds timeout) = 0;
+
+    // Backend specific wait for idle function.
+    virtual MaybeError WaitForIdleForDestructionImpl() = 0;
+
     // mCompletedSerial tracks the last completed command serial that the fence has returned.
     // mLastSubmittedSerial tracks the last submitted command serial.
     // During device removal, the serials could be artificially incremented

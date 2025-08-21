@@ -39,12 +39,28 @@
 #include "src/tint/lang/core/number.h"
 #include "src/tint/lang/core/type/abstract_float.h"
 #include "src/tint/lang/core/type/abstract_int.h"
+#include "src/tint/lang/core/type/clone_context.h"
 #include "src/tint/lang/core/type/manager.h"
 #include "src/tint/lang/core/type/matrix.h"
 #include "src/tint/lang/core/type/memory_view.h"
 #include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
+
+namespace tint::mock {
+/// A mock non-core type used for testing the non-core type validation rule.
+class NonCoreType final : public Castable<NonCoreType, core::type::Type> {
+  public:
+    NonCoreType() : Base(0u, core::type::Flags{}) {}
+    bool Equals(const UniqueNode& other) const override { return other.Is<NonCoreType>(); }
+    std::string FriendlyName() const override { return "NonCoreType"; }
+    core::type::Type* Clone(core::type::CloneContext& ctx) const override {
+        return ctx.dst.mgr->Get<NonCoreType>();
+    }
+};
+}  // namespace tint::mock
+
+TINT_INSTANTIATE_TYPEINFO(tint::mock::NonCoreType);
 
 namespace tint::core::ir {
 
@@ -268,6 +284,19 @@ TEST_F(IR_ValidatorTest, FunctionParam_InvalidTypeForHandleAddressSpace) {
         << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, NonCoreType) {
+    auto* fn = b.Function("my_func", ty.void_());
+    fn->AppendParam(b.FunctionParam(ty.Get<tint::mock::NonCoreType>()));
+    b.Append(fn->Block(), [&] {  //
+        b.Return(fn);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr("non-core types not allowed in core IR"))
+        << res.Failure();
+}
+
 using TypeTest = IRTestParamHelper<std::tuple<
     /* allowed */ bool,
     /* type_builder */ TypeBuilderFn>>;
@@ -483,7 +512,7 @@ INSTANTIATE_TEST_SUITE_P(
                                      std::make_tuple(false, TypeBuilder<core::type::Void>)),
                      testing::Values(std::make_tuple(false, core::type::TextureDimension::k1d),
                                      std::make_tuple(true, core::type::TextureDimension::k2d),
-                                     std::make_tuple(true, core::type::TextureDimension::k2dArray),
+                                     std::make_tuple(false, core::type::TextureDimension::k2dArray),
                                      std::make_tuple(false, core::type::TextureDimension::k3d),
                                      std::make_tuple(false, core::type::TextureDimension::kCube),
                                      std::make_tuple(false,
@@ -1114,6 +1143,27 @@ TEST_P(AddressSpace_AccessMode, Test) {
         EXPECT_THAT(res.Failure().reason,
                     testing::HasSubstr("uniform and handle pointers must be read access"));
     }
+}
+
+TEST_F(IR_ValidatorTest, StructureMemberSizeTooSmall) {
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("S"),
+                  Vector{
+                      ty.Get<type::StructMember>(mod.symbols.New("a"), ty.array<u32, 3>(), 0u, 0u,
+                                                 4u, 4u, IOAttributes{}),
+                  });
+    mod.root_block->Append(b.Var("my_struct", private_, str_ty));
+
+    auto* fn = b.Function("F", ty.void_());
+    b.Append(fn->Block(), [&] { b.Return(fn); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            "struct member 0 with size=4 must be at least as large as the type with size 12"))
+        << res.Failure();
 }
 
 INSTANTIATE_TEST_SUITE_P(IR_ValidatorTest,

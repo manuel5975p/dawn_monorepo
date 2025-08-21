@@ -34,6 +34,7 @@
 #include "dawn/common/NonCopyable.h"
 #include "dawn/native/BindingInfo.h"
 #include "dawn/native/IntegerTypes.h"
+#include "dawn/native/ShaderModule.h"
 #include "dawn/native/stream/Stream.h"
 
 #include "tint/tint.h"
@@ -52,15 +53,20 @@ tint::VertexPullingConfig BuildVertexPullingTransformConfig(
 std::unordered_map<tint::OverrideId, double> BuildSubstituteOverridesTransformConfig(
     const ProgrammableStage& stage);
 
+std::unordered_map<tint::OverrideId, double> BuildSubstituteOverridesTransformConfig(
+    const EntryPointMetadata& metadata,
+    const PipelineConstantEntries& constants);
+
+namespace stream {
 // Uses tint::ForeachField when available to implement the stream::Stream trait for types.
 template <typename T>
     requires(tint::HasReflection<T>)
-class stream::Stream<T> {
+class Stream<T> {
   public:
-    static void Write(stream::Sink* s, const T& v) {
+    static void Write(Sink* s, const T& v) {
         tint::ForeachField(v, [&](const auto& f) { StreamIn(s, f); });
     }
-    static MaybeError Read(stream::Source* s, T* v) {
+    static MaybeError Read(Source* s, T* v) {
         MaybeError error = {};
         tint::ForeachField(*v, [&](auto& f) {
             if (!error.IsError()) {
@@ -70,6 +76,7 @@ class stream::Stream<T> {
         return error;
     }
 };
+}  // namespace stream
 
 constexpr tint::BindingPoint ToTint(const BindingSlot& slot) {
     return {static_cast<uint32_t>(slot.group), static_cast<uint32_t>(slot.binding)};

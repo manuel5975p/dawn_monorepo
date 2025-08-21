@@ -53,92 +53,147 @@ described below.
 There's also a helper tool to run the fuzzers locally:
 
 - To run the local fuzzers across the full number of CPU threads
-  available on the system, seeded with the corpus in
+  available on the system, seeded with a corpus based on
   [`test/tint`](../../test/tint), and using the dictionary in
   `src/tint/cmd/fuzz/wgsl/dictionary.txt` run:
 
   `tools/run fuzz`
 
-- To check that all the test files in the corpus directory,
-  [`test/tint`](../../test/tint) by default, pass the fuzzers without
-  error and then exit, run:
+- To check that all the test files, [`test/tint`](../../test/tint) by
+  default, pass the fuzzers without crashing and then exit, run:
 
   `tools/run fuzz --check`
 
-  Note: This is run by Dawn's CQ presubmit to check that fuzzers
-  aren't accidentally broken.
+  Note: This is run by Dawn's CQ to check that fuzzers aren't
+  accidentally broken.
 
-- To run the local fuzzers using the same corpus used by ClusterFuzz:
+- To run the local fuzzers using a generated corpus of .wgsl files:
 
-  `tools/run fuzz -corpus out/libfuzz/gen/fuzzers/wgsl_corpus`
+  `tools/run fuzz -inputs out/Fuzzer/wgsl_corpus`
 
-  Note that this corpus directory is generated when building the GN
-  target `tint_generate_wgsl_corpus`.
+Note: The above commands will run in the default WGSL mode only.  If
+you want to run using the IR fuzzer, you need to pass in `--ir` to run
+in IR mode.
 
-### Generating the corpus
-
-Generate the `tint_wgsl_fuzzer` corpus using the
-`tint_generate_wgsl_corpus` GN target, which produces a corpus in
-`<build_dir>/gen/fuzzers/wgsl_corpus`. Pass in the path to the corpus
-directory as an argument to the fuzzer executable to use it. It's also
-a good idea to pass in the dictionary with
-`-dict=src/tint/cmd/fuzz/wgsl/dictionary.txt`:
+Examples of IR mode:
 
 ```bash
-autoninja -C out/libfuzz tint_generate_wgsl_corpus
-out/libfuzz/tint_wgsl_fuzzer.exe -dict=src/tint/cmd/fuzz/wgsl/dictionary.txt out/libfuzz/gen/fuzzers/wgsl_corpus
+tools/run fuzz -ir
+tools/run fuzz -ir -inputs out/Fuzzer/ir_corpus
+tools/run fuzz -ir -check
+
 ```
 
-Similarly, the `tint_ir_fuzzer` corpus can be generated using the
-`tint_generate_ir_corpus` GN target, producing the corpus in
-`<build_dir>/gen/fuzzers/ir_corpus`. For the IR fuzzer, we don't pass
-in the dictionary, since we are using
-[`libprotobuf-mutator`](https://github.com/google/libprotobuf-mutator)
-for mutating (the proto file effectively defines the dictionary):
+`-ir` mode without any provided inputs will convert the default WGSL
+inputs from [`test/tint`](../../test/tint) on-the-fly to .tirb
+files. A manually provided input of .tirb files can be provided. There
+is currently no facility to detect that an explicit input directory
+contains .wgsl files that need converting to .tirb files.
+
+See below for how to generate the corpus locally
+
+### Generating fuzzer corpora
+
+Running fuzzers without any inputs is relatively inefficient, since
+the fuzzing algorithm has to discover the structure of the input
+format via generating random inputs. This can be alleviated by
+providing a corpus of examples to start from. The fuzzer will not be
+restricted by this initial corpus, since it will mutate and recombine
+the examples to find new and interesting inputs.
+
+The helper tool is capable of producing appropriate corpora from test
+files via the `-generate` flag. `-generate` requires you to also pass
+in `-out`, since otherwise the output would go to an ephemeral tmp
+directory and not be useable.
+
+#### tint_wgsl_fuzzer
+
+To generate a corpus based on the default test files from
+[`test/tint`](../../test/tint) no additional flags are needed
 
 ```bash
-autoninja -C out/libfuzz tint_generate_ir_corpus
-out/libfuzz/tint_ir_fuzzer.exe out/libfuzz/gen/fuzzers/ir_corpus
+tools/run fuzz -generate -out out/Fuzzer/wgsl_corpus
+```
+
+`-inputs` can be used to provide custom inputs to the tool. It will
+use any .wgsl files found in the inputs that don't also include the
+string `.expected.` in their name.
+
+```bash
+tools/run fuzz -generate -inputs my_super_cool_tests/ -out out/Fuzzer/wgsl_corpus
+```
+
+`-out` will overwrite existing files that collide with the output file
+names, but does not create the output directory or remove its
+contents, so that you can merge multiple input sources together via
+multiple calls to the tool.
+
+The corpus can be used with the above helper tool via the `-inputs`
+flag or may be directly passed into a manual invocation of
+`tint_wgsl_fuzzer`.
+
+An example of generating and then using a custom WGSL corpus:
+
+```bash
+autoninja -C out/Fuzzer fuzzer_corpus_tools  # Guarantees the fuzzers and another tooling is present
+tools/run fuzz -generate -inputs my_super_cool_tests/ -out out/Fuzzer/wgsl_corpus
+
+# And then either
+out/Fuzzer/tint_wgsl_fuzzer -dict=src/tint/cmd/fuzz/wgsl/dictionary.txt out/Fuzzer/wgsl_corpus
+
+# or
+
+tools/run fuzz -inputs out/Fuzzer/wgsl_corpus
+```
+
+#### tint_ir_fuzzer
+
+IR corpus generation requires the `ir_fuzz_as` binary to be present in
+the build directory. This directory is `out/active` by default, but
+can be manually specified via `-build`. The GN target
+`fuzzer_corpus_tools` can be used to build this binary and any of the
+other binaries that the helper tool may need.
+
+The corpus generation process for a IR corpus is the same as above,
+except using the `-ir` flag.
+
+The inputs are expected to be .wgsl files like the WGSL generation, but
+the output will .tirb files. Similarly to the WGSL mode generation
+inputs with `.expected.` will be filtered out.
+
+Generating a corpus based on the default WGSL tests:
+
+```bash
+tools/run fuzz -ir -generate -out out/Fuzzer/wgsl_corpus
+```
+
+Generating a corpus based on custom WGSL files:
+
+```bash
+tools/run fuzz -ir -generate -input my_super_cool_tests/ -out out/Fuzzer/wgsl_corpus
+```
+
+An example of generating and using a custom IR corpus:
+
+```bash
+autoninja -C out/Fuzzer fuzzer_corpus_tools  # Guarantees the fuzzers and another tooling is present
+tools/run fuzz -ir -generate -inputs my_super_cool_tests/ -out out/Fuzzer/ir_corpus
+
+# And then either
+out/Fuzzer/tint_ir_fuzzer out/Fuzzer/ir_corpus
+
+# or
+
+tools/run fuzz -ir -inputs out/Fuzzer/ir_corpus
 ```
 
 #### Minimizing the corpus
 
-By design our GN rules do not minimize the corpus, since this can take
-over an hour to run, so would be way too costly to run on the
-bots. Additionally there is no rule provided to do this, because there
-are bots/checks in the Chromium ecosystem that try running/building
-every target.
-
-There is not a lot of need to minimize the corpus, since the libFuzzer
-will do it automatically as needed, and ClusterFuzz stores the working
-corpus in GCS, so the cost for minimization will be amortized over
-time.
-
-The one time that it might be needed is if the corpus has radically
-changed, i.e. a major language change, or new feature. Then a dev may
-want to generate a new corpus, minimize it, and then manually update
-the GCS bucket with it to help the fuzzer out.
-
-Minimizing the corpus can be done via manually invoking the underlying
-script that the GN targets use for generating the corpus.
-
-This will generated a minimized version of the WGSL corpus in
-`out/Fuzzer/gen/fuzzers/wgsl_min_corpus`:
-```bash
-autoninja -C out/Fuzzer tint_wgsl_fuzzer
-python3 src/tint/cmd/fuzz/generate_tint_corpus.py out/Fuzzer/gen/fuzzers/wgsl_corpus out/Fuzzer/gen/fuzzers/ --wgsl_fuzzer=out/Fuzzer/tint_wgsl_fuzzer
-```
-
-This will generated a minimized version of the IR corpus in
-`out/Fuzzer/gen/fuzzers/ir_min_corpus`:
-```bash
-autoninja -C out/Fuzzer tint_ir_fuzzer
-python3 src/tint/cmd/fuzz/generate_tint_corpus.py out/Fuzzer/gen/fuzzers/wgsl_ir out/Fuzzer/gen/fuzzers/ --ir_fuzzer=out/Fuzzer/tint_ir_fuzzer
-```
-
-(Building the fuzzer binary via GN will generate the non-minimized
-corpus, which is needed for minimizing).
-
+Minimizing a fuzzer corpus is no longer supported as part of the
+tooling. It was rarely used, since ClusterFuzz does it automatically,
+and added significant complexity to the tooling. If you need to
+minimize a corpus manually please consult the libFuzzer documentation
+for [details](https://llvm.org/docs/LibFuzzer.html#corpus)
 
 ## Writing fuzzers
 

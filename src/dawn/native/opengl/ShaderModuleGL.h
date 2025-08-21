@@ -35,7 +35,6 @@
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/Serializable.h"
 #include "dawn/native/ShaderModule.h"
-#include "dawn/native/opengl/BindingPoint.h"
 #include "dawn/native/opengl/opengl_platform.h"
 
 namespace dawn::native {
@@ -50,24 +49,28 @@ class Source;
 namespace opengl {
 
 class Device;
+class EmulatedTextureBuiltinRegistrar;
 class PipelineLayout;
 struct OpenGLFunctions;
 
 std::string GetBindingName(BindGroupIndex group, BindingNumber bindingNumber);
 
-#define BINDING_LOCATION_MEMBERS(X) \
-    X(BindGroupIndex, group)        \
-    X(BindingNumber, binding)
-DAWN_SERIALIZABLE(struct, BindingLocation, BINDING_LOCATION_MEMBERS){};
-#undef BINDING_LOCATION_MEMBERS
+#define COMBINED_SAMPLER_ELEMENT_MEMBERS(X)                                                 \
+    X(BindGroupIndex, group)                                                                \
+    X(BindingNumber, binding)                                                               \
+    /* Return the array size of the element in the WGSL / GLSL as OpenGL requires that a */ \
+    /* non-arrayed (arraySize = 1) binding uses glUniform1i and not glUniform1iv. */        \
+    X(BindingIndex, arraySize, 1)
+DAWN_SERIALIZABLE(struct, CombinedSamplerElement, COMBINED_SAMPLER_ELEMENT_MEMBERS){};
+#undef COMBINED_SAMPLER_ELEMENT_MEMBERS
 
-bool operator<(const BindingLocation& a, const BindingLocation& b);
+bool operator<(const CombinedSamplerElement& a, const CombinedSamplerElement& b);
 
 #define COMBINED_SAMPLER_MEMBERS(X)                                                            \
     /* OpenGL requires a sampler with texelFetch. If this is nullopt, the developer did not */ \
     /* provide one and Dawn should bind a placeholder non-filtering sampler.  */               \
-    X(std::optional<BindingLocation>, samplerLocation)                                         \
-    X(BindingLocation, textureLocation)
+    X(std::optional<CombinedSamplerElement>, samplerLocation)                                  \
+    X(CombinedSamplerElement, textureLocation)
 
 DAWN_SERIALIZABLE(struct, CombinedSampler, COMBINED_SAMPLER_MEMBERS) {
     std::string GetName() const;
@@ -93,7 +96,7 @@ class ShaderModule final : public ShaderModuleBase {
                                         VertexAttributeMask bgraSwizzleAttributes,
                                         std::vector<CombinedSampler>* combinedSamplers,
                                         const PipelineLayout* layout,
-                                        BindingPointToFunctionAndOffset* bindingPointToData,
+                                        EmulatedTextureBuiltinRegistrar* emulatedTextureBuiltings,
                                         bool* needsSSBOLengthUniformBuffer);
 
   private:

@@ -56,6 +56,8 @@ enum class BuiltinPolyfillLevel {
 struct BuiltinPolyfillConfig {
     /// Should `clamp()` be polyfilled for integer values?
     bool clamp_int = false;
+    /// Should `abs()` be polyfilled for signed integer values?
+    bool abs_signed_int = false;
     /// Should `countLeadingZeros()` be polyfilled?
     bool count_leading_zeros = false;
     /// Should `countTrailingZeros()` be polyfilled?
@@ -90,6 +92,8 @@ struct BuiltinPolyfillConfig {
     bool pack_4xu8_clamp = false;
     /// Should `pack4x8snorm`, `pack4x8unorm`, `unpack4x8snorm` and `unpack4x8unorm` be polyfilled?
     bool pack_unpack_4x8_norm = false;
+    /// Should `subgroupBroadcast(f16)` be polyfilled?
+    bool subgroup_broadcast_f16 = false;
 
     /// Reflection for this class
     TINT_REFLECT(BuiltinPolyfillConfig,
@@ -109,7 +113,8 @@ struct BuiltinPolyfillConfig {
                  dot_4x8_packed,
                  pack_unpack_4x8,
                  pack_4xu8_clamp,
-                 pack_unpack_4x8_norm);
+                 pack_unpack_4x8_norm,
+                 subgroup_broadcast_f16);
 };
 
 /// BuiltinPolyfill is a transform that replaces calls to builtin functions and uses of other core

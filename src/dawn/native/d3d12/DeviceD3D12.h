@@ -40,10 +40,6 @@
 #include "dawn/native/d3d12/ResourceAllocatorManagerD3D12.h"
 #include "dawn/native/d3d12/TextureD3D12.h"
 
-namespace dawn::native::d3d {
-class ExternalImageDXGIImpl;
-}  // namespace dawn::native::d3d
-
 namespace dawn::native::d3d12 {
 
 class PlatformFunctions;
@@ -148,6 +144,8 @@ class Device final : public d3d::Device {
 
     uint32_t GetOptimalBytesPerRowAlignment() const override;
     uint64_t GetOptimalBufferToTextureCopyOffsetAlignment() const override;
+    bool CanTextureLoadResolveTargetInTheSameRenderpass() const override;
+    bool CanResolveSubRect() const override;
 
     float GetTimestampPeriodInNS() const override;
 
@@ -181,9 +179,9 @@ class Device final : public d3d::Device {
            Ref<DeviceBase::DeviceLostEvent>&& lostEvent);
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
-        const BindGroupDescriptor* descriptor) override;
+        const UnpackedPtr<BindGroupDescriptor>& descriptor) override;
     ResultOrError<Ref<BindGroupLayoutInternalBase>> CreateBindGroupLayoutImpl(
-        const BindGroupLayoutDescriptor* descriptor) override;
+        const UnpackedPtr<BindGroupLayoutDescriptor>& descriptor) override;
     ResultOrError<Ref<BufferBase>> CreateBufferImpl(
         const UnpackedPtr<BufferDescriptor>& descriptor) override;
     ResultOrError<Ref<PipelineLayoutBase>> CreatePipelineLayoutImpl(
@@ -227,7 +225,7 @@ class Device final : public d3d::Device {
     ResultOrError<ComPtr<ID3D11On12Device>> GetOrCreateD3D11on12Device();
     void Flush11On12DeviceToAvoidLeaks();
 
-    MaybeError EnsureDXCIfRequired();
+    MaybeError EnsureCompilerLibraries();
 
     MaybeError CreateZeroBuffer();
 
