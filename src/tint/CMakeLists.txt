@@ -209,7 +209,9 @@ function(tint_default_compile_options TARGET)
 endfunction()
 
 function(tint_spvheaders_compile_options TARGET)
+if(NOT EMSCRIPTEN)
   target_link_libraries(${TARGET} PRIVATE SPIRV-Headers)
+endif()
   target_include_directories(${TARGET} PRIVATE "${TINT_SPIRV_HEADERS_DIR}/include")
 endfunction()
 
