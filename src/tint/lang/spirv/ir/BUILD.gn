@@ -45,6 +45,8 @@ if (tint_build_unittests || tint_build_benchmarks) {
 
 libtint_source_set("ir") {
   sources = [
+    "binary.cc",
+    "binary.h",
     "builtin_call.cc",
     "builtin_call.h",
     "copy_logical.cc",
@@ -53,7 +55,7 @@ libtint_source_set("ir") {
     "literal_operand.h",
   ]
   deps = [
-    "${dawn_root}/src/utils:utils",
+    "${dawn_root}/src/utils",
     "${tint_src_dir}/api/common",
     "${tint_src_dir}/lang/core",
     "${tint_src_dir}/lang/core/constant",
@@ -76,9 +78,12 @@ libtint_source_set("ir") {
 }
 if (tint_build_unittests) {
   tint_unittests_source_set("unittests") {
-    sources = [ "builtin_call_test.cc" ]
+    sources = [
+      "binary_test.cc",
+      "builtin_call_test.cc",
+    ]
     deps = [
-      "${dawn_root}/src/utils:utils",
+      "${dawn_root}/src/utils",
       "${tint_src_dir}:gmock_and_gtest",
       "${tint_src_dir}/api/common",
       "${tint_src_dir}/lang/core",

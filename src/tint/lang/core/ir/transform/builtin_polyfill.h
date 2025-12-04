@@ -40,7 +40,11 @@ class Module;
 namespace tint::core::ir::transform {
 
 /// The capabilities that the transform can support.
-const Capabilities kBuiltinPolyfillCapabilities{Capability::kAllowDuplicateBindings};
+const Capabilities kBuiltinPolyfillCapabilities{
+    Capability::kAllowDuplicateBindings,
+    Capability::kAllowNonCoreTypes,
+    Capability::kAllow8BitIntegers,
+};
 
 /// Enumerator of polyfill levels.
 enum class BuiltinPolyfillLevel {
@@ -56,6 +60,8 @@ enum class BuiltinPolyfillLevel {
 struct BuiltinPolyfillConfig {
     /// Should `clamp()` be polyfilled for integer values?
     bool clamp_int = false;
+    /// Should `clamp()` be polyfilled for floating values?
+    bool clamp_float = false;
     /// Should `abs()` be polyfilled for signed integer values?
     bool abs_signed_int = false;
     /// Should `countLeadingZeros()` be polyfilled?

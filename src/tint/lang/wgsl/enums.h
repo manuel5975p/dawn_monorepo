@@ -37,6 +37,8 @@
 #ifndef SRC_TINT_LANG_WGSL_ENUMS_H_
 #define SRC_TINT_LANG_WGSL_ENUMS_H_
 
+// clang-format off
+
 #include <cstdint>
 #include <string>
 #include <variant>
@@ -100,8 +102,7 @@ auto& operator<<(STREAM& out, ChromiumDiagnosticRule value) {
 
 /// ParseChromiumDiagnosticRule parses a ChromiumDiagnosticRule from a string.
 /// @param str the string to parse
-/// @returns the parsed enum, or ChromiumDiagnosticRule::kUndefined if the string could not be
-/// parsed.
+/// @returns the parsed enum, or ChromiumDiagnosticRule::kUndefined if the string could not be parsed.
 ChromiumDiagnosticRule ParseChromiumDiagnosticRule(std::string_view str);
 
 constexpr std::string_view kChromiumDiagnosticRuleStrings[] = {
@@ -110,21 +111,22 @@ constexpr std::string_view kChromiumDiagnosticRuleStrings[] = {
 };
 
 /// An enumerator of WGSL extensions
-/// @see src/tint/lang/wgsl/intrinsics.def for extension descriptions
+/// @see src/tint/lang/wgsl/wgsl.def for extension descriptions
 enum class Extension : uint8_t {
     kUndefined,
     kChromiumDisableUniformityAnalysis,
     kChromiumExperimentalBarycentricCoord,
+    kChromiumExperimentalDynamicBinding,
     kChromiumExperimentalFramebufferFetch,
-    kChromiumExperimentalImmediate,
     kChromiumExperimentalPixelLocal,
-    kChromiumExperimentalPrimitiveId,
+    kChromiumExperimentalResourceTable,
     kChromiumExperimentalSubgroupMatrix,
     kChromiumInternalGraphite,
     kChromiumInternalInputAttachments,
     kClipDistances,
     kDualSourceBlending,
     kF16,
+    kPrimitiveIndex,
     kSubgroups,
 };
 
@@ -149,16 +151,17 @@ Extension ParseExtension(std::string_view str);
 constexpr std::string_view kExtensionStrings[] = {
     "chromium_disable_uniformity_analysis",
     "chromium_experimental_barycentric_coord",
+    "chromium_experimental_dynamic_binding",
     "chromium_experimental_framebuffer_fetch",
-    "chromium_experimental_immediate",
     "chromium_experimental_pixel_local",
-    "chromium_experimental_primitive_id",
+    "chromium_experimental_resource_table",
     "chromium_experimental_subgroup_matrix",
     "chromium_internal_graphite",
     "chromium_internal_input_attachments",
     "clip_distances",
     "dual_source_blending",
     "f16",
+    "primitive_index",
     "subgroups",
 };
 
@@ -166,16 +169,17 @@ constexpr std::string_view kExtensionStrings[] = {
 static constexpr Extension kAllExtensions[] = {
     Extension::kChromiumDisableUniformityAnalysis,
     Extension::kChromiumExperimentalBarycentricCoord,
+    Extension::kChromiumExperimentalDynamicBinding,
     Extension::kChromiumExperimentalFramebufferFetch,
-    Extension::kChromiumExperimentalImmediate,
     Extension::kChromiumExperimentalPixelLocal,
-    Extension::kChromiumExperimentalPrimitiveId,
+    Extension::kChromiumExperimentalResourceTable,
     Extension::kChromiumExperimentalSubgroupMatrix,
     Extension::kChromiumInternalGraphite,
     Extension::kChromiumInternalInputAttachments,
     Extension::kClipDistances,
     Extension::kDualSourceBlending,
     Extension::kF16,
+    Extension::kPrimitiveIndex,
     Extension::kSubgroups,
 };
 
@@ -189,11 +193,16 @@ enum class LanguageFeature : uint8_t {
     kChromiumTestingShippedWithKillswitch,
     kChromiumTestingUnimplemented,
     kChromiumTestingUnsafeExperimental,
+    kFragmentDepth,
+    kImmediateAddressSpace,
     kPacked4X8IntegerDotProduct,
     kPointerCompositeAccess,
     kReadonlyAndReadwriteStorageTextures,
     kSizedBindingArray,
+    kSubgroupId,
+    kSubgroupUniformity,
     kTexelBuffers,
+    kUniformBufferStandardLayout,
     kUnrestrictedPointerParameters,
 };
 
@@ -213,11 +222,16 @@ constexpr std::string_view kLanguageFeatureStrings[] = {
     "chromium_testing_shipped_with_killswitch",
     "chromium_testing_unimplemented",
     "chromium_testing_unsafe_experimental",
+    "fragment_depth",
+    "immediate_address_space",
     "packed_4x8_integer_dot_product",
     "pointer_composite_access",
     "readonly_and_readwrite_storage_textures",
     "sized_binding_array",
+    "subgroup_id",
+    "subgroup_uniformity",
     "texel_buffers",
+    "uniform_buffer_standard_layout",
     "unrestricted_pointer_parameters",
 };
 
@@ -229,11 +243,16 @@ static constexpr LanguageFeature kAllLanguageFeatures[] = {
     LanguageFeature::kChromiumTestingShippedWithKillswitch,
     LanguageFeature::kChromiumTestingUnimplemented,
     LanguageFeature::kChromiumTestingUnsafeExperimental,
+    LanguageFeature::kFragmentDepth,
+    LanguageFeature::kImmediateAddressSpace,
     LanguageFeature::kPacked4X8IntegerDotProduct,
     LanguageFeature::kPointerCompositeAccess,
     LanguageFeature::kReadonlyAndReadwriteStorageTextures,
     LanguageFeature::kSizedBindingArray,
+    LanguageFeature::kSubgroupId,
+    LanguageFeature::kSubgroupUniformity,
     LanguageFeature::kTexelBuffers,
+    LanguageFeature::kUniformBufferStandardLayout,
     LanguageFeature::kUnrestrictedPointerParameters,
 };
 
@@ -282,6 +301,7 @@ diag::Severity ToSeverity(DiagnosticSeverity sc);
 
 /// DiagnosticRuleSeverities is a map from diagnostic rule to diagnostic severity.
 using DiagnosticRuleSeverities = Hashmap<DiagnosticRule, DiagnosticSeverity, 1>;
+
 
 /// Enumerator of all builtin functions
 enum class BuiltinFn : uint8_t {
@@ -436,8 +456,15 @@ enum class BuiltinFn : uint8_t {
     kSubgroupMatrixStore,
     kSubgroupMatrixMultiply,
     kSubgroupMatrixMultiplyAccumulate,
+    kSubgroupMatrixScalarAdd,
+    kSubgroupMatrixScalarSubtract,
+    kSubgroupMatrixScalarMultiply,
     kPrint,
     kTintMaterialize,
+    kHasBinding,
+    kGetBinding,
+    kHasResource,
+    kGetResource,
     kNone,
 };
 
@@ -456,7 +483,7 @@ const char* str(BuiltinFn i);
 template <typename STREAM>
     requires(traits::IsOStream<STREAM>)
 auto& operator<<(STREAM& o, BuiltinFn i) {
-    return o << str(i);
+  return o << str(i);
 }
 
 /// All builtin functions
@@ -612,8 +639,15 @@ constexpr BuiltinFn kBuiltinFns[] = {
     BuiltinFn::kSubgroupMatrixStore,
     BuiltinFn::kSubgroupMatrixMultiply,
     BuiltinFn::kSubgroupMatrixMultiplyAccumulate,
+    BuiltinFn::kSubgroupMatrixScalarAdd,
+    BuiltinFn::kSubgroupMatrixScalarSubtract,
+    BuiltinFn::kSubgroupMatrixScalarMultiply,
     BuiltinFn::kPrint,
     BuiltinFn::kTintMaterialize,
+    BuiltinFn::kHasBinding,
+    BuiltinFn::kGetBinding,
+    BuiltinFn::kHasResource,
+    BuiltinFn::kGetResource,
 };
 
 /// All builtin function names
@@ -769,8 +803,15 @@ constexpr const char* kBuiltinFnStrings[] = {
     "subgroupMatrixStore",
     "subgroupMatrixMultiply",
     "subgroupMatrixMultiplyAccumulate",
+    "subgroupMatrixScalarAdd",
+    "subgroupMatrixScalarSubtract",
+    "subgroupMatrixScalarMultiply",
     "print",
     "__tint_materialize",
+    "hasBinding",
+    "getBinding",
+    "hasResource",
+    "getResource",
 };
 
 /// Determines if the given `f` is a coarse derivative.
@@ -840,10 +881,13 @@ bool IsSubgroupMatrix(BuiltinFn f);
 /// @returns true if the given `f` is a quadSwap* builtin
 bool IsQuadSwap(BuiltinFn f);
 
-/// Determines if the given `f` may have side-effects (i.e. writes to at least one of its inputs)
-/// @returns true if intrinsic may have side-effects
-bool HasSideEffects(BuiltinFn f);
+/// Determines if the given `f` is a resource table builtin.
+/// @param f the builtin type
+/// @returns true if the given `f` is a resource table builtin
+bool IsResourceTable(BuiltinFn f);
 
 }  // namespace tint::wgsl
+
+// clang-format on
 
 #endif  // SRC_TINT_LANG_WGSL_ENUMS_H_

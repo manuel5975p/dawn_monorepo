@@ -40,6 +40,7 @@
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/wgsl/inspector/entry_point.h"
 #include "src/tint/lang/wgsl/inspector/resource_binding.h"
+#include "src/tint/lang/wgsl/inspector/resource_binding_info.h"
 #include "src/tint/lang/wgsl/program/program.h"
 #include "src/tint/lang/wgsl/sem/sampler_texture_pair.h"
 
@@ -75,6 +76,14 @@ class Inspector {
 
     /// @returns vector of all overrides
     std::vector<Override> Overrides();
+
+    /// @param entry_point name of the entry point to get information about.
+    /// @returns vector of all `resource_binding` entries
+    std::vector<ResourceBindingInfo> GetResourceBindingInfo(const std::string& entry_point);
+
+    /// @param entry_point name of the entry point to get information about.
+    /// @returns vector of all types returned from any resource table calls.
+    std::unordered_set<ResourceType> GetResourceTableInfo(const std::string& entry_point);
 
     /// @param entry_point name of the entry point to get information about.
     /// @returns vector of all of the resource bindings.
@@ -195,10 +204,6 @@ class Inspector {
     /// @returns the interpolation type and sampling modes for the value
     std::tuple<InterpolationType, InterpolationSampling> CalculateInterpolationData(
         VectorRef<const ast::Attribute*> attributes) const;
-
-    /// @param func the root function of the callgraph to consider for the computation.
-    /// @returns the total size in bytes of all Workgroup storage-class storage accessed via func.
-    uint32_t ComputeWorkgroupStorageSize(const ast::Function* func) const;
 
     /// @param func the root function of the callgraph to consider for the computation.
     /// @returns the total size in bytes of all immediate data variables accessed via func.

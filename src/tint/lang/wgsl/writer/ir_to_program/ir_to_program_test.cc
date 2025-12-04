@@ -32,6 +32,7 @@
 #include <string>
 
 #include "src/tint/lang/core/enums.h"
+#include "src/tint/lang/core/type/binding_array.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
@@ -327,17 +328,17 @@ TEST_F(IRToProgramTest, EntryPoint_ParameterAttribute_Fragment) {
         MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kSampleIndex),
         MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kSampleMask),
         MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kSubgroupSize),
-        MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kPrimitiveId),
+        MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kPrimitiveIndex),
     });
 
     fn->Block()->Append(b.Return(fn));
 
     EXPECT_WGSL(R"(
 enable subgroups;
-enable chromium_experimental_primitive_id;
+enable primitive_index;
 
 @fragment
-fn f(@builtin(front_facing) v : bool, @builtin(sample_index) v_1 : u32, @builtin(sample_mask) v_2 : u32, @builtin(subgroup_size) v_3 : u32, @builtin(primitive_id) v_4 : u32) {
+fn f(@builtin(front_facing) v : bool, @builtin(sample_index) v_1 : u32, @builtin(sample_mask) v_2 : u32, @builtin(subgroup_size) v_3 : u32, @builtin(primitive_index) v_4 : u32) {
 }
 )");
 }
@@ -416,7 +417,6 @@ TEST_F(IRToProgramTest, TypeWords) {
         Var("u32", true);
         Var("f32", true);
         Var("f16", true);
-        Var("vec", true);
         Var("vec2", true);
         Var("vec3", true);
         Var("vec4", true);
@@ -557,7 +557,6 @@ fn f() {
   var v_67 : bool = true;
   var v_68 : bool = true;
   var v_69 : bool = true;
-  var v_70 : bool = true;
 }
 )");
 }
@@ -1025,7 +1024,7 @@ TEST_F(IRToProgramTest, UnaryOp_Negate) {
     auto* i = b.FunctionParam("i", ty.i32());
     fn->SetParams({i});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Negation(ty.i32(), i)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Negation(i)); });
 
     EXPECT_WGSL(R"(
 fn f(i : i32) -> i32 {
@@ -1039,7 +1038,7 @@ TEST_F(IRToProgramTest, UnaryOp_Complement) {
     auto* i = b.FunctionParam("i", ty.u32());
     fn->SetParams({i});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Complement(ty.u32(), i)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Complement(i)); });
 
     EXPECT_WGSL(R"(
 fn f(i : u32) -> u32 {
@@ -1053,7 +1052,7 @@ TEST_F(IRToProgramTest, UnaryOp_Not) {
     auto* i = b.FunctionParam("b", ty.bool_());
     fn->SetParams({i});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Not(ty.bool_(), i)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Not(i)); });
 
     EXPECT_WGSL(R"(
 fn f(b : bool) -> bool {
@@ -1071,7 +1070,7 @@ TEST_F(IRToProgramTest, BinaryOp_Add) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Add(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Add(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> i32 {
@@ -1086,7 +1085,7 @@ TEST_F(IRToProgramTest, BinaryOp_Subtract) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Subtract(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Subtract(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> i32 {
@@ -1101,7 +1100,7 @@ TEST_F(IRToProgramTest, BinaryOp_Multiply) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Multiply(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Multiply(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> i32 {
@@ -1191,7 +1190,7 @@ TEST_F(IRToProgramTest, BinaryOp_Equal) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Equal(ty.bool_(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Equal(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> bool {
@@ -1206,7 +1205,7 @@ TEST_F(IRToProgramTest, BinaryOp_NotEqual) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.NotEqual(ty.bool_(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.NotEqual(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> bool {
@@ -1221,7 +1220,7 @@ TEST_F(IRToProgramTest, BinaryOp_LessThan) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.LessThan(ty.bool_(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.LessThan(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> bool {
@@ -1236,7 +1235,7 @@ TEST_F(IRToProgramTest, BinaryOp_GreaterThan) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.GreaterThan(ty.bool_(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.GreaterThan(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> bool {
@@ -1251,7 +1250,7 @@ TEST_F(IRToProgramTest, BinaryOp_LessThanEqual) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.LessThanEqual(ty.bool_(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.LessThanEqual(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> bool {
@@ -1266,7 +1265,7 @@ TEST_F(IRToProgramTest, BinaryOp_GreaterThanEqual) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.GreaterThanEqual(ty.bool_(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.GreaterThanEqual(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> bool {
@@ -1420,6 +1419,27 @@ TEST_F(IRToProgramTest, TypeConstruct_array) {
     EXPECT_WGSL(R"(
 fn f(i : i32) {
   var v : array<i32, 3u> = array<i32, 3u>(i, i, i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConstruct_binding_array) {
+    auto* el_ty = ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32());
+    auto* var = Var(ty.ref(handle, ty.binding_array(el_ty, 3u)));
+    var->SetBindingPoint(0, 0);
+
+    mod.root_block->Append(var);
+
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.i32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] { b.Return(fn); });
+
+    EXPECT_WGSL(R"(
+@group(0u) @binding(0u) var v : binding_array<texture_2d<f32>, 3u>;
+
+fn f(i : i32) {
 }
 )");
 }
@@ -1897,7 +1917,7 @@ TEST_F(IRToProgramTest, CompoundAssign_Increment) {
 
     b.Append(fn->Block(), [&] {
         auto* v = Var<function, i32>("v");
-        b.Store(v, b.Add(ty.i32(), b.Load(v), 1_i));
+        b.Store(v, b.Add(b.Load(v), 1_i));
 
         b.Return(fn);
     });
@@ -1915,7 +1935,7 @@ TEST_F(IRToProgramTest, CompoundAssign_Decrement) {
 
     b.Append(fn->Block(), [&] {
         auto* v = Var<function, i32>("v");
-        b.Store(v, b.Subtract(ty.i32(), b.Load(v), 1_i));
+        b.Store(v, b.Subtract(b.Load(v), 1_i));
 
         b.Return(fn);
     });
@@ -1933,7 +1953,7 @@ TEST_F(IRToProgramTest, CompoundAssign_Add) {
 
     b.Append(fn->Block(), [&] {
         auto* v = Var<function, i32>("v");
-        b.Store(v, b.Add(ty.i32(), b.Load(v), 8_i));
+        b.Store(v, b.Add(b.Load(v), 8_i));
 
         b.Return(fn);
     });
@@ -1951,7 +1971,7 @@ TEST_F(IRToProgramTest, CompoundAssign_Subtract) {
 
     b.Append(fn->Block(), [&] {
         auto* v = Var<function, i32>("v");
-        b.Store(v, b.Subtract(ty.i32(), b.Load(v), 8_i));
+        b.Store(v, b.Subtract(b.Load(v), 8_i));
 
         b.Return(fn);
     });
@@ -1969,7 +1989,7 @@ TEST_F(IRToProgramTest, CompoundAssign_Multiply) {
 
     b.Append(fn->Block(), [&] {
         auto* v = Var<function, i32>("v");
-        b.Store(v, b.Multiply(ty.i32(), b.Load(v), 8_i));
+        b.Store(v, b.Multiply(b.Load(v), 8_i));
 
         b.Return(fn);
     });
@@ -2027,7 +2047,7 @@ TEST_F(IRToProgramTest, LetUsedOnce) {
     fn->SetParams({i});
 
     b.Append(fn->Block(), [&] {
-        auto* v = b.Let("v", b.Complement(ty.u32(), i));
+        auto* v = b.Let("v", b.Complement(i));
         b.Return(fn, v);
     });
 
@@ -2045,8 +2065,8 @@ TEST_F(IRToProgramTest, LetUsedTwice) {
     fn->SetParams({i});
 
     b.Append(fn->Block(), [&] {
-        auto* v = b.Let("v", b.Multiply(ty.i32(), i, 2_i));
-        b.Return(fn, b.Add(ty.i32(), v, v));
+        auto* v = b.Let("v", b.Multiply(i, 2_i));
+        b.Return(fn, b.Add(v, v));
     });
 
     EXPECT_WGSL(R"(
@@ -2406,23 +2426,23 @@ TEST_F(IRToProgramTest, If_Else_Chain) {
     b.Append(fn->Block(), [&] {
         auto if1 = b.If(pa);
         b.Append(if1->True(), [&] {
-            b.Call(ty.void_(), x, 0_i);
+            b.Call(ty.bool_(), x, 0_i);
             b.ExitIf(if1);
         });
         b.Append(if1->False(), [&] {
             auto* if2 = b.If(pb);
             b.Append(if2->True(), [&] {
-                b.Call(ty.void_(), x, 1_i);
+                b.Call(ty.bool_(), x, 1_i);
                 b.ExitIf(if2);
             });
             b.Append(if2->False(), [&] {
                 auto* if3 = b.If(pc);
                 b.Append(if3->True(), [&] {
-                    b.Call(ty.void_(), x, 2_i);
+                    b.Call(ty.bool_(), x, 2_i);
                     b.ExitIf(if3);
                 });
                 b.Append(if3->False(), [&] {
-                    b.Call(ty.void_(), x, 3_i);
+                    b.Call(ty.bool_(), x, 3_i);
                     b.ExitIf(if3);
                 });
                 b.ExitIf(if2);
@@ -2669,14 +2689,14 @@ TEST_F(IRToProgramTest, For_Empty) {
             b.NextIteration(loop);
 
             b.Append(loop->Body(), [&] {
-                auto* if_ = b.If(b.LessThan(ty.bool_(), b.Load(i), 5_i));
+                auto* if_ = b.If(b.LessThan(b.Load(i), 5_i));
                 b.Append(if_->True(), [&] { b.ExitIf(if_); });
                 b.Append(if_->False(), [&] { b.ExitLoop(loop); });
                 b.Continue(loop);
             });
 
             b.Append(loop->Continuing(), [&] {
-                b.Store(i, b.Add(ty.i32(), b.Load(i), 1_i));
+                b.Store(i, b.Add(b.Load(i), 1_i));
                 b.NextIteration(loop);
             });
         });
@@ -2701,14 +2721,14 @@ TEST_F(IRToProgramTest, For_Empty_NoInit) {
         auto* loop = b.Loop();
 
         b.Append(loop->Body(), [&] {
-            auto* if_ = b.If(b.LessThan(ty.bool_(), b.Load(i), 5_i));
+            auto* if_ = b.If(b.LessThan(b.Load(i), 5_i));
             b.Append(if_->True(), [&] { b.ExitIf(if_); });
             b.Append(if_->False(), [&] { b.ExitLoop(loop); });
             b.Continue(loop);
         });
 
         b.Append(loop->Continuing(), [&] {
-            b.Store(i, b.Add(ty.i32(), b.Load(i), 1_i));
+            b.Store(i, b.Add(b.Load(i), 1_i));
             b.NextIteration(loop);
         });
 
@@ -2735,7 +2755,7 @@ TEST_F(IRToProgramTest, For_Empty_NoCont) {
             b.NextIteration(loop);
 
             b.Append(loop->Body(), [&] {
-                auto* if_ = b.If(b.LessThan(ty.bool_(), b.Load(i), 5_i));
+                auto* if_ = b.If(b.LessThan(b.Load(i), 5_i));
                 b.Append(if_->True(), [&] { b.ExitIf(if_); });
                 b.Append(if_->False(), [&] { b.ExitLoop(loop); });
                 b.Continue(loop);
@@ -2757,7 +2777,7 @@ TEST_F(IRToProgramTest, For_ComplexBody) {
     auto* a = b.Function("a", ty.bool_());
     auto* v = b.FunctionParam("v", ty.i32());
     a->SetParams({v});
-    b.Append(a->Block(), [&] { b.Return(a, b.Equal(ty.bool_(), v, 1_i)); });
+    b.Append(a->Block(), [&] { b.Return(a, b.Equal(v, 1_i)); });
 
     auto* fn = b.Function("f", ty.i32());
 
@@ -2769,7 +2789,7 @@ TEST_F(IRToProgramTest, For_ComplexBody) {
             b.NextIteration(loop);
 
             b.Append(loop->Body(), [&] {
-                auto* if1 = b.If(b.LessThan(ty.bool_(), b.Load(i), 5_i));
+                auto* if1 = b.If(b.LessThan(b.Load(i), 5_i));
                 b.Append(if1->True(), [&] { b.ExitIf(if1); });
                 b.Append(if1->False(), [&] { b.ExitLoop(loop); });
 
@@ -2780,7 +2800,7 @@ TEST_F(IRToProgramTest, For_ComplexBody) {
             });
 
             b.Append(loop->Continuing(), [&] {
-                b.Store(i, b.Add(ty.i32(), b.Load(i), 1_i));
+                b.Store(i, b.Add(b.Load(i), 1_i));
                 b.NextIteration(loop);
             });
         });
@@ -2810,7 +2830,7 @@ TEST_F(IRToProgramTest, For_ComplexBody_NoInit) {
     auto* a = b.Function("a", ty.bool_());
     auto* v = b.FunctionParam("v", ty.i32());
     a->SetParams({v});
-    b.Append(a->Block(), [&] { b.Return(a, b.Equal(ty.bool_(), v, 1_i)); });
+    b.Append(a->Block(), [&] { b.Return(a, b.Equal(v, 1_i)); });
 
     auto* fn = b.Function("f", ty.i32());
 
@@ -2820,7 +2840,7 @@ TEST_F(IRToProgramTest, For_ComplexBody_NoInit) {
         auto* loop = b.Loop();
 
         b.Append(loop->Body(), [&] {
-            auto* if1 = b.If(b.LessThan(ty.bool_(), b.Load(i), 5_i));
+            auto* if1 = b.If(b.LessThan(b.Load(i), 5_i));
             b.Append(if1->True(), [&] { b.ExitIf(if1); });
             b.Append(if1->False(), [&] { b.ExitLoop(loop); });
 
@@ -2832,7 +2852,7 @@ TEST_F(IRToProgramTest, For_ComplexBody_NoInit) {
         });
 
         b.Append(loop->Continuing(), [&] {
-            b.Store(i, b.Add(ty.i32(), b.Load(i), 1_i));
+            b.Store(i, b.Add(b.Load(i), 1_i));
             b.NextIteration(loop);
         });
 
@@ -2862,7 +2882,7 @@ TEST_F(IRToProgramTest, For_ComplexBody_NoCont) {
     auto* a = b.Function("a", ty.bool_());
     auto* v = b.FunctionParam("v", ty.i32());
     a->SetParams({v});
-    b.Append(a->Block(), [&] { b.Return(a, b.Equal(ty.bool_(), v, 1_i)); });
+    b.Append(a->Block(), [&] { b.Return(a, b.Equal(v, 1_i)); });
 
     auto* fn = b.Function("f", ty.i32());
 
@@ -2874,7 +2894,7 @@ TEST_F(IRToProgramTest, For_ComplexBody_NoCont) {
             b.NextIteration(loop);
 
             b.Append(loop->Body(), [&] {
-                auto* if1 = b.If(b.LessThan(ty.bool_(), b.Load(i), 5_i));
+                auto* if1 = b.If(b.LessThan(b.Load(i), 5_i));
                 b.Append(if1->True(), [&] { b.ExitIf(if1); });
                 b.Append(if1->False(), [&] { b.ExitLoop(loop); });
 
@@ -2911,7 +2931,7 @@ TEST_F(IRToProgramTest, For_CallInInitCondCont) {
     auto* fn_n = b.Function("n", ty.i32());
     auto* v = b.FunctionParam("v", ty.i32());
     fn_n->SetParams({v});
-    b.Append(fn_n->Block(), [&] { b.Return(fn_n, b.Add(ty.i32(), v, 1_i)); });
+    b.Append(fn_n->Block(), [&] { b.Return(fn_n, b.Add(v, 1_i)); });
 
     auto* fn_f = b.Function("f", ty.void_());
 
@@ -2925,7 +2945,7 @@ TEST_F(IRToProgramTest, For_CallInInitCondCont) {
             b.Append(loop->Body(), [&] {
                 auto* load = b.Load(i);
                 auto* call = b.Call(ty.i32(), fn_n, 1_i);
-                auto* if_ = b.If(b.LessThan(ty.bool_(), load, call));
+                auto* if_ = b.If(b.LessThan(load, call));
                 b.Append(if_->True(), [&] { b.ExitIf(if_); });
                 b.Append(if_->False(), [&] { b.ExitLoop(loop); });
 
@@ -2996,14 +3016,14 @@ TEST_F(IRToProgramTest, For_IncInInit_Cmp) {
 
             b.Append(loop->Initializer(), [&] {
                 auto* load_i = b.Load(i);
-                auto* inc_i = b.Add(ty.u32(), load_i, 1_u);
+                auto* inc_i = b.Add(load_i, 1_u);
                 b.Store(i, inc_i);
                 b.NextIteration(loop);
             });
 
             b.Append(loop->Body(), [&] {
                 auto* load_i = b.Load(i);
-                auto* cmp = b.LessThan(ty.bool_(), load_i, 10_u);
+                auto* cmp = b.LessThan(load_i, 10_u);
                 auto* if_ = b.If(cmp);
                 b.Append(if_->True(), [&] { b.ExitIf(if_); });
                 b.Append(if_->False(), [&] { b.ExitLoop(loop); });
@@ -3368,7 +3388,7 @@ TEST_F(IRToProgramTest, Loop_VarsDeclaredOutsideAndInside) {
 
             auto* body_load_a = b.Load(var_a);
             auto* body_load_b = b.Load(var_b);
-            auto* if_ = b.If(b.Equal(ty.bool_(), body_load_a, body_load_b));
+            auto* if_ = b.If(b.Equal(body_load_a, body_load_b));
             b.Append(if_->True(), [&] { b.Return(fn); });
             b.Append(if_->False(), [&] { b.ExitIf(if_); });
             b.Continue(loop);
@@ -3376,7 +3396,7 @@ TEST_F(IRToProgramTest, Loop_VarsDeclaredOutsideAndInside) {
             b.Append(loop->Continuing(), [&] {
                 auto* cont_load_a = b.Load(var_a);
                 auto* cont_load_b = b.Load(var_b);
-                b.Store(var_b, b.Add(ty.i32(), cont_load_a, cont_load_b));
+                b.Store(var_b, b.Add(cont_load_a, cont_load_b));
                 b.NextIteration(loop);
             });
         });
@@ -3485,7 +3505,7 @@ TEST_F(IRToProgramTest, Override_UnaryInitializer) {
         auto* lhs = b.Override("cond", true);
         lhs->SetOverrideId(OverrideId{10});
 
-        o = b.Override("o", b.Not<bool>(lhs));
+        o = b.Override("o", b.Not(lhs));
     });
 
     auto* fn = b.Function("f", ty.bool_());
@@ -3511,7 +3531,7 @@ TEST_F(IRToProgramTest, Override_BinaryInitializer) {
         auto* rhs = b.Override("rhs", ty.u32());
         rhs->SetOverrideId(OverrideId{20});
 
-        o = b.Override("o", b.Add<u32>(lhs, rhs));
+        o = b.Override("o", b.Add(lhs, rhs));
     });
 
     auto* fn = b.Function("f", ty.u32());

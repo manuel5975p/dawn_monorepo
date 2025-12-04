@@ -60,10 +60,19 @@
 #endif
 
 #if TINT_BUILD_WGSL_WRITER
+#include "src/tint/lang/wgsl/program/program.h"
 #include "src/tint/lang/wgsl/writer/writer.h"  // nogncheck
 #endif
 
+#if TINT_BUILD_NULL_WRITER
+#include "src/tint/lang/null/writer/writer.h"  // nogncheck
+#endif
+
 // IWYU pragma: end_keep
+
+#if TINT_BUILD_SPV_READER && TINT_BUILD_WGSL_WRITER
+#include "src/tint/lang/core/ir/module.h"
+#endif
 
 namespace tint {
 
@@ -87,7 +96,7 @@ void Shutdown() {
 }
 
 Result<std::string> SpirvToWgsl([[maybe_unused]] const std::vector<uint32_t>& spirv,
-                                [[maybe_unused]] const wgsl::writer::ProgramOptions& wgsl_options) {
+                                [[maybe_unused]] const wgsl::writer::Options& wgsl_options) {
 #if !TINT_BUILD_SPV_READER
     return Failure{"Tint SPIR-V reader is not enabled"};
 #elif !TINT_BUILD_WGSL_WRITER

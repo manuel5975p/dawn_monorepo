@@ -390,9 +390,6 @@ TEST_P(OcclusionQueryTests, RewriteNoDrawToZero) {
     // TODO(dawn:1870): D3D11_QUERY_OCCLUSION_PREDICATE doesn't work on Intel Gen12.
     DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntelGen12());
 
-    // TODO(dawn:2247): Failing on ANGLE/D3D11
-    DAWN_SUPPRESS_TEST_IF(IsANGLED3D11());
-
     // TODO(42242119): hang/crash on Qualcomm Adreno X1.
     DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsQualcomm());
 
@@ -482,9 +479,6 @@ TEST_P(OcclusionQueryTests, RewriteNoDrawToZeroSeparateSubmit) {
 TEST_P(OcclusionQueryTests, RewriteToZeroWithDraw) {
     // TODO(dawn:1870): D3D11_QUERY_OCCLUSION_PREDICATE doesn't work on Intel Gen12.
     DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntelGen12());
-
-    // TODO(dawn:2247): Failing on ANGLE/D3D11
-    DAWN_SUPPRESS_TEST_IF(IsANGLED3D11());
 
     constexpr uint32_t kQueryCount = 1;
 
@@ -860,6 +854,10 @@ TEST_P(TimestampQueryTests, QuerySetCreation) {
 
 // Test calling timestamp query from command encoder
 TEST_P(TimestampQueryTests, TimestampOnCommandEncoder) {
+    // TODO(crbug.com/458607667): Flaky on WARP, but seemingly only on Debug
+    // builds built with MSVC.
+    DAWN_SUPPRESS_TEST_IF(IsWindows() && IsWARP() && IsWebGPUOnWebGPU());
+
     constexpr uint32_t kQueryCount = 2;
 
     // Write timestamp with different query indexes
@@ -920,6 +918,10 @@ TEST_P(TimestampQueryTests, TimestampWritesQueryIndexOnComputePass) {
 
 // Test timestampWrites with timestamp location in compute pass descriptor
 TEST_P(TimestampQueryTests, TimestampWritesLocationOnComputePass) {
+    // TODO(crbug.com/458607667): Flaky on WARP, but seemingly only on Debug
+    // builds built with MSVC.
+    DAWN_SUPPRESS_TEST_IF(IsWindows() && IsWARP());
+
     constexpr uint32_t kQueryCount = 2;
 
     // Set timestampWrites with only one value of ComputePassTimestampLocation
@@ -946,6 +948,7 @@ TEST_P(TimestampQueryTests, TimestampWritesOnComputePassWithNoPipline) {
     // TODO (dawn:1473): Metal fails to store GPU counters to sampleBufferAttachments on empty
     // encoders.
     DAWN_SUPPRESS_TEST_IF(IsMacOS() && IsMetal() && IsApple());
+    DAWN_SUPPRESS_TEST_IF(IsWebGPUOn(wgpu::BackendType::Metal));
 
     wgpu::QuerySet querySet = CreateQuerySetForTimestamp(2);
 
@@ -956,6 +959,7 @@ TEST_P(TimestampQueryTests, TimestampWritesOnComputePassWithNoPipline) {
 TEST_P(TimestampQueryTests, TimestampWritesQuerySetOnRenderPass) {
     // TODO (dawn:1473): Metal bug which fails to store GPU counters to different sample buffer.
     DAWN_SUPPRESS_TEST_IF(IsMacOS() && IsMetal() && IsApple());
+    DAWN_SUPPRESS_TEST_IF(IsWebGPUOn(wgpu::BackendType::Metal));
 
     // Set timestampWrites with different query set on same render pass
     wgpu::QuerySet querySet0 = CreateQuerySetForTimestamp(1);
@@ -1148,6 +1152,7 @@ TEST_P(TimestampQueryTests, ResolveTwiceToSameBuffer) {
 TEST_P(TimestampQueryTests, ManyWriteTimestampDistinctQuerySets) {
     // TODO(crbug.com/dawn/1829): Avoid OOM on Apple GPUs.
     DAWN_SUPPRESS_TEST_IF(IsApple());
+    DAWN_SUPPRESS_TEST_IF(IsWebGPUOn(wgpu::BackendType::Metal));
 
     constexpr uint32_t kQueryCount = 100;
     // Write timestamp with a different query sets many times
@@ -1311,21 +1316,24 @@ DAWN_INSTANTIATE_TEST(OcclusionQueryTests,
                       MetalBackend({"metal_fill_empty_occlusion_queries_with_zero"}),
                       OpenGLBackend(),
                       OpenGLESBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 DAWN_INSTANTIATE_TEST(TimestampQueryTests,
                       D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 DAWN_INSTANTIATE_TEST(TimestampQueryInsidePassesTests,
                       D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 
 }  // anonymous namespace
 }  // namespace dawn

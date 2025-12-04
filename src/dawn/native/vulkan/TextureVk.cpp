@@ -410,6 +410,33 @@ VkComponentSwizzle VulkanComponentSwizzle(wgpu::ComponentSwizzle swizzle) {
             DAWN_UNREACHABLE();
     }
 }
+
+void MaybeConvertDepthStencilSwizzleOneToAlpha(bool isDepthOrStencilFormat,
+                                               const VulkanDeviceInfo& deviceInfo,
+                                               wgpu::TextureComponentSwizzle* swizzle) {
+    // Exit early if the format isn't depth or stencil.
+    if (!isDepthOrStencilFormat) {
+        return;
+    }
+
+    // Exit early if the device supports VK_COMPONENT_SWIZZLE_ONE for depth/stencil formats.
+    // This is enabled by the VK_KHR_maintenance5 extension.
+    // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#textures-component-swizzle
+    if (deviceInfo.HasExt(DeviceExt::Maintenance5) &&
+        deviceInfo.propertiesMaintenance5.depthStencilSwizzleOneSupport == VK_TRUE) {
+        return;
+    }
+
+    for (auto* componentPtr : {&swizzle->r, &swizzle->g, &swizzle->b, &swizzle->a}) {
+        if (*componentPtr == wgpu::ComponentSwizzle::One) {
+            // Convert 'One' to 'Alpha' (which typically samples as 1.0)
+            // if the underlying Vulkan implementation doesn't support 'One' directly
+            // for depth/stencil formats.
+            *componentPtr = wgpu::ComponentSwizzle::A;
+        }
+    }
+}
+
 }  // namespace
 
 #define SIMPLE_FORMAT_MAPPING(X)                                                      \
@@ -632,7 +659,7 @@ VkImageUsageFlags VulkanImageUsage(const DeviceBase* device,
         // If the sampled texture is a depth/stencil texture, its image layout will be set
         // to DEPTH_STENCIL_READ_ONLY_OPTIMAL in order to support readonly depth/stencil
         // attachment. That layout requires DEPTH_STENCIL_ATTACHMENT_BIT image usage.
-        if (format.HasDepthOrStencil() && format.isRenderable) {
+        if (format.HasDepthOrStencil() && format.IsRenderable()) {
             flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
         }
     }
@@ -700,7 +727,7 @@ VkImageLayout VulkanImageLayout(const Format& format, wgpu::TextureUsage usage) 
             // The sampled image can be used as a readonly depth/stencil attachment at the same
             // time if it is a depth/stencil renderable format, so the image layout need to be
             // VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL.
-            if (format.HasDepthOrStencil() && format.isRenderable) {
+            if (format.HasDepthOrStencil() && format.IsRenderable()) {
                 return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             }
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -1120,8 +1147,25 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                 beginCmd.height = mipSize.height;
 
                 TextureViewDescriptor viewDesc = {};
+                viewDesc.label = "Dawn_ClearTexture_View";
                 viewDesc.format = GetFormat().format;
-                viewDesc.dimension = wgpu::TextureViewDimension::e2D;
+
+                uint32_t depthSliceCount = 1;
+                switch (GetDimension()) {
+                    case wgpu::TextureDimension::e2D:
+                        viewDesc.dimension = wgpu::TextureViewDimension::e2D;
+                        break;
+                    case wgpu::TextureDimension::e3D:
+                        viewDesc.dimension = wgpu::TextureViewDimension::e3D;
+                        depthSliceCount = mipSize.depthOrArrayLayers;
+                        DAWN_ASSERT(layer == 0);
+                        break;
+                    case wgpu::TextureDimension::e1D:
+                    case wgpu::TextureDimension::Undefined:
+                        DAWN_UNREACHABLE();
+                        break;
+                }
+
                 viewDesc.baseMipLevel = level;
                 viewDesc.mipLevelCount = 1u;
                 viewDesc.baseArrayLayer = layer;
@@ -1135,6 +1179,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
 
                 RenderPassColorAttachment colorAttachment{};
                 colorAttachment.view = beginCmd.colorAttachments[ca0].view.Get();
+
                 beginCmd.colorAttachments[ca0].clearColor = colorAttachment.clearValue = {
                     fClearColor, fClearColor, fClearColor, fClearColor};
                 beginCmd.colorAttachments[ca0].loadOp = colorAttachment.loadOp =
@@ -1145,11 +1190,18 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                 RenderPassDescriptor passDesc{};
                 passDesc.colorAttachmentCount = 1u;
                 passDesc.colorAttachments = &colorAttachment;
-                beginCmd.attachmentState = device->GetOrCreateAttachmentState(Unpack(&passDesc));
 
-                DAWN_TRY(
-                    RecordBeginRenderPass(recordingContext, ToBackend(GetDevice()), &beginCmd));
-                ToBackend(GetDevice())->fn.CmdEndRenderPass(recordingContext->commandBuffer);
+                for (uint32_t depthSlice = 0; depthSlice < depthSliceCount; ++depthSlice) {
+                    beginCmd.colorAttachments[ca0].depthSlice = colorAttachment.depthSlice =
+                        depthSlice;
+
+                    beginCmd.attachmentState =
+                        device->GetOrCreateAttachmentState(Unpack(&passDesc));
+
+                    DAWN_TRY(
+                        RecordBeginRenderPass(recordingContext, ToBackend(GetDevice()), &beginCmd));
+                    ToBackend(GetDevice())->fn.CmdEndRenderPass(recordingContext->commandBuffer);
+                }
             }
         }
     } else if (GetFormat().HasDepthOrStencil()) {
@@ -1199,15 +1251,17 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
         // need to clear the texture with a copy from buffer
         DAWN_ASSERT(range.aspects == Aspect::Color || range.aspects == Aspect::Plane0 ||
                     range.aspects == Aspect::Plane1 || range.aspects == Aspect::Plane2);
-        const TexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(range.aspects).block;
+        const TypedTexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(range.aspects).block;
 
-        Extent3D largestMipSize =
-            GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel, range.aspects);
+        BlockExtent3D largestMipSize = blockInfo.ToBlock(
+            GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel, range.aspects));
 
-        uint32_t bytesPerRow = Align((largestMipSize.width / blockInfo.width) * blockInfo.byteSize,
+        uint64_t bytesPerRow = Align(blockInfo.ToBytes(largestMipSize.width),
                                      device->GetOptimalBytesPerRowAlignment());
-        uint64_t uploadSize = bytesPerRow * (largestMipSize.height / blockInfo.height) *
-                              largestMipSize.depthOrArrayLayers;
+        BlockCount blocksPerRow = blockInfo.BytesToBlocks(bytesPerRow);
+        BlockCount uploadBlocks =
+            blocksPerRow * largestMipSize.height * largestMipSize.depthOrArrayLayers;
+        uint64_t uploadSize = blockInfo.ToBytes(uploadBlocks);
 
         DAWN_TRY(device->GetDynamicUploader()->WithUploadReservation(
             uploadSize, blockInfo.byteSize, [&](UploadReservation reservation) -> MaybeError {
@@ -1216,8 +1270,8 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                 std::vector<VkBufferImageCopy> regions;
                 for (uint32_t level = range.baseMipLevel;
                      level < range.baseMipLevel + range.levelCount; ++level) {
-                    Extent3D copySize =
-                        GetMipLevelSingleSubresourcePhysicalSize(level, range.aspects);
+                    BlockExtent3D copySize = blockInfo.ToBlock(
+                        GetMipLevelSingleSubresourcePhysicalSize(level, range.aspects));
                     imageRange.baseMipLevel = level;
                     for (uint32_t layer = range.baseArrayLayer;
                          layer < range.baseArrayLayer + range.layerCount; ++layer) {
@@ -1228,18 +1282,19 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                             continue;
                         }
 
-                        TexelCopyBufferLayout dataLayout;
-                        dataLayout.offset = reservation.offsetInBuffer;
-                        dataLayout.rowsPerImage = copySize.height / blockInfo.height;
-                        dataLayout.bytesPerRow = bytesPerRow;
+                        BufferCopy bufferCopy;
+                        bufferCopy.offset = reservation.offsetInBuffer;
+                        bufferCopy.blocksPerRow = blocksPerRow;
+                        bufferCopy.rowsPerImage = copySize.height;
+
                         TextureCopy textureCopy;
                         textureCopy.aspect = range.aspects;
                         textureCopy.mipLevel = level;
-                        textureCopy.origin = {0, 0, layer};
+                        textureCopy.origin = {TexelCount{0}, TexelCount{0}, TexelCount{layer}};
                         textureCopy.texture = this;
 
                         regions.push_back(
-                            ComputeBufferImageCopyRegion(dataLayout, textureCopy, copySize));
+                            ComputeBufferImageCopyRegion(bufferCopy, textureCopy, copySize));
                     }
                 }
 
@@ -1256,6 +1311,33 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
         device->IncrementLazyClearCountForTesting();
     }
     return {};
+}
+
+MaybeError Texture::PinImpl(wgpu::TextureUsage usage) {
+    // Pinning means that until unpinned, the texture will have specific usage and can be used
+    // freely in shaders without any further check or memory barrier tracking. Ensure all
+    // subresources are cleared and transitioned to the usage.
+    DAWN_ASSERT(!HasPinnedUsage());
+    SubresourceRange pinnedSubresources = GetAllSubresources();
+
+    CommandRecordingContext* recordingContext =
+        ToBackend(GetDevice()->GetQueue())->GetPendingRecordingContext(Queue::SubmitMode::Passive);
+    DAWN_TRY(EnsureSubresourceContentInitialized(recordingContext, pinnedSubresources));
+
+    TransitionUsageNow(recordingContext, usage, kAllStages, pinnedSubresources);
+
+    // TODO(https://crbug.com/435317394): Investigate what to do for imported textures. Should we
+    // consider a pin/unpin pair similar to an access on a queue such that we need to wait on fences
+    // or export them?
+    return {};
+}
+
+void Texture::UnpinImpl() {
+    DAWN_ASSERT(HasPinnedUsage());
+
+    // TODO(https://crbug.com/435317394): Investigate what to do for imported textures. Should we
+    // consider a pin/unpin pair similar to an access on a queue such that we need to wait on fences
+    // or export them?
 }
 
 MaybeError Texture::EnsureSubresourceContentInitialized(CommandRecordingContext* recordingContext,
@@ -2076,9 +2158,23 @@ VkImageViewCreateInfo TextureView::GetCreateInfo(wgpu::TextureFormat format,
         createInfo.format = VulkanImageFormat(device, format);
     }
 
-    createInfo.components = VkComponentMapping{
-        VulkanComponentSwizzle(GetSwizzleRed()), VulkanComponentSwizzle(GetSwizzleGreen()),
-        VulkanComponentSwizzle(GetSwizzleBlue()), VulkanComponentSwizzle(GetSwizzleAlpha())};
+    bool isDepthOrStencilFormat = GetTexture()->GetFormat().HasDepthOrStencil();
+    const wgpu::TextureComponentSwizzle kDefaultSwizzle =
+        isDepthOrStencilFormat ? kR001Swizzle : kRGBASwizzle;
+
+    auto swizzle = ComposeSwizzle(kDefaultSwizzle, GetSwizzle());
+    if (swizzle == kDefaultSwizzle) {
+        // We must use identity swizzle for render views.
+        // https://docs.vulkan.org/spec/latest/chapters/renderpass.html#VUID-VkFramebufferCreateInfo-pAttachments-00884
+        createInfo.components = VkComponentMapping{VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G,
+                                                   VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A};
+    } else {
+        MaybeConvertDepthStencilSwizzleOneToAlpha(isDepthOrStencilFormat, device->GetDeviceInfo(),
+                                                  &swizzle);
+        createInfo.components = VkComponentMapping{
+            VulkanComponentSwizzle(swizzle.r), VulkanComponentSwizzle(swizzle.g),
+            VulkanComponentSwizzle(swizzle.b), VulkanComponentSwizzle(swizzle.a)};
+    }
 
     const SubresourceRange& subresources = GetSubresourceRange();
     createInfo.subresourceRange.baseMipLevel = subresources.baseMipLevel;

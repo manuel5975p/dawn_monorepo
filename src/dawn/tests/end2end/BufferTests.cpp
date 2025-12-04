@@ -148,6 +148,10 @@ TEST_P(BufferMappingTests, MapRead_ZeroSized) {
 
 // Test map-reading with a non-zero offset
 TEST_P(BufferMappingTests, MapRead_NonZeroOffset) {
+    // TODO(crbug.com/465497435): Flakily hits timeout on Snapdragon X Elite
+    // SoCs.
+    DAWN_SUPPRESS_TEST_IF(IsWindows() && IsQualcomm() && IsD3D11());
+
     uint32_t myData[3] = {0x01020304, 0x05060708, 0x090A0B0C};
 
     wgpu::Buffer buffer = CreateMapReadBuffer(sizeof(myData));
@@ -234,6 +238,10 @@ TEST_P(BufferMappingTests, MapRead_Large) {
 
 // Test that GetConstMappedRange works inside map-read callback
 TEST_P(BufferMappingTests, MapRead_InCallback) {
+    // TODO(crbug.com/465497435): Flakily hits timeout on Snapdragon X Elite
+    // SoCs.
+    DAWN_SUPPRESS_TEST_IF(IsWindows() && IsQualcomm() && IsD3D11());
+
     constexpr size_t kBufferSize = 12;
     wgpu::Buffer buffer = CreateMapReadBuffer(kBufferSize);
 
@@ -435,6 +443,9 @@ TEST_P(BufferMappingTests, MapWrite_Large) {
 
 // Stress test mapping many buffers.
 TEST_P(BufferMappingTests, MapWrite_ManySimultaneous) {
+    // TODO(crbug.com/454861473): Flakily hangs indefinitely on Mac/AMD 5300M.
+    DAWN_SUPPRESS_TEST_IF(IsMacOS() && IsAMD() && IsMetal());
+
     constexpr uint32_t kDataSize = 1000;
     std::vector<uint32_t> myData;
     for (uint32_t i = 0; i < kDataSize; ++i) {
@@ -763,6 +774,10 @@ TEST_P(BufferMappingCallbackTests, EmptySubmissionWriteAndThenMap) {
 
     std::vector<bool> done = {false, false};
 
+    // With Vulkan Queue::WriteBuffers() doesn't encode any commands which need to be waited on so
+    // MapAsync() can happen immediately. On other platforms that isn't the case.
+    bool mapCompletesFirst = IsVulkan();
+
     // 1. submission without using buffer.
     SubmitCommandBuffer({});
     wgpu::Future f1 = queue.OnSubmittedWorkDone(
@@ -770,8 +785,7 @@ TEST_P(BufferMappingCallbackTests, EmptySubmissionWriteAndThenMap) {
             ASSERT_EQ(status, wgpu::QueueWorkDoneStatus::Success);
             done[0] = true;
 
-            // Step 2 callback should be called first, this is the second.
-            const std::vector<bool> kExpected = {true, false};
+            const std::vector<bool> kExpected = {true, mapCompletesFirst};
             EXPECT_EQ(done, kExpected);
         });
 
@@ -785,8 +799,7 @@ TEST_P(BufferMappingCallbackTests, EmptySubmissionWriteAndThenMap) {
                             ASSERT_EQ(status, wgpu::MapAsyncStatus::Success);
                             done[1] = true;
 
-                            // The buffer is not used by step 1, so this callback is called first.
-                            const std::vector<bool> kExpected = {true, true};
+                            const std::vector<bool> kExpected = {!mapCompletesFirst, true};
                             EXPECT_EQ(done, kExpected);
                         });
 
@@ -1064,14 +1077,15 @@ TEST_P(BufferTests, ZeroSizedBuffer) {
 
 // Test that creating a very large buffers fails gracefully.
 TEST_P(BufferTests, CreateBufferOOM) {
-    // TODO(crbug.com/346377856): fails on ANGLE/D3D11, but is likely a Dawn/GL bug that only
-    // repros on Windows for some reason
-    DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES() && IsANGLED3D11());
-
     // TODO(http://crbug.com/dawn/749): Missing support.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGL());
     DAWN_TEST_UNSUPPORTED_IF(IsAsan());
     DAWN_TEST_UNSUPPORTED_IF(IsTsan());
+
+    // TODO(crbug.com/452924802): Unable to allocate buffer with validation
+    // skipped on WebGPU on WebGPU w/ Metal/Vulkan backends.
+    DAWN_SUPPRESS_TEST_IF(IsWebGPUOn(wgpu::BackendType::Metal) && !IsBackendValidationEnabled());
+    DAWN_SUPPRESS_TEST_IF(IsWebGPUOn(wgpu::BackendType::Vulkan) && !IsBackendValidationEnabled());
 
     wgpu::BufferDescriptor descriptor;
     descriptor.usage = wgpu::BufferUsage::CopyDst;
@@ -1105,10 +1119,6 @@ TEST_P(BufferTests, CreateBufferOOMWithValidationError) {
 
 // Test that a very large buffer mappedAtCreation fails gracefully.
 TEST_P(BufferTests, BufferMappedAtCreationOOM) {
-    // TODO(crbug.com/346377856): fails on ANGLE/D3D11, but is likely a Dawn/GL bug that only
-    // repros on Windows for some reason
-    DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES() && IsANGLED3D11());
-
     // TODO(http://crbug.com/dawn/749): Missing support.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGL());
     DAWN_TEST_UNSUPPORTED_IF(IsAsan());
@@ -1232,14 +1242,15 @@ TEST_P(BufferTests, CreateErrorBuffer) {
 
 // Test that mapping an OOM buffer fails gracefully
 TEST_P(BufferTests, CreateBufferOOMMapAsync) {
-    // TODO(crbug.com/346377856): fails on ANGLE/D3D11, but is likely a Dawn/GL bug that only
-    // repros on Windows for some reason
-    DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES() && IsANGLED3D11());
-
     // TODO(http://crbug.com/dawn/749): Missing support.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGL());
     DAWN_TEST_UNSUPPORTED_IF(IsAsan());
     DAWN_TEST_UNSUPPORTED_IF(IsTsan());
+
+    // TODO(crbug.com/452924802): Unable to allocate buffer with validation
+    // skipped on WebGPU on WebGPU w/ Metal/Vulkan backends.
+    DAWN_SUPPRESS_TEST_IF(IsWebGPUOn(wgpu::BackendType::Metal) && !IsBackendValidationEnabled());
+    DAWN_SUPPRESS_TEST_IF(IsWebGPUOn(wgpu::BackendType::Vulkan) && !IsBackendValidationEnabled());
 
     auto RunTest = [this](const wgpu::BufferDescriptor& descriptor) {
         wgpu::Buffer buffer;
@@ -1335,6 +1346,10 @@ class BufferMapExtendedUsagesTests : public DawnTest {
         DAWN_TEST_UNSUPPORTED_IF(UsesWire());
         // Skip all tests if the required feature is not supported.
         DAWN_TEST_UNSUPPORTED_IF(!SupportsFeatures({wgpu::FeatureName::BufferMapExtendedUsages}));
+
+        // TODO(crbug.com/465167911): Flakily gets unexpected nullptrs on
+        // Snapdragon X Elite SoCs w/ D3D11.
+        DAWN_SUPPRESS_TEST_IF(IsWindows() && IsQualcomm() && IsD3D11());
     }
 
     std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
@@ -2040,7 +2055,8 @@ DAWN_INSTANTIATE_TEST(BufferMapExtendedUsagesTests,
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 
 }  // anonymous namespace
 }  // namespace dawn

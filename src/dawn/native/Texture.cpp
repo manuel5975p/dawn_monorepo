@@ -41,6 +41,7 @@
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/Device.h"
+#include "dawn/native/DynamicArrayState.h"
 #include "dawn/native/EnumMaskIterator.h"
 #include "dawn/native/ObjectType_autogen.h"
 #include "dawn/native/PassResourceUsage.h"
@@ -209,7 +210,7 @@ MaybeError ValidateSampleCount(const TextureDescriptor* descriptor,
                         "The depthOrArrayLayers (%u) of a multisampled texture is not 1.",
                         descriptor->size.depthOrArrayLayers);
 
-        DAWN_INVALID_IF(!format->supportsMultisample,
+        DAWN_INVALID_IF(!format->SupportsMultisample(),
                         "The texture format (%s) does not support multisampling.", format->format);
 
         // Compressed formats are not renderable. They cannot support multisample.
@@ -393,14 +394,13 @@ MaybeError ValidateTextureSize(const DeviceBase* device,
     return {};
 }
 
-MaybeError ValidateTextureUsage(const DeviceBase* device,
-                                wgpu::TextureDimension textureDimension,
-                                wgpu::TextureUsage usage,
-                                const Format* format,
-                                std::optional<wgpu::TextureUsage> allowedSharedTextureMemoryUsage) {
-    DAWN_TRY(dawn::native::ValidateTextureUsage(usage));
-
-    DAWN_INVALID_IF(usage == wgpu::TextureUsage::None, "The texture usage must not be 0.");
+MaybeError ValidateTextureUsageConstraints(
+    const DeviceBase* device,
+    wgpu::TextureDimension textureDimension,
+    wgpu::TextureUsage usage,
+    const Format* format,
+    std::optional<wgpu::TextureUsage> allowedSharedTextureMemoryUsage) {
+    DAWN_TRY(ValidateTextureUsage(usage));
 
     constexpr wgpu::TextureUsage kValidCompressedUsages = wgpu::TextureUsage::TextureBinding |
                                                           wgpu::TextureUsage::CopySrc |
@@ -411,7 +411,7 @@ MaybeError ValidateTextureUsage(const DeviceBase* device,
         format->format);
 
     DAWN_INVALID_IF(
-        !format->isRenderable && (usage & wgpu::TextureUsage::RenderAttachment),
+        !format->IsRenderable() && (usage & wgpu::TextureUsage::RenderAttachment),
         "The texture usage (%s) includes %s, which is incompatible with the non-renderable "
         "format (%s).",
         usage, wgpu::TextureUsage::RenderAttachment, format->format);
@@ -423,22 +423,22 @@ MaybeError ValidateTextureUsage(const DeviceBase* device,
                     usage, wgpu::TextureUsage::RenderAttachment, textureDimension);
 
     DAWN_INVALID_IF(
-        !(format->supportsReadOnlyStorageUsage || format->supportsWriteOnlyStorageUsage) &&
+        !(format->SupportsReadOnlyStorageUsage() || format->SupportsWriteOnlyStorageUsage()) &&
             (usage & wgpu::TextureUsage::StorageBinding),
         "The texture usage (%s) includes %s, which is incompatible with the format (%s).", usage,
         wgpu::TextureUsage::StorageBinding, format->format);
 
     DAWN_INVALID_IF(
-        !format->supportsStorageAttachment && (usage & wgpu::TextureUsage::StorageAttachment),
+        !format->SupportsStorageAttachment() && (usage & wgpu::TextureUsage::StorageAttachment),
         "The texture usage (%s) includes %s, which is incompatible with the format (%s).", usage,
         wgpu::TextureUsage::StorageAttachment, format->format);
 
     const auto kTransientAttachment = wgpu::TextureUsage::TransientAttachment;
     if (usage & kTransientAttachment) {
         DAWN_INVALID_IF(
-            !device->HasFeature(Feature::TransientAttachments),
-            "The texture usage (%s) includes %s, which requires the %s feature to be set", usage,
-            kTransientAttachment, ToAPI(Feature::TransientAttachments));
+            !device->IsToggleEnabled(Toggle::AllowUnsafeAPIs),
+            "The texture usage (%s) includes %s, which requires enabling toggle allow_unsafe_apis",
+            usage, kTransientAttachment);
 
         DAWN_INVALID_IF(
             usage == kTransientAttachment,
@@ -485,54 +485,19 @@ wgpu::TextureUsage GetTextureViewUsage(wgpu::TextureUsage sourceTextureUsage,
 MaybeError ValidateTextureComponentSwizzle(const DeviceBase* device,
                                            const TextureBase* texture,
                                            const UnpackedPtr<TextureViewDescriptor>& descriptor) {
-    auto* swizzleDesc = descriptor.Get<TextureComponentSwizzleDescriptor>();
-    if (!swizzleDesc) {
-        return {};
+    if (auto* swizzleDesc = descriptor.Get<TextureComponentSwizzleDescriptor>()) {
+        DAWN_INVALID_IF(!device->HasFeature(Feature::TextureComponentSwizzle),
+                        "swizzle used without the %s feature enabled.",
+                        wgpu::FeatureName::TextureComponentSwizzle);
+
+        auto swizzle = swizzleDesc->swizzle.WithTrivialFrontendDefaults();
+        DAWN_TRY(ValidateComponentSwizzle(swizzle.r));
+        DAWN_TRY(ValidateComponentSwizzle(swizzle.g));
+        DAWN_TRY(ValidateComponentSwizzle(swizzle.b));
+        DAWN_TRY(ValidateComponentSwizzle(swizzle.a));
     }
-
-    DAWN_INVALID_IF(!device->HasFeature(Feature::TextureComponentSwizzle),
-                    "swizzle used without the %s feature enabled.",
-                    wgpu::FeatureName::TextureComponentSwizzle);
-
-    wgpu::TextureUsage usage = GetTextureViewUsage(texture->GetUsage(), descriptor->usage);
-    if ((usage & (wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::StorageBinding)) ==
-        0) {
-        return {};
-    }
-
-    auto swizzle = swizzleDesc->swizzle.WithTrivialFrontendDefaults();
-    DAWN_INVALID_IF(swizzle.r != wgpu::ComponentSwizzle::R,
-                    "The texture view's component swizzle r (%s) must be %s when usage "
-                    "includes %s or %s.",
-                    swizzle.r, wgpu::ComponentSwizzle::R, wgpu::TextureUsage::RenderAttachment,
-                    wgpu::TextureUsage::StorageBinding);
-    DAWN_INVALID_IF(swizzle.g != wgpu::ComponentSwizzle::G,
-                    "The texture view's component swizzle g (%s) must be %s when usage "
-                    "includes %s or %s.",
-                    swizzle.g, wgpu::ComponentSwizzle::G, wgpu::TextureUsage::RenderAttachment,
-                    wgpu::TextureUsage::StorageBinding);
-    DAWN_INVALID_IF(swizzle.b != wgpu::ComponentSwizzle::B,
-                    "The texture view's component swizzle b (%s) must be %s when usage "
-                    "includes %s or %s.",
-                    swizzle.b, wgpu::ComponentSwizzle::B, wgpu::TextureUsage::RenderAttachment,
-                    wgpu::TextureUsage::StorageBinding);
-    DAWN_INVALID_IF(swizzle.a != wgpu::ComponentSwizzle::A,
-                    "The texture view's component swizzle a (%s) must be %s when usage "
-                    "includes %s or %s.",
-                    swizzle.a, wgpu::ComponentSwizzle::A, wgpu::TextureUsage::RenderAttachment,
-                    wgpu::TextureUsage::StorageBinding);
 
     return {};
-}
-
-wgpu::TextureUsage RemoveInvalidViewUsages(wgpu::TextureUsage viewUsage, const Format* viewFormat) {
-    wgpu::TextureUsage adjustedUsage = viewUsage;
-    if (viewFormat->format == wgpu::TextureFormat::RGBA8UnormSrgb ||
-        viewFormat->format == wgpu::TextureFormat::BGRA8UnormSrgb) {
-        adjustedUsage = viewUsage & ~wgpu::TextureUsage::StorageBinding;
-    }
-
-    return adjustedUsage;
 }
 
 MaybeError ValidateTextureViewUsage(const DeviceBase* device,
@@ -545,13 +510,8 @@ MaybeError ValidateTextureViewUsage(const DeviceBase* device,
                     "The texture view usage (%s) is not a subset of the texture usage (%s).",
                     inheritedUsage, texture->GetUsage());
 
-    // Validate the view usage only when it is explicitly requested for now because it is not yet
-    // possible to request view usage all the way from the WebGPU API.
-    if (usage != wgpu::TextureUsage::None) {
-        DAWN_TRY(ValidateTextureUsage(device, texture->GetDimension(), inheritedUsage, format, {}));
-    }
-
-    return {};
+    return ValidateTextureUsageConstraints(device, texture->GetDimension(), inheritedUsage, format,
+                                           {});
 }
 
 // We need to add an internal RenderAttachment usage to some textures that has CopyDst usage as we
@@ -703,7 +663,8 @@ wgpu::TextureUsage AddInternalUsages(const DeviceBase* device,
 
     bool supportsMSAAPartialResolve = device->HasFeature(Feature::DawnPartialLoadResolveTexture) &&
                                       sampleCount > 1 &&
-                                      (usage & wgpu::TextureUsage::RenderAttachment);
+                                      (usage & wgpu::TextureUsage::RenderAttachment) &&
+                                      ((usage & wgpu::TextureUsage::TransientAttachment) == 0);
     if (supportsMSAAPartialResolve) {
         internalUsage |= wgpu::TextureUsage::TextureBinding;
     }
@@ -711,8 +672,8 @@ wgpu::TextureUsage AddInternalUsages(const DeviceBase* device,
     return internalUsage;
 }
 
-wgpu::ComponentSwizzle ComposeSwizzleComponent(wgpu::ComponentSwizzle component,
-                                               wgpu::TextureComponentSwizzle swizzle) {
+wgpu::ComponentSwizzle ComposeSwizzleComponent(wgpu::TextureComponentSwizzle swizzle,
+                                               wgpu::ComponentSwizzle component) {
     switch (component) {
         case wgpu::ComponentSwizzle::Zero:
             return wgpu::ComponentSwizzle::Zero;
@@ -778,8 +739,10 @@ MaybeError ValidateTextureDescriptor(
             "validating viewFormats[%u]", i);
     }
 
-    DAWN_TRY(ValidateTextureUsage(device, descriptor->dimension, usage, format,
-                                  std::move(allowedSharedTextureMemoryUsage)));
+    DAWN_INVALID_IF(usage == wgpu::TextureUsage::None, "The texture usage must not be 0.");
+    DAWN_TRY(ValidateTextureUsageConstraints(device, descriptor->dimension, usage, format,
+                                             std::move(allowedSharedTextureMemoryUsage)));
+
     DAWN_TRY(ValidateTextureDimension(descriptor->dimension));
     if (!device->HasFlexibleTextureViews()) {
         const auto textureBindingViewDimension =
@@ -986,6 +949,16 @@ bool IsValidSampleCount(uint32_t sampleCount) {
     }
 }
 
+wgpu::TextureComponentSwizzle ComposeSwizzle(wgpu::TextureComponentSwizzle firstSwizzle,
+                                             wgpu::TextureComponentSwizzle secondSwizzle) {
+    return {
+        .r = ComposeSwizzleComponent(firstSwizzle, secondSwizzle.r),
+        .g = ComposeSwizzleComponent(firstSwizzle, secondSwizzle.g),
+        .b = ComposeSwizzleComponent(firstSwizzle, secondSwizzle.b),
+        .a = ComposeSwizzleComponent(firstSwizzle, secondSwizzle.a),
+    };
+}
+
 // TextureBase
 
 TextureBase::TextureState::TextureState() : hasAccess(true), destroyed(false) {}
@@ -1051,6 +1024,11 @@ void TextureBase::DestroyImpl() {
     // - It may be called when the last ref to the texture is dropped and the texture
     //   is implicitly destroyed. This case is thread-safe because there are no
     //   other threads using the texture since there are no other live refs.
+
+    // Destroying the texture implicitly unpins it so it can no longer be used via a dynamic binding
+    // array.
+    Unpin();
+
     mState.destroyed = true;
 
     // Drop all the cache references to TextureViews.
@@ -1228,6 +1206,18 @@ wgpu::TextureUsage TextureBase::GetInternalUsage() const {
     DAWN_ASSERT(!IsError());
     return mInternalUsage;
 }
+
+bool TextureBase::HasPinnedUsage() const {
+    DAWN_ASSERT(!IsError());
+    return mPinnedUsage != wgpu::TextureUsage::None;
+}
+
+wgpu::TextureUsage TextureBase::GetPinnedUsage() const {
+    DAWN_ASSERT(!IsError());
+    DAWN_ASSERT(HasPinnedUsage());
+    return mPinnedUsage;
+}
+
 void TextureBase::AddInternalUsage(wgpu::TextureUsage usage) {
     DAWN_ASSERT(!IsError());
     mInternalUsage |= usage;
@@ -1247,6 +1237,11 @@ void TextureBase::SetInitialized(bool initialized) {
 }
 
 ExecutionSerial TextureBase::OnEndAccess() {
+    // Ending access on the texture implicitly unpins it such that before it can be used in a
+    // dynamic array again, it must be re-pinned (which requires the access to have been restarted
+    // as well).
+    Unpin();
+
     mState.hasAccess = false;
     ExecutionSerial lastUsageSerial = mLastSharedTextureMemoryUsageSerial;
     mLastSharedTextureMemoryUsageSerial = kBeginningOfGPUTime;
@@ -1340,8 +1335,8 @@ bool TextureBase::IsReadOnly() const {
 
 bool TextureBase::CoversFullSubresource(uint32_t mipLevel,
                                         Aspect aspect,
-                                        const Extent3D& size) const {
-    Extent3D levelSize = GetMipLevelSingleSubresourcePhysicalSize(mipLevel, aspect);
+                                        const TexelExtent3D& size) const {
+    TexelExtent3D levelSize = GetMipLevelSingleSubresourcePhysicalSize(mipLevel, aspect);
     switch (GetDimension()) {
         case wgpu::TextureDimension::Undefined:
             DAWN_UNREACHABLE();
@@ -1538,6 +1533,153 @@ wgpu::TextureUsage TextureBase::APIGetUsage() const {
     return mUsage;
 }
 
+void TextureBase::APIPin(wgpu::TextureUsage usage) {
+    // There is no status to return so we don't need to handle the case where an error has been
+    // consumed.
+    [[maybe_unused]] bool hadError = GetDevice()->ConsumedError(
+        [&]() -> MaybeError {
+            if (GetDevice()->IsValidationEnabled()) {
+                DAWN_TRY(ValidatePin(usage));
+            }
+            return Pin(usage);
+        }(),
+        "calling %s.Pin(%u)", this, usage);
+}
+
+MaybeError TextureBase::Pin(wgpu::TextureUsage usage) {
+    // Ensure backends only see useful and balanced Pin/Unpin pairs.
+    if (mPinnedUsage == usage) {
+        return {};
+    }
+    if (HasPinnedUsage()) {
+        Unpin();
+    }
+    DAWN_ASSERT(!HasPinnedUsage());
+
+    DAWN_TRY(PinImpl(usage));
+
+    // Update the frontend state.
+    mPinnedUsage = usage;
+
+    // Call OnPinned for each of the slots. We would like to prune the entries to now destroyed
+    // DynamicArrayStates using the `it = set.erase(it)` std:: idiom, but that's not possible with
+    // absl::flat_hash_set. Instead track a list of entries to prune and do it in a second pass.
+    std::vector<DynamicArraySlot> slotsToPrune;
+    for (const auto& slot : mDynamicArraySlots) {
+        if (Ref<DynamicArrayState> dynamicArray = slot.dynamicArray.Promote()) {
+            dynamicArray->OnPinned(slot.slot, this);
+        } else {
+            slotsToPrune.push_back(slot);
+        }
+    }
+    for (const auto& slot : slotsToPrune) {
+        mDynamicArraySlots.erase(slot);
+    }
+
+    return {};
+}
+
+MaybeError TextureBase::PinImpl(wgpu::TextureUsage usage) {
+    DAWN_UNREACHABLE();
+}
+
+void TextureBase::APIUnpin() {
+    if (GetDevice()->IsValidationEnabled() &&
+        GetDevice()->ConsumedError(ValidateUnpin(), "calling %s.Unpin()", this)) {
+        return;
+    }
+
+    Unpin();
+}
+
+void TextureBase::Unpin() {
+    // Ensure backends only see useful and balanced Pin/Unpin pairs.
+    if (!HasPinnedUsage()) {
+        return;
+    }
+
+    UnpinImpl();
+
+    // Update the frontend state.
+    mPinnedUsage = wgpu::TextureUsage::None;
+
+    // Call OnUnpinned for each of the slots. We would like to prune the entries to now destroyed
+    // DynamicArrayStates using the `it = set.erase(it)` std:: idiom, but that's not possible with
+    // absl::flat_hash_set. Instead track a list of entries to prune and do it in a second pass.
+    std::vector<DynamicArraySlot> slotsToPrune;
+    for (const auto& slot : mDynamicArraySlots) {
+        if (Ref<DynamicArrayState> dynamicArray = slot.dynamicArray.Promote()) {
+            dynamicArray->OnUnpinned(slot.slot, this);
+        } else {
+            slotsToPrune.push_back(slot);
+        }
+    }
+    for (const auto& slot : slotsToPrune) {
+        mDynamicArraySlots.erase(slot);
+    }
+}
+
+void TextureBase::AddDynamicArraySlot(DynamicArrayState* dynamicArray, BindingIndex i) {
+    DAWN_ASSERT(!IsError());
+    // Note that this can be called after the texture is destroyed.
+    DynamicArraySlot slot = {dynamicArray, i};
+    auto [_, inserted] = mDynamicArraySlots.insert(slot);
+    DAWN_ASSERT(inserted);
+}
+
+void TextureBase::RemoveDynamicArraySlot(DynamicArrayState* dynamicArray, BindingIndex i) {
+    DAWN_ASSERT(!IsError());
+    // Note that this can be called after the texture is destroyed.
+    DynamicArraySlot slot = {dynamicArray, i};
+    bool removed = mDynamicArraySlots.erase(slot);
+    DAWN_ASSERT(removed);
+}
+
+size_t TextureBase::DynamicArraySlot::HashFuncs::operator()(const DynamicArraySlot& query) const {
+    size_t hash = 0;
+    HashCombine(&hash, query.dynamicArray, query.slot);
+    return hash;
+}
+
+bool TextureBase::DynamicArraySlot::HashFuncs::operator()(const DynamicArraySlot& a,
+                                                          const DynamicArraySlot& b) const {
+    return std::tie(a.dynamicArray, a.slot) == std::tie(b.dynamicArray, b.slot);
+}
+
+void TextureBase::UnpinImpl() {
+    DAWN_UNREACHABLE();
+}
+
+MaybeError TextureBase::ValidatePin(wgpu::TextureUsage usage) const {
+    DAWN_INVALID_IF(!GetDevice()->HasFeature(Feature::ChromiumExperimentalBindless),
+                    "Texture pinning used without %s enabled.",
+                    wgpu::FeatureName::ChromiumExperimentalBindless);
+
+    DAWN_INVALID_IF(mState.destroyed || !mState.hasAccess,
+                    "Texture is destroyed or without access.");
+
+    DAWN_TRY(ValidateTextureUsage(usage));
+    DAWN_INVALID_IF(!IsSubset(usage, mUsage),
+                    "Pinned usages %s are not a subset of %s's usages (%u).", usage, this, mUsage);
+    DAWN_INVALID_IF(!IsSubset(usage, kShaderTextureUsages),
+                    "Pinned usages %s contain non-shader usages.", usage);
+
+    // TODO(https://crbug.com/435317394): Support pinning for readonly storage and storage as well.
+    // This might require adding readonly storage in the API so it can be specified.
+    DAWN_INVALID_IF(
+        usage != wgpu::TextureUsage::TextureBinding,
+        "Pinned usages %s is not %s (which is required in the current bindless prototype).", usage,
+        wgpu::TextureUsage::TextureBinding);
+    return {};
+}
+
+MaybeError TextureBase::ValidateUnpin() const {
+    DAWN_INVALID_IF(!GetDevice()->HasFeature(Feature::ChromiumExperimentalBindless),
+                    "Texture unpinning used without %s enabled.",
+                    wgpu::FeatureName::ChromiumExperimentalBindless);
+    return {};
+}
+
 // TextureViewQuery
 
 TextureViewQuery::TextureViewQuery(const UnpackedPtr<TextureViewDescriptor>& desc) {
@@ -1588,8 +1730,7 @@ TextureViewBase::TextureViewBase(TextureBase* texture,
       mRange({ConvertViewAspect(*mFormat, descriptor->aspect),
               {descriptor->baseArrayLayer, descriptor->arrayLayerCount},
               {descriptor->baseMipLevel, descriptor->mipLevelCount}}),
-      mUsage(RemoveInvalidViewUsages(GetTextureViewUsage(texture->GetUsage(), descriptor->usage),
-                                     &mFormat.get())),
+      mUsage(GetTextureViewUsage(texture->GetUsage(), descriptor->usage)),
       mInternalUsage(
           AddInternalUsages(GetDevice(),
                             GetTextureViewUsage(texture->GetInternalUsage(), descriptor->usage),
@@ -1604,21 +1745,9 @@ TextureViewBase::TextureViewBase(TextureBase* texture,
         mSwizzleBlue = swizzle.b;
         mSwizzleAlpha = swizzle.a;
     }
+    mIsSwizzleIdentity = GetSwizzle() == kRGBASwizzle;
 
     GetObjectTrackingList()->Track(this);
-
-    // Emit a warning if invalid usages were removed for this view.
-    // TODO(363903526): Remove this warning after deprecation period.
-    wgpu::TextureUsage inheritedUsage = GetTextureViewUsage(texture->GetUsage(), descriptor->usage);
-    if (mUsage != inheritedUsage) {
-        DAWN_ASSERT(descriptor->usage == wgpu::TextureUsage::None);
-        std::string warning = absl::StrFormat(
-            "%s with format (%s) and inherited usage (%s) is deprecated. Please request explicit "
-            "usages on texture views when the view format is not compatible with all inherited "
-            "texture usages.",
-            this, mFormat->format, inheritedUsage);
-        GetDevice()->EmitWarningOnce(warning.c_str());
-    }
 }
 
 TextureViewBase::TextureViewBase(DeviceBase* device, ObjectBase::ErrorTag tag, StringView label)
@@ -1719,40 +1848,17 @@ wgpu::TextureUsage TextureViewBase::GetInternalUsage() const {
     return mInternalUsage;
 }
 
-wgpu::ComponentSwizzle TextureViewBase::GetSwizzleRed() const {
-    return mSwizzleRed;
+wgpu::TextureComponentSwizzle TextureViewBase::GetSwizzle() const {
+    return {
+        .r = mSwizzleRed,
+        .g = mSwizzleGreen,
+        .b = mSwizzleBlue,
+        .a = mSwizzleAlpha,
+    };
 }
 
-wgpu::ComponentSwizzle TextureViewBase::GetSwizzleGreen() const {
-    return mSwizzleGreen;
-}
-
-wgpu::ComponentSwizzle TextureViewBase::GetSwizzleBlue() const {
-    return mSwizzleBlue;
-}
-
-wgpu::ComponentSwizzle TextureViewBase::GetSwizzleAlpha() const {
-    return mSwizzleAlpha;
-}
-
-bool TextureViewBase::UsesNonDefaultSwizzle() const {
-    // TODO(414312052): Refine this condition. A view might not be strictly necessary
-    // in case of the given swizzle works identically to default with the original
-    // format, e.g. a R8Unorm texture with swizzle.r set to R and swizzle.g set to One.
-    // This current check provides a correct, though potentially overly broad,
-    // first approximation.
-    return mSwizzleRed != wgpu::ComponentSwizzle::R || mSwizzleGreen != wgpu::ComponentSwizzle::G ||
-           mSwizzleBlue != wgpu::ComponentSwizzle::B || mSwizzleAlpha != wgpu::ComponentSwizzle::A;
-}
-
-wgpu::TextureComponentSwizzle TextureViewBase::ComposeSwizzle(
-    wgpu::TextureComponentSwizzle swizzle) const {
-    wgpu::TextureComponentSwizzle result;
-    result.r = ComposeSwizzleComponent(mSwizzleRed, swizzle);
-    result.g = ComposeSwizzleComponent(mSwizzleGreen, swizzle);
-    result.b = ComposeSwizzleComponent(mSwizzleBlue, swizzle);
-    result.a = ComposeSwizzleComponent(mSwizzleAlpha, swizzle);
-    return result;
+bool TextureViewBase::IsSwizzleIdentity() const {
+    return mIsSwizzleIdentity;
 }
 
 bool TextureViewBase::IsYCbCr() const {

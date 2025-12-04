@@ -261,7 +261,7 @@ Device::Device(const ObjectBaseParams& params,
     if (descriptor != nullptr && descriptor->deviceLostCallbackInfo.callback != nullptr) {
         deviceLostCallbackInfo = descriptor->deviceLostCallbackInfo;
     }
-    mDeviceLostInfo.event = std::make_unique<DeviceLostEvent>(deviceLostCallbackInfo, this);
+    mDeviceLostInfo.event = AcquireRef(new DeviceLostEvent(deviceLostCallbackInfo, this));
 
     mUncapturedErrorCallbackInfo = kDefaultUncapturedErrorCallbackInfo;
     if (descriptor != nullptr && descriptor->uncapturedErrorCallbackInfo.callback != nullptr) {
@@ -358,13 +358,13 @@ WireResult Client::DoDeviceLostCallback(ObjectHandle eventManager,
 WGPUFuture Device::APIPopErrorScope(const WGPUPopErrorScopeCallbackInfo& callbackInfo) {
     Client* client = GetClient();
     auto [futureIDInternal, tracked] =
-        GetEventManager().TrackEvent(std::make_unique<PopErrorScopeEvent>(callbackInfo));
+        GetEventManager().TrackEvent(AcquireRef(new PopErrorScopeEvent(callbackInfo)));
     if (!tracked) {
         return {futureIDInternal};
     }
 
     DevicePopErrorScopeCmd cmd;
-    cmd.deviceId = GetWireId();
+    cmd.deviceId = GetWireHandle(client).id;
     cmd.eventManagerHandle = GetEventManagerHandle();
     cmd.future = {futureIDInternal};
     client->SerializeCommand(cmd);
@@ -412,7 +412,7 @@ WGPUQueue Device::APIGetQueue() {
 
         DeviceGetQueueCmd cmd;
         cmd.self = ToAPI(this);
-        cmd.result = mQueue->GetWireHandle();
+        cmd.result = mQueue->GetWireHandle(client);
 
         client->SerializeCommand(cmd);
     }
@@ -429,17 +429,17 @@ WGPUFuture Device::CreatePipelineAsync(Descriptor const* descriptor,
     Client* client = GetClient();
     Ref<Pipeline> pipeline = client->Make<Pipeline>();
     auto [futureIDInternal, tracked] =
-        GetEventManager().TrackEvent(std::make_unique<Event>(callbackInfo, pipeline));
+        GetEventManager().TrackEvent(AcquireRef(new Event(callbackInfo, pipeline)));
     if (!tracked) {
         return {futureIDInternal};
     }
 
     Cmd cmd;
-    cmd.deviceId = GetWireId();
+    cmd.deviceId = GetWireHandle(client).id;
     cmd.descriptor = descriptor;
     cmd.eventManagerHandle = GetEventManagerHandle();
     cmd.future = {futureIDInternal};
-    cmd.pipelineObjectHandle = pipeline->GetWireHandle();
+    cmd.pipelineObjectHandle = pipeline->GetWireHandle(client);
 
     client->SerializeCommand(cmd);
     return {futureIDInternal};

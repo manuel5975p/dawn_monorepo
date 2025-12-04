@@ -72,6 +72,7 @@
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/ir/var.h"
 #include "src/tint/lang/core/type/atomic.h"
+#include "src/tint/lang/core/type/binding_array.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
 #include "src/tint/lang/core/type/input_attachment.h"
@@ -106,7 +107,7 @@ class State {
   public:
     explicit State(const core::ir::Module& m) : mod(m) {}
 
-    Program Run(const ProgramOptions& options) {
+    Program Run(const Options& options) {
         core::ir::Capabilities caps{
             core::ir::Capability::kAllowMultipleEntryPoints,
             core::ir::Capability::kAllowOverrides,
@@ -268,12 +269,12 @@ class State {
                         Enable(wgsl::Extension::kClipDistances);
                         attrs.Push(b.Builtin(core::BuiltinValue::kClipDistances));
                         break;
-                    case core::BuiltinValue::kPrimitiveId:
-                        Enable(wgsl::Extension::kChromiumExperimentalPrimitiveId);
-                        attrs.Push(b.Builtin(core::BuiltinValue::kPrimitiveId));
+                    case core::BuiltinValue::kPrimitiveIndex:
+                        Enable(wgsl::Extension::kPrimitiveIndex);
+                        attrs.Push(b.Builtin(core::BuiltinValue::kPrimitiveIndex));
                         break;
                     default:
-                        TINT_UNIMPLEMENTED() << builtin.value();
+                        TINT_IR_UNIMPLEMENTED(mod) << builtin.value();
                 }
             }
             if (auto loc = param->Location()) {
@@ -330,7 +331,7 @@ class State {
                     ret_attrs.Push(b.Builtin(core::BuiltinValue::kSampleMask));
                     break;
                 default:
-                    TINT_UNIMPLEMENTED() << builtin.value();
+                    TINT_IR_UNIMPLEMENTED(mod) << builtin.value();
             }
         }
         if (auto loc = fn->ReturnLocation()) {
@@ -594,7 +595,7 @@ class State {
 
         // Return has arguments - this is the return value.
         if (ret->Args().Length() != 1) {
-            TINT_ICE() << "expected 1 value for return, got " << ret->Args().Length();
+            TINT_IR_ICE(mod) << "expected 1 value for return, got " << ret->Args().Length();
         }
 
         Append(b.Return(Expr(ret->Args().Front())));
@@ -603,7 +604,7 @@ class State {
     void Var(const core::ir::Var* var) {
         auto* val = var->Result();
         auto* ref = As<core::type::Reference>(val->Type());
-        TINT_ASSERT(ref /* converted by PtrToRef */);
+        TINT_IR_ASSERT(mod, ref /* converted by PtrToRef */);
         auto ty = Type(ref->StoreType());
         Symbol name = NameFor(var->Result());
         Bind(var->Result(), name);
@@ -637,7 +638,6 @@ class State {
                 b.GlobalVar(name, ty, init, ref->AddressSpace(), std::move(attrs));
                 return;
             case core::AddressSpace::kImmediate:
-                Enable(wgsl::Extension::kChromiumExperimentalImmediate);
                 b.GlobalVar(name, ty, init, ref->AddressSpace(), std::move(attrs));
                 return;
             default:
@@ -824,15 +824,20 @@ class State {
                     obj_ty = arr->ElemType();
                     expr = b.IndexAccessor(expr, Expr(index));
                 },
+                [&](const core::type::BindingArray* arr) {
+                    obj_ty = arr->ElemType();
+                    expr = b.IndexAccessor(expr, Expr(index));
+                },
                 [&](const core::type::Struct* s) {
                     if (auto* c = index->As<core::ir::Constant>()) {
                         auto i = c->Value()->ValueAs<uint32_t>();
-                        TINT_ASSERT(i < s->Members().Length());
+                        TINT_IR_ASSERT(mod, i < s->Members().Length());
                         auto* member = s->Members()[i];
                         obj_ty = member->Type();
                         expr = b.MemberAccessor(expr, SanitizedMemberName(member));
                     } else {
-                        TINT_ICE() << "invalid index for struct type: " << index->TypeInfo().name;
+                        TINT_IR_ICE(mod)
+                            << "invalid index for struct type: " << index->TypeInfo().name;
                     }
                 },  //
                 TINT_ICE_ON_NO_MATCH);
@@ -846,7 +851,7 @@ class State {
         Vector<char, 4> components;
         for (uint32_t i : s->Indices()) {
             if (i >= 4) {
-                TINT_ICE() << "invalid swizzle index: " << i;
+                TINT_IR_ICE(mod) << "invalid swizzle index: " << i;
             }
             components.Push(xyzw[i]);
         }
@@ -934,8 +939,8 @@ class State {
 
         auto lookup = bindings_.Get(value);
         if (!lookup) {
-            TINT_ICE() << "Expr(" << (value ? value->TypeInfo().name : "null")
-                       << ") value has no expression";
+            TINT_IR_ICE(mod) << "Expr(" << (value ? value->TypeInfo().name : "null")
+                             << ") value has no expression";
         }
 
         if (lookup->ast_expr != nullptr) {
@@ -1025,18 +1030,14 @@ class State {
                 }
 
                 auto el = Type(a->ElemType());
-                Vector<const ast::Attribute*, 1> attrs;
-                if (!a->IsStrideImplicit()) {
-                    attrs.Push(b.Stride(a->Stride()));
-                }
                 if (a->Count()->Is<core::type::RuntimeArrayCount>()) {
-                    return b.ty.array(el, std::move(attrs));
+                    return b.ty.array(el);
                 }
                 auto count = a->ConstantCount();
                 if (!count) {
-                    TINT_ICE() << core::type::Array::kErrExpectedConstantCount;
+                    TINT_IR_ICE(mod) << core::type::Array::kErrExpectedConstantCount;
                 }
-                return b.ty.array(el, u32(count.value()), std::move(attrs));
+                return b.ty.array(el, u32(count.value()));
             },
             [&](const core::type::Struct* s) { return Struct(s); },
             [&](const core::type::Atomic* a) { return b.ty.atomic(Type(a->Type())); },
@@ -1072,7 +1073,7 @@ class State {
                 return b.ty.ptr(address_space, el, access);
             },
             [&](const core::type::Reference*) -> ast::Type {
-                TINT_ICE() << "reference types should never appear in the IR";
+                TINT_IR_ICE(mod) << "reference types should never appear in the IR";
             },
             [&](const core::type::InputAttachment* i) {
                 Enable(wgsl::Extension::kChromiumInternalInputAttachments);
@@ -1084,6 +1085,17 @@ class State {
                 auto el = Type(m->Type());
                 return b.ty.subgroup_matrix(m->Kind(), el, m->Columns(), m->Rows());
             },  //
+            [&](const core::type::BindingArray* ba) {
+                auto el = Type(ba->ElemType());
+                if (ba->Count()->Is<core::type::RuntimeArrayCount>()) {
+                    TINT_IR_ICE(mod) << core::type::Array::kErrExpectedConstantCount;
+                }
+
+                if (auto* count = ba->Count()->As<core::type::ConstantArrayCount>()) {
+                    return b.ty.binding_array(el, u32(count->value));
+                }
+                TINT_IR_ICE(mod) << core::type::Array::kErrExpectedConstantCount;
+            },  //
             TINT_ICE_ON_NO_MATCH);
     }
 
@@ -1094,14 +1106,14 @@ class State {
         }
 
         auto n = structs_.GetOrAdd(s, [&] {
-            TINT_ASSERT(s->Members().Length() > 0);
+            TINT_IR_ASSERT(mod, s->Members().Length() > 0);
             uint32_t current_offset = s->Members()[0]->Offset();
 
             Vector<const ast::StructMember*, 8> members;
 
             // Add padding before the first member if necessary.
             if (current_offset > 0) {
-                TINT_ASSERT(current_offset % 4 == 0);
+                TINT_IR_ASSERT(mod, current_offset % 4 == 0);
                 for (uint32_t i = 0; i < current_offset; i += 4) {
                     members.Push(b.Member("tint_pad_" + std::to_string(i), b.ty.u32()));
                 }
@@ -1112,7 +1124,7 @@ class State {
                 const auto& ir_attrs = m->Attributes();
                 Vector<const ast::Attribute*, 4> ast_attrs;
 
-                TINT_ASSERT(current_offset == m->Offset());
+                TINT_IR_ASSERT(mod, current_offset == m->Offset());
 
                 // If the next member requires an offset that is not automatically satisfied by
                 // its required alignment, we will need to increase the size of this member.
@@ -1123,7 +1135,7 @@ class State {
                     auto next_member_required_offset = next_member->Offset();
                     if (next_offset < next_member_required_offset) {
                         uint32_t new_size = next_member_required_offset - current_offset;
-                        TINT_ASSERT(new_size > size);
+                        TINT_IR_ASSERT(mod, new_size > size);
                         size = new_size;
                     }
                     current_offset = next_member_required_offset;
@@ -1200,47 +1212,6 @@ class State {
     // Bindings
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
-    bool IsKeyword(std::string_view s) {
-        return s == "alias" || s == "break" || s == "case" || s == "const" || s == "const_assert" ||
-               s == "continue" || s == "continuing" || s == "default" || s == "diagnostic" ||
-               s == "discard" || s == "else" || s == "enable" || s == "false" || s == "fn" ||
-               s == "for" || s == "if" || s == "let" || s == "loop" || s == "override" ||
-               s == "requires" || s == "return" || s == "struct" || s == "switch" || s == "true" ||
-               s == "var" || s == "while";
-    }
-
-    bool IsEnumName(std::string_view s) {
-        return s == "read" || s == "write" || s == "read_write" || s == "function" ||
-               s == "private" || s == "workgroup" || s == "uniform" || s == "storage" ||
-               s == "rgba8unorm" || s == "rgba8snorm" || s == "rgba8uint" || s == "rgba8sint" ||
-               s == "rgba16uint" || s == "rgba16sint" || s == "rgba16float" || s == "r32uint" ||
-               s == "r32sint" || s == "r32float" || s == "rg32uint" || s == "rg32sint" ||
-               s == "rg32float" || s == "rgba32uint" || s == "rgba32sint" || s == "rgba32float" ||
-               s == "bgra8unorm";
-    }
-
-    bool IsTypeName(std::string_view s) {
-        return s == "bool" || s == "void" || s == "i32" || s == "u32" || s == "f32" || s == "f16" ||
-               s == "vec" || s == "vec2" || s == "vec3" || s == "vec4" || s == "vec2f" ||
-               s == "vec3f" || s == "vec4f" || s == "vec2h" || s == "vec3h" || s == "vec4h" ||
-               s == "vec2i" || s == "vec3i" || s == "vec4i" || s == "vec2u" || s == "vec3u" ||
-               s == "vec4u" || s == "mat2x2" || s == "mat2x3" || s == "mat2x4" || s == "mat3x2" ||
-               s == "mat3x3" || s == "mat3x4" || s == "mat4x2" || s == "mat4x3" || s == "mat4x4" ||
-               s == "mat2x2f" || s == "mat2x3f" || s == "mat2x4f" || s == "mat3x2f" ||
-               s == "mat3x3f" || s == "mat3x4f" || s == "mat4x2f" || s == "mat4x3f" ||
-               s == "mat4x4f" || s == "mat2x2h" || s == "mat2x3h" || s == "mat2x4h" ||
-               s == "mat3x2h" || s == "mat3x3h" || s == "mat3x4h" || s == "mat4x2h" ||
-               s == "mat4x3h" || s == "mat4x4h" || s == "atomic" || s == "array" || s == "ptr" ||
-               s == "texture_1d" || s == "texture_2d" || s == "texture_2d_array" ||
-               s == "texture_3d" || s == "texture_cube" || s == "texture_cube_array" ||
-               s == "texture_multisampled_2d" || s == "texture_depth_multisampled_2d" ||
-               s == "texture_external" || s == "texture_storage_1d" || s == "texture_storage_2d" ||
-               s == "texture_storage_2d_array" || s == "texture_storage_3d" ||
-               s == "texture_depth_2d" || s == "texture_depth_2d_array" ||
-               s == "texture_depth_cube" || s == "texture_depth_cube_array" || s == "sampler" ||
-               s == "sampler_comparison";
-    }
-
     bool IsWGSLSafe(std::string_view name) {
         // Make sure the name starts with an alphabetic character and then only contains
         // alphanumeric characters or underscores after that.
@@ -1282,7 +1253,7 @@ class State {
     }
 
     void Bind(const core::ir::Value* value, const core::ir::Value* expr) {
-        TINT_ASSERT(value);
+        TINT_IR_ASSERT(mod, value);
         if (value->IsUsed()) {
             bindings_.Replace(value, ValueBinding{.ir_expr = expr});
         } else {
@@ -1293,10 +1264,11 @@ class State {
     /// Associates the IR value @p value with the AST expression @p expr if it is used, otherwise
     /// creates a phony assignment with @p expr.
     void Bind(const core::ir::Value* value, const ast::Expression* expr) {
-        TINT_ASSERT(value);
+        TINT_IR_ASSERT(mod, value);
         if (value->IsUsed()) {
             if (!bindings_.Add(value, ValueBinding{.ast_expr = expr})) {
-                TINT_ICE() << "Bind(" << value->TypeInfo().name << ") called twice for same value";
+                TINT_IR_ICE(mod) << "Bind(" << value->TypeInfo().name
+                                 << ") called twice for same value";
             }
         } else {
             Append(b.Assign(b.Phony(), expr));
@@ -1306,9 +1278,10 @@ class State {
     /// Associates the IR value @p value with the AST 'var', 'let' or parameter with the name @p
     /// name.
     void Bind(const core::ir::Value* value, Symbol name) {
-        TINT_ASSERT(value);
+        TINT_IR_ASSERT(mod, value);
         if (!bindings_.Add(value, ValueBinding{.name = name})) {
-            TINT_ICE() << "Bind(" << value->TypeInfo().name << ") called twice for same value";
+            TINT_IR_ICE(mod) << "Bind(" << value->TypeInfo().name
+                             << ") called twice for same value";
         }
     }
 
@@ -1422,7 +1395,7 @@ class State {
 
 }  // namespace
 
-Program IRToProgram(const core::ir::Module& i, const ProgramOptions& options) {
+Program IRToProgram(const core::ir::Module& i, const Options& options) {
     return State{i}.Run(options);
 }
 

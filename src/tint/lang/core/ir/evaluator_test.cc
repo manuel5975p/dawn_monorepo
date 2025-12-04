@@ -43,7 +43,7 @@ namespace {
 using IR_EvaluatorTest = ir::IRTestHelper;
 
 TEST_F(IR_EvaluatorTest, InvalidExpression) {
-    auto* inst = b.Negation(mod.Types().u32(), 4_u);
+    auto* inst = b.Negation(4_u);
     b.ir.SetSource(inst, Source{{2, 3}});
     auto res = Eval(b, inst);
     ASSERT_NE(res, Success);
@@ -72,7 +72,7 @@ TEST_F(IR_EvaluatorTest, Bitcast) {
 }
 
 TEST_F(IR_EvaluatorTest, Unary) {
-    auto* inst = b.Complement(mod.Types().i32(), 4_i);
+    auto* inst = b.Complement(4_i);
     auto res = Eval(b, inst);
     ASSERT_EQ(res, Success);
 
@@ -84,7 +84,7 @@ TEST_F(IR_EvaluatorTest, Unary) {
 }
 
 TEST_F(IR_EvaluatorTest, Binary) {
-    auto* inst = b.Add(mod.Types().i32(), 1_i, 2_i);
+    auto* inst = b.Add(1_i, 2_i);
     auto res = Eval(b, inst);
     ASSERT_EQ(res, Success);
 
@@ -350,7 +350,7 @@ TEST_F(IR_EvaluatorTest, BuiltinCall) {
 
 TEST_F(IR_EvaluatorTest, MultiExpression) {
     auto* abs = b.Call(ty.i32(), core::BuiltinFn::kAbs, -1_i);
-    auto* mul = b.Multiply(ty.i32(), abs, 5_i);
+    auto* mul = b.Multiply(abs, 5_i);
     auto* cons = b.Construct(ty.vec2<i32>(), mul, mul);
     auto* inst = b.Swizzle(ty.i32(), cons, {1});
 
@@ -387,7 +387,7 @@ TEST_F(IR_EvaluatorTest, NonConstBuiltinCallArg) {
 
 TEST_F(IR_EvaluatorTest, NonConstCallInsideUnary) {
     auto* dpdx = b.Call(ty.f32(), core::BuiltinFn::kDpdx, 2.0_f);
-    auto* inst = b.Unary(core::UnaryOp::kNegation, ty.f32(), dpdx);
+    auto* inst = b.Negation(dpdx);
 
     auto res = Eval(b, inst);
     ASSERT_EQ(res, Success) << res.Failure();
@@ -398,7 +398,7 @@ TEST_F(IR_EvaluatorTest, NonConstCallInsideUnary) {
 
 TEST_F(IR_EvaluatorTest, NonConstCallInsideBinaryRHS) {
     auto* dpdx = b.Call(ty.f32(), core::BuiltinFn::kDpdx, 2.0_f);
-    auto* inst = b.Add(ty.f32(), 1.0_f, dpdx);
+    auto* inst = b.Add(1.0_f, dpdx);
 
     auto res = Eval(b, inst);
     ASSERT_EQ(res, Success) << res.Failure();
@@ -409,7 +409,7 @@ TEST_F(IR_EvaluatorTest, NonConstCallInsideBinaryRHS) {
 
 TEST_F(IR_EvaluatorTest, NonConstCallInsideBinaryLHS) {
     auto* dpdx = b.Call(ty.f32(), core::BuiltinFn::kDpdx, 2.0_f);
-    auto* inst = b.Add(ty.f32(), dpdx, 1.0_f);
+    auto* inst = b.Add(dpdx, 1.0_f);
 
     auto res = Eval(b, inst);
     ASSERT_EQ(res, Success) << res.Failure();

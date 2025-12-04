@@ -46,7 +46,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, Negation_F32) {
     auto* func = b.Function("foo", ty.f32());
     func->SetParams({value});
     b.Append(func->Block(), [&] {
-        auto* result = b.Negation<f32>(value);
+        auto* result = b.Negation(value);
         b.Return(func, result);
     });
 
@@ -72,7 +72,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, Negation_I32_Scalar) {
     auto* func = b.Function("foo", ty.i32());
     func->SetParams({value});
     b.Append(func->Block(), [&] {
-        auto* result = b.Negation<i32>(value);
+        auto* result = b.Negation(value);
         b.Return(func, result);
     });
 
@@ -108,7 +108,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, Disabled_Negation_I32_Scalar) {
     auto* func = b.Function("foo", ty.i32());
     func->SetParams({value});
     b.Append(func->Block(), [&] {
-        auto* result = b.Negation<i32>(value);
+        auto* result = b.Negation(value);
         b.Return(func, result);
     });
 
@@ -134,7 +134,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, Negation_I32_Vector) {
     auto* func = b.Function("foo", ty.vec4<i32>());
     func->SetParams({value});
     b.Append(func->Block(), [&] {
-        auto* result = b.Negation<vec4<i32>>(value);
+        auto* result = b.Negation(value);
         b.Return(func, result);
     });
 
@@ -171,7 +171,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, Disabled_Negation_I32_Vector) {
     auto* func = b.Function("foo", ty.vec4<i32>());
     func->SetParams({value});
     b.Append(func->Block(), [&] {
-        auto* result = b.Negation<vec4<i32>>(value);
+        auto* result = b.Negation(value);
         b.Return(func, result);
     });
 
@@ -198,7 +198,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, IntAdd_Scalar) {
     auto* func = b.Function("foo", ty.i32());
     func->SetParams({lhs, rhs});
     b.Append(func->Block(), [&] {
-        auto* result = b.Add<i32>(lhs, rhs);
+        auto* result = b.Add(lhs, rhs);
         b.Return(func, result);
     });
 
@@ -236,7 +236,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, Disabled_IntAdd_Scalar) {
     auto* func = b.Function("foo", ty.i32());
     func->SetParams({lhs, rhs});
     b.Append(func->Block(), [&] {
-        auto* result = b.Add<i32>(lhs, rhs);
+        auto* result = b.Add(lhs, rhs);
         b.Return(func, result);
     });
 
@@ -263,7 +263,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, IntMul_Scalar) {
     auto* func = b.Function("foo", ty.i32());
     func->SetParams({lhs, rhs});
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply<i32>(lhs, rhs);
+        auto* result = b.Multiply(lhs, rhs);
         b.Return(func, result);
     });
 
@@ -301,7 +301,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, Disabled_IntMul_Scalar) {
     auto* func = b.Function("foo", ty.i32());
     func->SetParams({lhs, rhs});
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply<i32>(lhs, rhs);
+        auto* result = b.Multiply(lhs, rhs);
         b.Return(func, result);
     });
 
@@ -328,7 +328,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, IntSub_Scalar) {
     auto* func = b.Function("foo", ty.i32());
     func->SetParams({lhs, rhs});
     b.Append(func->Block(), [&] {
-        auto* result = b.Subtract<i32>(lhs, rhs);
+        auto* result = b.Subtract(lhs, rhs);
         b.Return(func, result);
     });
 
@@ -366,7 +366,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, Disabled_IntSub_Scalar) {
     auto* func = b.Function("foo", ty.i32());
     func->SetParams({lhs, rhs});
     b.Append(func->Block(), [&] {
-        auto* result = b.Subtract<i32>(lhs, rhs);
+        auto* result = b.Subtract(lhs, rhs);
         b.Return(func, result);
     });
 
@@ -393,7 +393,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, IntAdd_Vector) {
     auto* func = b.Function("foo", ty.vec4<i32>());
     func->SetParams({lhs, rhs});
     b.Append(func->Block(), [&] {
-        auto* result = b.Add<vec4<i32>>(lhs, rhs);
+        auto* result = b.Add(lhs, rhs);
         b.Return(func, result);
     });
 
@@ -431,7 +431,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, Disabled_IntAdd_Vector) {
     auto* func = b.Function("foo", ty.vec4<i32>());
     func->SetParams({lhs, rhs});
     b.Append(func->Block(), [&] {
-        auto* result = b.Add<vec4<i32>>(lhs, rhs);
+        auto* result = b.Add(lhs, rhs);
         b.Return(func, result);
     });
 
@@ -458,7 +458,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, IntAdd_ScalarVector) {
     auto* func = b.Function("foo", ty.vec4<i32>());
     func->SetParams({lhs, rhs});
     b.Append(func->Block(), [&] {
-        auto* result = b.Add<vec4<i32>>(lhs, rhs);
+        auto* result = b.Add(lhs, rhs);
         b.Return(func, result);
     });
 
@@ -496,7 +496,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, Disabled_IntAdd_ScalarVector) {
     auto* func = b.Function("foo", ty.vec4<i32>());
     func->SetParams({lhs, rhs});
     b.Append(func->Block(), [&] {
-        auto* result = b.Add<vec4<i32>>(lhs, rhs);
+        auto* result = b.Add(lhs, rhs);
         b.Return(func, result);
     });
 
@@ -523,7 +523,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, IntAdd_VectorScalar) {
     auto* func = b.Function("foo", ty.vec4<i32>());
     func->SetParams({lhs, rhs});
     b.Append(func->Block(), [&] {
-        auto* result = b.Add<vec4<i32>>(lhs, rhs);
+        auto* result = b.Add(lhs, rhs);
         b.Return(func, result);
     });
 
@@ -561,7 +561,7 @@ TEST_F(IR_SignedIntegerPolyfillTest, Disabled_IntAdd_VectorScalar) {
     auto* func = b.Function("foo", ty.vec4<i32>());
     func->SetParams({lhs, rhs});
     b.Append(func->Block(), [&] {
-        auto* result = b.Add<vec4<i32>>(lhs, rhs);
+        auto* result = b.Add(lhs, rhs);
         b.Return(func, result);
     });
 

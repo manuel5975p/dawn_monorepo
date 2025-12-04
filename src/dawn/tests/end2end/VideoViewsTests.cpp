@@ -123,11 +123,6 @@ std::vector<wgpu::FeatureName> VideoViewsTestsBase::GetRequiredFeatures() {
     if (mIsUnorm16TextureFormatsSupported) {
         requiredFeatures.push_back(wgpu::FeatureName::Unorm16TextureFormats);
     }
-    mIsSnorm16TextureFormatsSupported =
-        SupportsFeatures({wgpu::FeatureName::Snorm16TextureFormats});
-    if (mIsSnorm16TextureFormatsSupported) {
-        requiredFeatures.push_back(wgpu::FeatureName::Snorm16TextureFormats);
-    }
     if (SupportsFeatures({wgpu::FeatureName::FlexibleTextureViews})) {
         requiredFeatures.push_back(wgpu::FeatureName::FlexibleTextureViews);
     }
@@ -166,10 +161,6 @@ bool VideoViewsTestsBase::IsMultiPlanarFormatNv12aSupported() const {
 
 bool VideoViewsTestsBase::IsUnorm16TextureFormatsSupported() const {
     return mIsUnorm16TextureFormatsSupported;
-}
-
-bool VideoViewsTestsBase::IsSnorm16TextureFormatsSupported() const {
-    return mIsSnorm16TextureFormatsSupported;
 }
 
 bool VideoViewsTestsBase::IsFormatSupported() const {
@@ -2730,7 +2721,7 @@ DAWN_INSTANTIATE_TEST_B(VideoViewsRenderTargetTests,
 
 DAWN_INSTANTIATE_TEST_B(VideoViewsExtendedUsagesTests,
                         {D3D11Backend(), D3D12Backend(), MetalBackend(), OpenGLBackend(),
-                         OpenGLESBackend(), VulkanBackend()},
+                         OpenGLESBackend(), VulkanBackend(), WebGPUBackend()},
                         {wgpu::TextureFormat::R8BG8Biplanar420Unorm,
                          wgpu::TextureFormat::R8BG8Biplanar422Unorm,
                          wgpu::TextureFormat::R8BG8Biplanar444Unorm,

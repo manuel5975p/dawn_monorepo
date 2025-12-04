@@ -36,7 +36,7 @@
 #include "src/tint/utils/text/string.h"
 
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #include <atlbase.h>
 #include <d3dcommon.h>
 #include <d3dcompiler.h>

@@ -641,8 +641,8 @@ class DepthStencilSamplingTest : public DawnTestWithParams<DepthStencilSamplingT
 
 // Repro test for crbug.com/dawn/1187 where sampling a depth texture returns values not in [0, 1]
 TEST_P(DepthStencilSamplingTest, CheckDepthTextureRange) {
-    // TODO(crbug.com/dawn/1187): The test fails on ANGLE D3D11, investigate why.
-    DAWN_SUPPRESS_TEST_IF(IsANGLED3D11());
+    // TODO(crbug.com/444741058): Fails on Intel-based brya devices running Android Desktop.
+    DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsIntel() && IsAndroid());
 
     constexpr uint32_t kWidth = 16;
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
@@ -928,9 +928,6 @@ TEST_P(DepthSamplingTest, SampleDepthOnly) {
     // TODO(crbug.com/dawn/2552): diagnose this flake on Pixel 6 OpenGLES
     DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsARM());
 
-    // TODO(crbug.com/341258943): Fails on Win/Intel UHD 770.
-    DAWN_SUPPRESS_TEST_IF(IsWindows() && IsIntelGen12() && IsANGLED3D11());
-
     wgpu::TextureFormat format = GetParam().mTextureFormat;
 
     // ULP for Depth16Unorm is 1 / (2 ^ 16 - 1). Similarly Depth24PlusStencil8 could be mapped to a
@@ -961,6 +958,7 @@ TEST_P(DepthSamplingTest, SampleDepthOnly) {
 TEST_P(DepthSamplingTest, CompareFunctionsRender) {
     // Initialization via renderPass loadOp doesn't work on Mac Intel.
     DAWN_SUPPRESS_TEST_IF(IsMetal() && IsIntel());
+    DAWN_SUPPRESS_TEST_IF(IsWebGPUOn(wgpu::BackendType::Metal) && IsIntel());
 
     // TODO(dawn:1549) Fails on Qualcomm-based Android devices.
     DAWN_SUPPRESS_TEST_IF(IsAndroid() && IsQualcomm());
@@ -1006,13 +1004,15 @@ TEST_P(StencilSamplingTest, SampleStencilOnly) {
 DAWN_INSTANTIATE_TEST_P(DepthStencilSamplingTest,
                         {D3D11Backend(), D3D11Backend({"use_packed_depth24_unorm_stencil8_format"}),
                          D3D12Backend(), D3D12Backend({"use_packed_depth24_unorm_stencil8_format"}),
-                         MetalBackend(), OpenGLBackend(), OpenGLESBackend(), VulkanBackend()},
+                         MetalBackend(), OpenGLBackend(), OpenGLESBackend(), VulkanBackend(),
+                         WebGPUBackend()},
                         std::vector<wgpu::TextureFormat>(utils::kDepthAndStencilFormats.begin(),
                                                          utils::kDepthAndStencilFormats.end()));
 
 DAWN_INSTANTIATE_TEST_P(DepthSamplingTest,
                         {D3D11Backend(), D3D11Backend({"use_packed_depth24_unorm_stencil8_format"}),
-                         MetalBackend(), OpenGLBackend(), OpenGLESBackend(), VulkanBackend()},
+                         MetalBackend(), OpenGLBackend(), OpenGLESBackend(), VulkanBackend(),
+                         WebGPUBackend()},
                         std::vector<wgpu::TextureFormat>(utils::kDepthFormats.begin(),
                                                          utils::kDepthFormats.end()));
 
@@ -1020,7 +1020,7 @@ DAWN_INSTANTIATE_TEST_P(StencilSamplingTest,
                         {D3D12Backend(), D3D12Backend({"use_packed_depth24_unorm_stencil8_format"}),
                          MetalBackend(),
                          MetalBackend({"metal_use_combined_depth_stencil_format_for_stencil8"}),
-                         OpenGLBackend(), OpenGLESBackend(), VulkanBackend()},
+                         OpenGLBackend(), OpenGLESBackend(), VulkanBackend(), WebGPUBackend()},
                         std::vector<wgpu::TextureFormat>(utils::kStencilFormats.begin(),
                                                          utils::kStencilFormats.end()));
 

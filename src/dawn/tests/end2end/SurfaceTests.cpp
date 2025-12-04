@@ -26,6 +26,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -217,19 +218,30 @@ class SurfaceTests : public DawnTest {
 // Basic test for creating a surface and presenting one frame.
 TEST_P(SurfaceTests, Basic) {
     wgpu::Surface surface = CreateTestSurface();
-
-    // Configure
     wgpu::SurfaceConfiguration config = GetPreferredConfiguration(surface);
-    surface.Configure(&config);
 
-    // Get texture
-    wgpu::SurfaceTexture surfaceTexture;
-    surface.GetCurrentTexture(&surfaceTexture);
-    ASSERT_EQ(surfaceTexture.status, wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal);
-    ClearTexture(surfaceTexture.texture, {1.0, 0.0, 0.0, 1.0});
+    // Test the preferred modes and Undefined=Fifo which are required to be supported.
+    std::set<wgpu::PresentMode> presentModes{
+        wgpu::PresentMode::Undefined,
+        wgpu::PresentMode::Fifo,
+        config.presentMode,
+    };
+    for (wgpu::PresentMode presentMode : presentModes) {
+        SCOPED_TRACE(absl::StrFormat("present mode: %d", presentMode));
 
-    // Present
-    ASSERT_EQ(wgpu::Status::Success, surface.Present());
+        // Configure
+        config.presentMode = presentMode;
+        surface.Configure(&config);
+
+        // Get texture
+        wgpu::SurfaceTexture surfaceTexture;
+        surface.GetCurrentTexture(&surfaceTexture);
+        ASSERT_EQ(surfaceTexture.status, wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal);
+        ClearTexture(surfaceTexture.texture, {1.0, 0.0, 0.0, 1.0});
+
+        // Present
+        ASSERT_EQ(wgpu::Status::Success, surface.Present());
+    }
 }
 
 // Test reconfiguring the surface
@@ -312,6 +324,10 @@ TEST_P(SurfaceTests, SwitchPresentMode) {
     // crbug.com/358166481
     DAWN_SUPPRESS_TEST_IF(IsLinux() && IsNvidia() && IsVulkan());
 
+    // TODO(crbug.com/463614521): Flakily causes a device loss on Snapdragon X
+    // Elite SoCs which causes all subsequent tests to fail.
+    DAWN_SUPPRESS_TEST_IF(IsWindows() && IsQualcomm() && IsD3D12());
+
     constexpr wgpu::PresentMode kAllPresentModes[] = {
         wgpu::PresentMode::Immediate,
         wgpu::PresentMode::Fifo,
@@ -379,6 +395,8 @@ TEST_P(SurfaceTests, ResizingSurfaceOnly) {
 TEST_P(SurfaceTests, ResizingWindowOnly) {
     // Hangs on NVIDIA GTX 1660
     DAWN_SUPPRESS_TEST_IF(IsD3D12() && IsNvidia());
+    // TODO(crbug.com/42241486): Crashes on Linux NVIDIA GTX 1660 with 535.183.01 driver
+    DAWN_SUPPRESS_TEST_IF(IsLinux() && IsVulkan() && IsNvidia());
 
     wgpu::Surface surface = CreateTestSurface();
     wgpu::SurfaceConfiguration config = GetPreferredConfiguration(surface);
@@ -400,6 +418,10 @@ TEST_P(SurfaceTests, ResizingWindowOnly) {
 TEST_P(SurfaceTests, ResizingWindowAndSurface) {
     // TODO(crbug.com/dawn/1205): Currently failing on new NVIDIA GTX 1660s on Linux/Vulkan.
     DAWN_SUPPRESS_TEST_IF(IsLinux() && IsVulkan() && IsNvidia());
+
+    // TODO(crbug.com/465497433): Flakily loses device on Snapdragon X Elite
+    // SoCs.
+    DAWN_SUPPRESS_TEST_IF(IsWindows() && IsQualcomm() && IsD3D12());
 
     wgpu::Surface surface = CreateTestSurface();
 
@@ -663,6 +685,7 @@ TEST_P(SurfaceTests, Storage) {
     ASSERT_EQ(wgpu::Status::Success, surface.Present());
 }
 
+// TODO(crbug.com/465183957): Implement swap chain for WebGPUBackend.
 DAWN_INSTANTIATE_TEST(SurfaceTests,
                       D3D11Backend(),
                       D3D11Backend({"d3d11_delay_flush_to_gpu"}),

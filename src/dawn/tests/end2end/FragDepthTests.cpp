@@ -91,9 +91,6 @@ TEST_P(FragDepthTests, ChangingPipelineLayoutDoesntInvalidateViewport) {
     // TODO(dawn:1805): Load ByteAddressBuffer in Pixel Shader doesn't work with NVIDIA on D3D11
     DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsNvidia());
 
-    // TODO(dawn:2393): ANGLE/D3D11 fails in HLSL shader compilation (UAV vs PS register bug)
-    DAWN_SUPPRESS_TEST_IF(IsANGLED3D11());
-
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
         @vertex fn vs() -> @builtin(position) vec4f {
             return vec4f(0.0, 0.0, 0.5, 1.0);
@@ -198,6 +195,8 @@ TEST_P(FragDepthTests, ChangingPipelineLayoutDoesntInvalidateViewport) {
 TEST_P(FragDepthTests, RasterizationClipBeforeFS) {
     // TODO(dawn:1616): Metal too needs to clamping of @builtin(frag_depth) to the viewport.
     DAWN_SUPPRESS_TEST_IF(IsMetal());
+    // TODO(crbug.com/452680504): Same as above but for WebGPU on Metal.
+    DAWN_SUPPRESS_TEST_IF(IsWebGPUOn(wgpu::BackendType::Metal));
 
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
         @vertex fn vs() -> @builtin(position) vec4f {
@@ -253,7 +252,8 @@ DAWN_INSTANTIATE_TEST(FragDepthTests,
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 
 }  // anonymous namespace
 }  // namespace dawn

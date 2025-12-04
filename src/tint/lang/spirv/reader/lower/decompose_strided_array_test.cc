@@ -46,7 +46,7 @@ class SpirvReader_DecomposeStridedArrayTest : public core::ir::transform::Transf
         }
         return ty.Get<spirv::type::ExplicitLayoutArray>(
             elem_ty, ty.Get<core::type::ConstantArrayCount>(static_cast<uint32_t>(count)),
-            elem_ty->Align(), stride * count, stride);
+            stride * count, stride);
     }
 
     const spirv::type::ExplicitLayoutArray* RuntimeArray(const core::type::Type* elem_ty,
@@ -55,7 +55,7 @@ class SpirvReader_DecomposeStridedArrayTest : public core::ir::transform::Transf
             stride = tint::RoundUp(elem_ty->Align(), elem_ty->Size());
         }
         return ty.Get<spirv::type::ExplicitLayoutArray>(
-            elem_ty, ty.Get<core::type::RuntimeArrayCount>(), elem_ty->Align(), stride, stride);
+            elem_ty, ty.Get<core::type::RuntimeArrayCount>(), stride, stride);
     }
 };
 
@@ -997,7 +997,7 @@ TEST_F(SpirvReader_DecomposeStridedArrayTest, RuntimeArray) {
     b.Append(f->Block(), [&] {
         auto* access = b.Access<ptr<storage, u32, read_write>>(var, 4_u);
         b.Let("value", b.Load(access));
-        b.Store(access, b.Add<u32>(b.Load(access), 1_u));
+        b.Store(access, b.Add(b.Load(access), 1_u));
         b.Return(f);
     });
 
@@ -1174,7 +1174,7 @@ TEST_F(SpirvReader_DecomposeStridedArrayTest, NaturalStride) {
     b.Append(f->Block(), [&] {
         auto* access = b.Access<ptr<storage, u32, read_write>>(var, 4_u);
         b.Let("value", b.Load(access));
-        b.Store(access, b.Add<u32>(b.Load(access), 1_u));
+        b.Store(access, b.Add(b.Load(access), 1_u));
         b.Return(f);
     });
 

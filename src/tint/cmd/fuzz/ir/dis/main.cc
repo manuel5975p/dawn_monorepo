@@ -105,17 +105,15 @@ enum class Format : uint8_t {
 /// @param filename the filename to inspect
 /// @returns the inferred format for the filename suffix
 Format InferFormat(const std::string& filename) {
-    if (tint::HasSuffix(filename, ".spv")) {
+    if (filename.ends_with(".spv")) {
         return Format::kSpirv;
     }
-    if (tint::HasSuffix(filename, ".spvasm")) {
+    if (filename.ends_with(".spvasm")) {
         return Format::kSpvAsm;
     }
-
-    if (tint::HasSuffix(filename, ".wgsl")) {
+    if (filename.ends_with(".wgsl")) {
         return Format::kWgsl;
     }
-
     return Format::kUnknown;
 }
 
@@ -208,7 +206,7 @@ Options:
     auto args = result.Get();
     if (args.Length() > 1) {
         std::cerr << "More than one input arg specified: "
-                  << tint::Join(Transform(args, tint::Quote), ", ") << "\n";
+                  << tint::Join(Transform(args, tint::cmd::Quote), ", ") << "\n";
         return false;
     }
 
@@ -274,7 +272,8 @@ bool EmitWGSL(const Options& options, tint::core::ir::Module& module) {
         return true;
     }
 
-    tint::wgsl::writer::ProgramOptions writer_options;
+    tint::wgsl::writer::Options writer_options;
+    writer_options.allowed_features = tint::wgsl::AllowedFeatures::Everything();
     auto output = tint::wgsl::writer::WgslFromIR(module, writer_options);
     if (output != tint::Success) {
         std::cerr << "Failed to convert IR to WGSL Program: " << output.Failure() << "\n";
@@ -372,20 +371,21 @@ bool Run(const Options& options) {
 
         if (options.validate) {
             auto res = tint::core::ir::Validate(
-                module.Get(), tint::core::ir::Capabilities{
-                                  tint::core::ir::Capability::kAllow8BitIntegers,
-                                  tint::core::ir::Capability::kAllow64BitIntegers,
-                                  tint::core::ir::Capability::kAllowClipDistancesOnF32,
-                                  tint::core::ir::Capability::kAllowHandleVarsWithoutBindings,
-                                  tint::core::ir::Capability::kAllowModuleScopeLets,
-                                  tint::core::ir::Capability::kAllowOverrides,
-                                  tint::core::ir::Capability::kAllowPointersAndHandlesInStructures,
-                                  tint::core::ir::Capability::kAllowRefTypes,
-                                  tint::core::ir::Capability::kAllowVectorElementPointer,
-                                  tint::core::ir::Capability::kAllowPrivateVarsInFunctions,
-                                  tint::core::ir::Capability::kAllowPhonyInstructions,
-                                  tint::core::ir::Capability::kAllowAnyLetType,
-                              });
+                module.Get(),
+                tint::core::ir::Capabilities{
+                    tint::core::ir::Capability::kAllow8BitIntegers,
+                    tint::core::ir::Capability::kAllow64BitIntegers,
+                    tint::core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
+                    tint::core::ir::Capability::kAllowHandleVarsWithoutBindings,
+                    tint::core::ir::Capability::kAllowModuleScopeLets,
+                    tint::core::ir::Capability::kAllowOverrides,
+                    tint::core::ir::Capability::kAllowPointersAndHandlesInStructures,
+                    tint::core::ir::Capability::kAllowRefTypes,
+                    tint::core::ir::Capability::kAllowVectorElementPointer,
+                    tint::core::ir::Capability::kAllowPrivateVarsInFunctions,
+                    tint::core::ir::Capability::kAllowPhonyInstructions,
+                    tint::core::ir::Capability::kAllowAnyLetType,
+                });
             if (res == tint::Success) {
                 std::cout << "IR module is valid.\n";
             } else {

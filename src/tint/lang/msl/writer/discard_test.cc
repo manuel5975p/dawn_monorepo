@@ -43,14 +43,14 @@ TEST_F(MslWriterTest, DiscardWithDemoteToHelper) {
         b.Return(func);
     });
 
-    auto* ep = b.Function("frag_main", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    auto* ep = b.Function("entry", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(ep->Block(), [&] {
         b.Call(func);
         b.Return(ep);
     });
 
     Options options;
-    options.disable_demote_to_helper = false;
+    options.extensions.disable_demote_to_helper = false;
 
     ASSERT_TRUE(Generate(options)) << err_ << output_.msl;
     EXPECT_EQ(output_.msl, MetalHeader() + R"(
@@ -64,7 +64,7 @@ void foo(tint_module_vars_struct tint_module_vars) {
   }
 }
 
-fragment void frag_main() {
+fragment void entry() {
   thread bool continue_execution = true;
   tint_module_vars_struct const tint_module_vars = tint_module_vars_struct{.continue_execution=(&continue_execution)};
   foo(tint_module_vars);
@@ -86,14 +86,14 @@ TEST_F(MslWriterTest, DiscardWithoutDemoteToHelper) {
         b.Return(func);
     });
 
-    auto* ep = b.Function("frag_main", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    auto* ep = b.Function("entry", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(ep->Block(), [&] {
         b.Call(func);
         b.Return(ep);
     });
 
     Options options;
-    options.disable_demote_to_helper = true;
+    options.extensions.disable_demote_to_helper = true;
 
     ASSERT_TRUE(Generate(options)) << err_ << output_.msl;
     EXPECT_EQ(output_.msl, MetalHeader() + R"(
@@ -103,7 +103,7 @@ void foo() {
   }
 }
 
-fragment void frag_main() {
+fragment void entry() {
   foo();
 }
 )");

@@ -437,6 +437,7 @@ TEST_F(BindGroupValidationTest, ExternalTextureBindingType) {
 
             wgpu::ExternalTextureBindingEntry errorExternalBindingEntry;
             errorExternalBindingEntry.externalTexture = errorExternalTexture;
+
             binding.nextInChain = &errorExternalBindingEntry;
             ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
             binding.nextInChain = nullptr;
@@ -454,18 +455,60 @@ TEST_F(BindGroupValidationTest, ExternalTextureBindingType) {
             wgpu::ExternalTexture externalTexture2 = device.CreateExternalTexture(&externalDesc);
             wgpu::ExternalTextureBindingEntry externalBindingEntry2;
             externalBindingEntry2.externalTexture = externalTexture2;
+
             externalBindingEntry.nextInChain = &externalBindingEntry2;
-
             ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
-        }
-
-        // Chaining a struct that isn't an external texture binding entry is an error.
-        {
-            wgpu::ExternalTextureBindingLayout externalBindingLayout;
-            binding.nextInChain = &externalBindingLayout;
-            ASSERT_DEVICE_ERROR(device.CreateBindGroup(&descriptor));
+            externalBindingEntry.nextInChain = nullptr;
         }
     }
+}
+
+// Test that an external texture entry must not have more chained structs
+TEST_F(BindGroupValidationTest, ExternalTextureAdditionalChain) {
+    // Create an external texture
+    wgpu::Texture texture =
+        CreateTexture(wgpu::TextureUsage::TextureBinding, kDefaultTextureFormat, 1);
+    wgpu::ExternalTextureDescriptor externalDesc = CreateDefaultExternalTextureDescriptor();
+    externalDesc.plane0 = texture.CreateView();
+    wgpu::ExternalTexture externalTexture = device.CreateExternalTexture(&externalDesc);
+
+    // Create a bind group layout for a single external texture
+    wgpu::BindGroupLayout layout = utils::MakeBindGroupLayout(
+        device, {{0, wgpu::ShaderStage::Fragment, &utils::kExternalTextureBindingLayout}});
+
+    // Prepare
+    wgpu::ExternalTextureBindingEntry externalBindingEntry;
+    externalBindingEntry.externalTexture = externalTexture;
+
+    wgpu::BindGroupEntry binding;
+    binding.binding = 0;
+    binding.nextInChain = &externalBindingEntry;
+
+    wgpu::BindGroupDescriptor bgDesc;
+    bgDesc.layout = layout;
+    bgDesc.entryCount = 1;
+    bgDesc.entries = &binding;
+
+    // Success case, having only the ExternalTextureBindingEntry is valid.
+    device.CreateBindGroup(&bgDesc);
+
+    // Error case, adding more to the chain produces an error.
+    wgpu::BufferDescriptor bufferDesc;
+    bufferDesc.size = 256;
+    bufferDesc.usage = wgpu::BufferUsage::TexelBuffer;
+    wgpu::Buffer buffer = device.CreateBuffer(&bufferDesc);
+
+    wgpu::TexelBufferViewDescriptor viewDesc = {};
+    viewDesc.format = wgpu::TextureFormat::R32Uint;
+    viewDesc.offset = 0;
+    viewDesc.size = 4;
+    wgpu::TexelBufferView view = buffer.CreateTexelView(&viewDesc);
+
+    wgpu::TexelBufferBindingEntry texelEntry = {};
+    texelEntry.texelBufferView = view;
+
+    externalBindingEntry.nextInChain = &texelEntry;
+    ASSERT_DEVICE_ERROR(device.CreateBindGroup(&bgDesc));
 }
 
 // Check that a texture binding must have the correct usage
@@ -2434,6 +2477,80 @@ TEST_F(BindGroupLayoutWithStaticSamplersValidationTest, StaticSamplerWithArraySi
     ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
 }
 
+// Test that the BGL visibility of a static sampler contain the shader's stage.
+TEST_F(BindGroupLayoutWithStaticSamplersValidationTest, BGLVisibilityContainsShaderStage) {
+    // Set up the static sampler binding but don't create the BGL yet.
+    wgpu::StaticSamplerBindingLayout staticSamplerBinding = {};
+    staticSamplerBinding.sampler = device.CreateSampler();
+
+    wgpu::BindGroupLayoutEntry binding = {};
+    binding.binding = 0;
+    binding.nextInChain = &staticSamplerBinding;
+
+    wgpu::BindGroupLayoutDescriptor desc = {};
+    desc.entryCount = 1;
+    desc.entries = &binding;
+
+    // Set up the compute pipeline but don't create it yet.
+    wgpu::ComputePipelineDescriptor csDesc;
+    csDesc.compute.module = utils::CreateShaderModule(device, R"(
+        @group(0) @binding(0) var s : sampler;
+        @compute @workgroup_size(1) fn main() {
+            _ = s;
+        }
+    )");
+
+    // Success case, the BGL contains compute.
+    binding.visibility = wgpu::ShaderStage::Compute;
+    wgpu::BindGroupLayout bglCompute = device.CreateBindGroupLayout(&desc);
+    csDesc.layout = utils::MakeBasicPipelineLayout(device, &bglCompute);
+    device.CreateComputePipeline(&csDesc);
+
+    // Error case, the BGL doesn't contains compute.
+    binding.visibility = wgpu::ShaderStage::Fragment;
+    wgpu::BindGroupLayout bglFragment = device.CreateBindGroupLayout(&desc);
+    csDesc.layout = utils::MakeBasicPipelineLayout(device, &bglFragment);
+    ASSERT_DEVICE_ERROR(device.CreateComputePipeline(&csDesc));
+}
+
+// Test that the BGL comparisoness for static sampler must match the shader.
+TEST_F(BindGroupLayoutWithStaticSamplersValidationTest, BGLComparisonessMatchesShader) {
+    // Set up the static sampler binding but don't create the BGL yet.
+    wgpu::StaticSamplerBindingLayout staticSamplerBinding = {};
+
+    wgpu::BindGroupLayoutEntry binding = {};
+    binding.binding = 0;
+    binding.visibility = wgpu::ShaderStage::Compute;
+    binding.nextInChain = &staticSamplerBinding;
+
+    wgpu::BindGroupLayoutDescriptor desc = {};
+    desc.entryCount = 1;
+    desc.entries = &binding;
+
+    // Set up the compute pipeline but don't create it yet.
+    wgpu::ComputePipelineDescriptor csDesc;
+    csDesc.compute.module = utils::CreateShaderModule(device, R"(
+        @group(0) @binding(0) var s : sampler;
+        @compute @workgroup_size(1) fn main() {
+            _ = s;
+        }
+    )");
+
+    // Success case, the BGL contains a non-comparison sampler, like the shader.
+    staticSamplerBinding.sampler = device.CreateSampler();
+    wgpu::BindGroupLayout bglCompute = device.CreateBindGroupLayout(&desc);
+    csDesc.layout = utils::MakeBasicPipelineLayout(device, &bglCompute);
+    device.CreateComputePipeline(&csDesc);
+
+    // Error case, the BGL contains a comparison sampler unlike the shader.
+    wgpu::SamplerDescriptor comparisonDesc = {};
+    comparisonDesc.compare = wgpu::CompareFunction::Never;
+    staticSamplerBinding.sampler = device.CreateSampler(&comparisonDesc);
+    wgpu::BindGroupLayout bglFragment = device.CreateBindGroupLayout(&desc);
+    csDesc.layout = utils::MakeBasicPipelineLayout(device, &bglFragment);
+    ASSERT_DEVICE_ERROR(device.CreateComputePipeline(&csDesc));
+}
+
 constexpr uint32_t kBindingSize = 8;
 
 class SetBindGroupValidationTest : public ValidationTest {
@@ -3556,6 +3673,25 @@ TEST_F(BindGroupLayoutCompatibilityTest, ExternalTextureBindGroupLayoutCompatibi
                                                {bgl}));
 }
 
+// Test that the ExternalTexture in the BGL must have visibility that's a superset of the shader.
+TEST_F(BindGroupLayoutCompatibilityTest, ExternalTextureLayoutVisibility) {
+    const char shader[] = R"(
+        @group(0) @binding(0) var myExternalTexture: texture_external;
+        @fragment fn main() {
+            _ = myExternalTexture;
+        })";
+
+    // Success case, visibility in the BGL contains Fragment.
+    wgpu::BindGroupLayout bglFragment = utils::MakeBindGroupLayout(
+        device, {{0, wgpu::ShaderStage::Fragment, &utils::kExternalTextureBindingLayout}});
+    CreateFSRenderPipeline(shader, {bglFragment});
+
+    // Error case, visibility in the BGL doesn't have Fragment.
+    wgpu::BindGroupLayout bglCompute = utils::MakeBindGroupLayout(
+        device, {{0, wgpu::ShaderStage::Compute, &utils::kExternalTextureBindingLayout}});
+    ASSERT_DEVICE_ERROR(CreateFSRenderPipeline(shader, {bglCompute}));
+}
+
 // Test that a BGL is compatible with a pipeline if a binding's array size is at least as big as the
 // shader's binding_array's size.
 TEST_F(BindGroupLayoutCompatibilityTest, ArraySizeCompatibility) {
@@ -4343,380 +4479,6 @@ TEST_F(PipelineLayoutValidationTest, ReuseEmptyBindGroupLayoutCreatedwithAutoPip
         ASSERT_DEVICE_ERROR(utils::MakePipelineLayout(device, bindGroupLayouts));
     }
 }
-
-class BindGroupValidationTest_ChromiumExperimentalBindless : public BindGroupValidationTest {
-  protected:
-    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
-        return {wgpu::FeatureName::ChromiumExperimentalBindless};
-    }
-};
-
-// Control case where creating a dynamic binding array layout with the feature enabled is valid.
-TEST_F(BindGroupValidationTest_ChromiumExperimentalBindless, LayoutSuccessWithFeatureEnabled) {
-    wgpu::BindGroupLayoutDynamicBindingArray dynamic;
-    dynamic.dynamicArray.kind = wgpu::DynamicBindingKind::SampledTexture;
-
-    wgpu::BindGroupLayoutDescriptor desc;
-    desc.nextInChain = &dynamic;
-
-    // No error is produced.
-    device.CreateBindGroupLayout(&desc);
-}
-
-// Error case where creating a dynamic binding array layout with the feature disabled is an error.
-TEST_F(BindGroupValidationTest, LayoutErrorWithFeatureDisabled) {
-    wgpu::BindGroupLayoutDynamicBindingArray dynamic;
-    dynamic.dynamicArray.kind = wgpu::DynamicBindingKind::SampledTexture;
-
-    wgpu::BindGroupLayoutDescriptor desc;
-    desc.nextInChain = &dynamic;
-
-    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
-}
-
-// Control case where creating a dynamic binding array bind group with the feature enabled is valid.
-TEST_F(BindGroupValidationTest_ChromiumExperimentalBindless, GroupSuccessWithFeatureEnabled) {
-    wgpu::BindGroupDynamicBindingArray dynamic;
-    dynamic.dynamicArraySize = 0;
-
-    wgpu::BindGroupDescriptor desc;
-    desc.nextInChain = &dynamic;
-    desc.layout = utils::MakeBindGroupLayout(device, {});
-
-    // No error is produced.
-    device.CreateBindGroup(&desc);
-}
-
-// Error case where creating a dynamic binding array bind group with the feature disabled is an
-// error.
-TEST_F(BindGroupValidationTest, GroupErrorWithFeatureDisabled) {
-    wgpu::BindGroupDynamicBindingArray dynamic;
-    dynamic.dynamicArraySize = 0;
-
-    wgpu::BindGroupDescriptor desc;
-    desc.nextInChain = &dynamic;
-    desc.layout = utils::MakeBindGroupLayout(device, {});
-
-    ASSERT_DEVICE_ERROR(device.CreateBindGroup(&desc));
-}
-
-// Check that using DynamicArrayKind::Undefined is an error.
-TEST_F(BindGroupValidationTest_ChromiumExperimentalBindless, UndefinedArrayKind) {
-    wgpu::BindGroupLayoutDynamicBindingArray dynamic;
-
-    wgpu::BindGroupLayoutDescriptor desc;
-    desc.nextInChain = &dynamic;
-
-    // Control case: SampledTexture is a valid kind.
-    dynamic.dynamicArray.kind = wgpu::DynamicBindingKind::SampledTexture;
-    device.CreateBindGroupLayout(&desc);
-
-    // Error case: Undefined is invalid.
-    dynamic.dynamicArray.kind = wgpu::DynamicBindingKind::Undefined;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
-}
-
-// Check that the start of the binding array must be less than maxBindingsPerBindGroup
-TEST_F(BindGroupValidationTest_ChromiumExperimentalBindless, DynamicArrayStartLimit) {
-    wgpu::BindGroupLayoutDynamicBindingArray dynamic;
-    dynamic.dynamicArray.kind = wgpu::DynamicBindingKind::SampledTexture;
-
-    wgpu::BindGroupLayoutDescriptor desc;
-    desc.nextInChain = &dynamic;
-
-    // No error is produced if we are under the limit.
-    dynamic.dynamicArray.start = kMaxBindingsPerBindGroup - 1;
-    device.CreateBindGroupLayout(&desc);
-
-    // Error case if we are at the limit.
-    dynamic.dynamicArray.start = kMaxBindingsPerBindGroup;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
-
-    // Error case if we are above the limit.
-    dynamic.dynamicArray.start = kMaxBindingsPerBindGroup + 1;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
-}
-
-// Check that conflicts of binding number are not allowed between dynamic and static bindings.
-TEST_F(BindGroupValidationTest_ChromiumExperimentalBindless, ConflictWithStaticBindings) {
-    wgpu::BindGroupLayoutEntry entry;
-    entry.binding = 0;
-    entry.bindingArraySize = 0;
-    entry.texture.sampleType = wgpu::TextureSampleType::Float;
-
-    wgpu::BindGroupLayoutDynamicBindingArray dynamic;
-    dynamic.dynamicArray.kind = wgpu::DynamicBindingKind::SampledTexture;
-    dynamic.dynamicArray.start = 3;
-
-    wgpu::BindGroupLayoutDescriptor desc;
-    desc.nextInChain = &dynamic;
-    desc.entryCount = 1;
-    desc.entries = &entry;
-
-    // Control case: the non-arrayed static binding is before the dynamic array.
-    entry.binding = 2;
-    entry.bindingArraySize = 1;
-    device.CreateBindGroupLayout(&desc);
-
-    // Error case: the non-arrayed static binding is after the dynamic array.
-    entry.binding = 3;
-    entry.bindingArraySize = 1;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
-
-    // Control case: the arrayed static binding is before the dynamic array.
-    entry.binding = 0;
-    entry.bindingArraySize = 3;
-    device.CreateBindGroupLayout(&desc);
-
-    // Error case: the arrayed static binding is after the dynamic array.
-    entry.binding = 0;
-    entry.bindingArraySize = 4;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroupLayout(&desc));
-}
-
-// Check that the layout must have a dynamic array part if the bind group is created on it has a
-// non-zero dynamic array size.
-TEST_F(BindGroupValidationTest_ChromiumExperimentalBindless, NonZeroSizeWithLayoutNoDynamicArray) {
-    wgpu::BindGroupDynamicBindingArray dynamic;
-
-    wgpu::BindGroupDescriptor desc;
-    desc.nextInChain = &dynamic;
-    desc.layout = utils::MakeBindGroupLayout(device, {});
-
-    // Control case: dynamicArraySize = 0 is valid with a layout without dynamic binding array.
-    dynamic.dynamicArraySize = 0;
-    device.CreateBindGroup(&desc);
-
-    // Error case: dynamicArraySize > 0 requires the layout to have a dynamic binding array.
-    dynamic.dynamicArraySize = 1;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroup(&desc));
-}
-
-// Check that the dynamic array size must be below the limit.
-TEST_F(BindGroupValidationTest_ChromiumExperimentalBindless, DynamicArraySizeLimit) {
-    wgpu::BindGroupLayoutDynamicBindingArray layoutDynamic;
-    layoutDynamic.dynamicArray.kind = wgpu::DynamicBindingKind::SampledTexture;
-    wgpu::BindGroupLayoutDescriptor layoutDesc;
-    layoutDesc.nextInChain = &layoutDynamic;
-
-    wgpu::BindGroupDynamicBindingArray dynamic;
-    wgpu::BindGroupDescriptor desc;
-    desc.nextInChain = &dynamic;
-    desc.layout = device.CreateBindGroupLayout(&layoutDesc);
-
-    // Control case: reaching the limit is valid.
-    dynamic.dynamicArraySize = kMaxDynamicBindingArraySize;
-    device.CreateBindGroup(&desc);
-
-    // Error case: going above the limit isn't.
-    dynamic.dynamicArraySize = kMaxDynamicBindingArraySize + 1;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroup(&desc));
-}
-
-// Check that specifying an entry that's neither a known static one or a dynamic one is an error.
-TEST_F(BindGroupValidationTest_ChromiumExperimentalBindless, EntryNeitherStaticNorDynamic) {
-    // Create a layout with a static entry at 0 and a dynamic binding array starting at 2.
-    wgpu::BindGroupLayoutDynamicBindingArray layoutDynamic;
-    layoutDynamic.dynamicArray.kind = wgpu::DynamicBindingKind::SampledTexture;
-    layoutDynamic.dynamicArray.start = 2;
-    wgpu::BindGroupLayoutEntry layoutEntry;
-    layoutEntry.binding = 0;
-    layoutEntry.texture.sampleType = wgpu::TextureSampleType::Float;
-    wgpu::BindGroupLayoutDescriptor layoutDesc;
-    layoutDesc.nextInChain = &layoutDynamic;
-    layoutDesc.entryCount = 1;
-    layoutDesc.entries = &layoutEntry;
-
-    // Create the texture to put in the bind group.
-    wgpu::TextureDescriptor tDesc;
-    tDesc.size = {1, 1};
-    tDesc.format = wgpu::TextureFormat::RGBA8Unorm;
-    tDesc.usage = wgpu::TextureUsage::TextureBinding;
-    wgpu::Texture texture = device.CreateTexture(&tDesc);
-
-    // Create a bind group on that layout with one or two static entries for 0/1.
-    wgpu::BindGroupDynamicBindingArray dynamic;
-    dynamic.dynamicArraySize = 10;
-    wgpu::BindGroupEntry entries[2];
-    entries[0].binding = 0;
-    entries[0].textureView = texture.CreateView();
-    entries[1].binding = 1;
-    entries[1].textureView = texture.CreateView();
-    wgpu::BindGroupDescriptor desc;
-    desc.nextInChain = &dynamic;
-    desc.layout = device.CreateBindGroupLayout(&layoutDesc);
-    desc.entries = entries;
-
-    // Control case: specifying only entry 0 which is in the layout is valid.
-    desc.entryCount = 1;
-    device.CreateBindGroup(&desc);
-
-    // Error case: specifying entry 1 which is not in the layout is an error.
-    desc.entryCount = 2;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroup(&desc));
-}
-
-// Check that even when the bind group has a dynamic binding array, forgetting a static entry is an
-// error.
-TEST_F(BindGroupValidationTest_ChromiumExperimentalBindless, MissingStaticEntry) {
-    // Create a layout with a static entry at 0 and a dynamic binding array starting at 1.
-    wgpu::BindGroupLayoutDynamicBindingArray layoutDynamic;
-    layoutDynamic.dynamicArray.kind = wgpu::DynamicBindingKind::SampledTexture;
-    layoutDynamic.dynamicArray.start = 1;
-    wgpu::BindGroupLayoutEntry layoutEntry;
-    layoutEntry.binding = 0;
-    layoutEntry.texture.sampleType = wgpu::TextureSampleType::Float;
-    wgpu::BindGroupLayoutDescriptor layoutDesc;
-    layoutDesc.nextInChain = &layoutDynamic;
-    layoutDesc.entryCount = 1;
-    layoutDesc.entries = &layoutEntry;
-
-    // Create the texture to put in the bind group.
-    wgpu::TextureDescriptor tDesc;
-    tDesc.size = {1, 1};
-    tDesc.format = wgpu::TextureFormat::RGBA8Unorm;
-    tDesc.usage = wgpu::TextureUsage::TextureBinding;
-    wgpu::Texture texture = device.CreateTexture(&tDesc);
-
-    // Create a bind group on that layout with or without a static entry at binding 0.
-    wgpu::BindGroupDynamicBindingArray dynamic;
-    dynamic.dynamicArraySize = 10;
-    wgpu::BindGroupEntry entry;
-    entry.binding = 0;
-    entry.textureView = texture.CreateView();
-    wgpu::BindGroupDescriptor desc;
-    desc.nextInChain = &dynamic;
-    desc.layout = device.CreateBindGroupLayout(&layoutDesc);
-    desc.entries = &entry;
-
-    // Control case: static entry 0 is specified.
-    desc.entryCount = 1;
-    device.CreateBindGroup(&desc);
-
-    // Error case: static entry 0 is missing, which is an error.
-    desc.entryCount = 0;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroup(&desc));
-}
-
-// Check that dynamic entries must be in bounds of the dynamic binding array.
-TEST_F(BindGroupValidationTest_ChromiumExperimentalBindless, BindingPastDynamicArray) {
-    // Create a layout with a static entry at 0 and a dynamic binding array starting at 1.
-    wgpu::BindGroupLayoutDynamicBindingArray layoutDynamic;
-    layoutDynamic.dynamicArray.kind = wgpu::DynamicBindingKind::SampledTexture;
-    layoutDynamic.dynamicArray.start = 2;
-    wgpu::BindGroupLayoutDescriptor layoutDesc;
-    layoutDesc.nextInChain = &layoutDynamic;
-
-    // Create the texture to put in the bind group.
-    wgpu::TextureDescriptor tDesc;
-    tDesc.size = {1, 1};
-    tDesc.format = wgpu::TextureFormat::RGBA8Unorm;
-    tDesc.usage = wgpu::TextureUsage::TextureBinding;
-    wgpu::Texture texture = device.CreateTexture(&tDesc);
-
-    // Create a bind group on that layout with an entry at binding 11 or 12.
-    wgpu::BindGroupDynamicBindingArray dynamic;
-    dynamic.dynamicArraySize = 10;
-    wgpu::BindGroupEntry entry;
-    entry.textureView = texture.CreateView();
-    wgpu::BindGroupDescriptor desc;
-    desc.nextInChain = &dynamic;
-    desc.layout = device.CreateBindGroupLayout(&layoutDesc);
-    desc.entries = &entry;
-    desc.entryCount = 1;
-
-    // Control case: entry is exactly at the end of the dynamic binding array.
-    entry.binding = 11;
-    device.CreateBindGroup(&desc);
-
-    // Error case: entry is past the end of the dynamic binding array, which is an error.
-    entry.binding = 12;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroup(&desc));
-}
-
-// Check that dynamic entries must not conflict.
-TEST_F(BindGroupValidationTest_ChromiumExperimentalBindless, DynamicEntryConflict) {
-    wgpu::BindGroupLayoutDynamicBindingArray layoutDynamic;
-    layoutDynamic.dynamicArray.kind = wgpu::DynamicBindingKind::SampledTexture;
-    wgpu::BindGroupLayoutDescriptor layoutDesc;
-    layoutDesc.nextInChain = &layoutDynamic;
-
-    // Create the texture to put in the bind group.
-    wgpu::TextureDescriptor tDesc;
-    tDesc.size = {1, 1};
-    tDesc.format = wgpu::TextureFormat::RGBA8Unorm;
-    tDesc.usage = wgpu::TextureUsage::TextureBinding;
-    wgpu::Texture texture = device.CreateTexture(&tDesc);
-
-    // Create a bind group on that layout with one or two static entries for 0/1.
-    wgpu::BindGroupDynamicBindingArray dynamic;
-    dynamic.dynamicArraySize = 10;
-    wgpu::BindGroupEntry entries[2];
-    entries[0].textureView = texture.CreateView();
-    entries[1].textureView = texture.CreateView();
-    wgpu::BindGroupDescriptor desc;
-    desc.nextInChain = &dynamic;
-    desc.layout = device.CreateBindGroupLayout(&layoutDesc);
-    desc.entryCount = 2;
-    desc.entries = entries;
-
-    // Control case: dynamic entries have different binding indices.
-    entries[0].binding = 0;
-    entries[1].binding = 1;
-    device.CreateBindGroup(&desc);
-
-    // Error case: dynamic entries have the same binding index, which is an error.
-    entries[0].binding = 0;
-    entries[1].binding = 0;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroup(&desc));
-}
-
-// Check that DynamicBindingKind::SampledTexture must be a texture entry.
-// TODO(https://issues.chromium.org/435251399): Figure out the additional validation rules for the
-// texture kind.
-TEST_F(BindGroupValidationTest_ChromiumExperimentalBindless, SampledTextureKindRequiresTexture) {
-    wgpu::BindGroupLayoutDynamicBindingArray layoutDynamic;
-    layoutDynamic.dynamicArray.kind = wgpu::DynamicBindingKind::SampledTexture;
-    wgpu::BindGroupLayoutDescriptor layoutDesc;
-    layoutDesc.nextInChain = &layoutDynamic;
-
-    // Create the texture to put in the bind group.
-    wgpu::TextureDescriptor tDesc;
-    tDesc.size = {1, 1};
-    tDesc.format = wgpu::TextureFormat::RGBA8Unorm;
-    tDesc.usage = wgpu::TextureUsage::TextureBinding;
-    wgpu::Texture texture = device.CreateTexture(&tDesc);
-
-    // Create the buffer to put in the bind group.
-    wgpu::BufferDescriptor bDesc;
-    bDesc.size = 4;
-    bDesc.usage = wgpu::BufferUsage::Storage;
-    wgpu::Buffer buffer = device.CreateBuffer(&bDesc);
-
-    // Create a bind group on that layout with one or two static entries for 0/1.
-    wgpu::BindGroupDynamicBindingArray dynamic;
-    dynamic.dynamicArraySize = 10;
-    wgpu::BindGroupDescriptor desc;
-    desc.nextInChain = &dynamic;
-    desc.layout = device.CreateBindGroupLayout(&layoutDesc);
-    desc.entryCount = 1;
-
-    // Control case: entry is a texture, which is valid.
-    wgpu::BindGroupEntry textureEntry;
-    textureEntry.binding = 0;
-    textureEntry.textureView = texture.CreateView();
-    desc.entries = &textureEntry;
-    device.CreateBindGroup(&desc);
-
-    // Error case: entry is a buffer, which is an error.
-    wgpu::BindGroupEntry bufferEntry;
-    bufferEntry.binding = 0;
-    bufferEntry.buffer = buffer;
-    desc.entries = &bufferEntry;
-    ASSERT_DEVICE_ERROR(device.CreateBindGroup(&desc));
-}
-
-// Dynamic entry that's not a texture.
 
 }  // anonymous namespace
 }  // namespace dawn

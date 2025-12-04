@@ -192,8 +192,9 @@ TEST(HashValueTest, PointerAlignment) {
     constexpr size_t kMask = (1 << (kLog2NumValues + 7)) - 1;
     size_t stuck_bits = (~bits_or | bits_and) & kMask;
     int stuck_bit_count = absl::popcount(stuck_bits);
-    // Test that there are at most 4 stuck bits.
-    EXPECT_LE(stuck_bit_count, 4) << "0x" << std::hex << stuck_bits;
+    size_t max_stuck_bits = 5;
+    EXPECT_LE(stuck_bit_count, max_stuck_bits)
+        << "0x" << std::hex << stuck_bits;
 
     total_stuck_bit_count += stuck_bit_count;
     ++test_count;
@@ -1241,6 +1242,9 @@ TEST(HashOf, DoubleSignCollision) {
 
 // Test for collisions in short strings if PrecombineLengthMix is low quality.
 TEST(PrecombineLengthMix, ShortStringCollision) {
+#if defined(__wasm__)
+  GTEST_SKIP() << "Fails flakily on wasm due to no ASLR and 32-bit size_t.";
+#endif
   std::string s1 = "00";
   std::string s2 = "000";
   constexpr char kMinChar = 0;
@@ -1307,7 +1311,7 @@ TEST(SwisstableCollisions, LowEntropyInts) {
     for (size_t i = 0; i < 128 * 1024; ++i) {
       size_t v = absl::rotl(i, bit);
       set.insert(v);
-      ASSERT_LT(HashtableDebugAccess<decltype(set)>::GetNumProbes(set, v), 32)
+      ASSERT_LT(HashtableDebugAccess<decltype(set)>::GetNumProbes(set, v), 48)
           << bit << " " << i;
     }
   }

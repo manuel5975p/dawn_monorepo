@@ -87,7 +87,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
                         break;
                     case core::BuiltinValue::kVertexIndex:
                     case core::BuiltinValue::kInstanceIndex:
-                    case core::BuiltinValue::kPrimitiveId:
+                    case core::BuiltinValue::kPrimitiveIndex:
                     case core::BuiltinValue::kSampleIndex:
                         ptr = ty.ptr(addrspace, ty.i32(), access);
                         break;
@@ -149,7 +149,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
             switch (builtin.value()) {
                 case core::BuiltinValue::kVertexIndex:
                 case core::BuiltinValue::kInstanceIndex:
-                case core::BuiltinValue::kPrimitiveId:
+                case core::BuiltinValue::kPrimitiveIndex:
                 case core::BuiltinValue::kSampleIndex: {
                     // GLSL uses i32 for these, so convert to u32.
                     value = builder.Convert(ty.u32(), value)->Result();
@@ -201,13 +201,13 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
 
             // Negate the gl_Position.y value
             auto* y = builder.Swizzle(ty.f32(), value, {1});
-            auto* new_y = builder.Negation(ty.f32(), y);
+            auto* new_y = builder.Negation(y);
 
             // Recalculate gl_Position.z = ((2.0f * gl_Position.z) - gl_Position.w);
             auto* z = builder.Swizzle(ty.f32(), value, {2});
             auto* w = builder.Swizzle(ty.f32(), value, {3});
-            auto* mul = builder.Multiply(ty.f32(), 2_f, z);
-            auto* new_z = builder.Subtract(ty.f32(), mul, w);
+            auto* mul = builder.Multiply(2_f, z);
+            auto* new_z = builder.Subtract(mul, w);
             value = builder.Construct(ty.vec4<f32>(), x, new_y, new_z, w)->Result();
         }
 

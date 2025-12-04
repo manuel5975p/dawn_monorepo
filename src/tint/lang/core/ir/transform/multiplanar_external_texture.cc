@@ -231,7 +231,7 @@ struct State {
                         b.InsertBefore(call, [&] {
                             auto* apparent_size = b.Access<vec2<u32>>(params, 12_u);
                             auto* vec2u_1_1 = b.Splat<vec2<u32>>(1_u);
-                            auto* dimensions = b.Add<vec2<u32>>(apparent_size, vec2u_1_1);
+                            auto* dimensions = b.Add(apparent_size, vec2u_1_1);
                             dimensions->SetResult(call->DetachResult());
                         });
                         call->Destroy();
@@ -259,7 +259,8 @@ struct State {
                         helper->InsertBefore(call);
                         call->Destroy();
                     } else {
-                        TINT_ICE() << "unhandled texture_external builtin call: " << call->Func();
+                        TINT_IR_ICE(ir)
+                            << "unhandled texture_external builtin call: " << call->Func();
                     }
                 },
                 [&](UserCall* call) {
@@ -354,14 +355,11 @@ struct State {
             auto* D_splat = b.Construct(vec3f, D);
             auto* abs_v = b.Call(vec3f, core::BuiltinFn::kAbs, v);
             auto* sign_v = b.Call(vec3f, core::BuiltinFn::kSign, v);
-            auto* cond = b.LessThan(ty.vec3<bool>(), abs_v, D_splat);
-            auto* t = b.Multiply(vec3f, sign_v, b.Add(vec3f, b.Multiply(vec3f, C, abs_v), F));
-            auto* f =
-                b.Multiply(vec3f, sign_v,
-                           b.Add(vec3f,
-                                 b.Call(vec3f, core::BuiltinFn::kPow,
-                                        b.Add(vec3f, b.Multiply(vec3f, A, abs_v), B), G_splat),
-                                 E));
+            auto* cond = b.LessThan(abs_v, D_splat);
+            auto* t = b.Multiply(sign_v, b.Add(b.Multiply(C, abs_v), F));
+            auto* f = b.Multiply(sign_v, b.Add(b.Call(vec3f, core::BuiltinFn::kPow,
+                                                      b.Add(b.Multiply(A, abs_v), B), G_splat),
+                                               E));
             b.Return(gamma_correction, b.Call(vec3f, core::BuiltinFn::kSelect, f, t, cond));
         });
 
@@ -421,7 +419,7 @@ struct State {
             auto* clamped_coords = b.Call(vec2u, core::BuiltinFn::kMin, coords, apparent_size);
             auto* clamped_coords_f = b.Convert(vec2f, clamped_coords);
             auto* modified_coords =
-                b.Multiply(vec2f, load_transform_matrix, b.Construct(vec3f, clamped_coords_f, 1_f));
+                b.Multiply(load_transform_matrix, b.Construct(vec3f, clamped_coords_f, 1_f));
             auto* plane0_clamped_f = b.Call(vec2f, core::BuiltinFn::kRound, modified_coords);
 
             auto* plane0_clamped = b.Convert(vec2u, plane0_clamped_f);
@@ -429,7 +427,7 @@ struct State {
             auto* rgb_result = b.InstructionResult(vec3f);
             auto* alpha_result = b.InstructionResult(ty.f32());
             auto* num_planes = b.Access(ty.u32(), params, 0_u);
-            auto* if_planes_eq_1 = b.If(b.Equal(ty.bool_(), num_planes, 1_u));
+            auto* if_planes_eq_1 = b.If(b.Equal(num_planes, 1_u));
             if_planes_eq_1->SetResults(rgb_result, alpha_result);
             b.Append(if_planes_eq_1->True(), [&] {
                 // Load the texel from the first plane and split into separate rgb and a values.
@@ -447,7 +445,7 @@ struct State {
                     0_u);
 
                 // Load the uv value from the second plane.
-                auto* plane1_clamped_f = b.Multiply(vec2f, plane0_clamped_f, plane1_coord_factor);
+                auto* plane1_clamped_f = b.Multiply(plane0_clamped_f, plane1_coord_factor);
 
                 auto* plane1_clamped = b.Convert(vec2u, plane1_clamped_f);
                 auto* uv = b.Swizzle(
@@ -457,20 +455,19 @@ struct State {
 
                 // Convert the combined yuv value into rgb and set the alpha to 1.0.
                 b.ExitIf(if_planes_eq_1,
-                         b.Multiply(vec3f, b.Construct(vec4f, y, uv, 1_f), yuv_to_rgb_conversion),
-                         1_f);
+                         b.Multiply(b.Construct(vec4f, y, uv, 1_f), yuv_to_rgb_conversion), 1_f);
             });
 
             // Apply gamma correction if needed.
             auto* final_result = b.InstructionResult(vec3f);
-            auto* if_gamma_correct = b.If(b.Equal(ty.bool_(), yuv_to_rgb_conversion_only, 0_u));
+            auto* if_gamma_correct = b.If(b.Equal(yuv_to_rgb_conversion_only, 0_u));
             if_gamma_correct->SetResult(final_result);
             b.Append(if_gamma_correct->True(), [&] {
                 auto* gamma_decode_params = b.Access(GammaTransferParams(), params, 3_u);
                 auto* gamma_encode_params = b.Access(GammaTransferParams(), params, 4_u);
                 auto* gamut_conversion_matrix = b.Access(ty.mat3x3<f32>(), params, 5_u);
                 auto* decoded = b.Call(vec3f, GammaCorrection(), rgb_result, gamma_decode_params);
-                auto* converted = b.Multiply(vec3f, gamut_conversion_matrix, decoded);
+                auto* converted = b.Multiply(gamut_conversion_matrix, decoded);
                 auto* encoded = b.Call(vec3f, GammaCorrection(), converted, gamma_encode_params);
                 b.ExitIf(if_gamma_correct, encoded);
             });
@@ -542,14 +539,14 @@ struct State {
             auto* sample_plane1_rect_max = b.Access(ty.vec2<f32>(), params, 11_u);
 
             auto* modified_coords =
-                b.Multiply(vec2f, transformation_matrix, b.Construct(vec3f, coords, 1_f));
+                b.Multiply(transformation_matrix, b.Construct(vec3f, coords, 1_f));
             auto* plane0_clamped = b.Call(vec2f, core::BuiltinFn::kClamp, modified_coords,
                                           sample_plane0_rect_min, sample_plane0_rect_max);
 
             auto* rgb_result = b.InstructionResult(vec3f);
             auto* alpha_result = b.InstructionResult(ty.f32());
             auto* num_planes = b.Access(ty.u32(), params, 0_u);
-            auto* if_planes_eq_1 = b.If(b.Equal(ty.bool_(), num_planes, 1_u));
+            auto* if_planes_eq_1 = b.If(b.Equal(num_planes, 1_u));
             if_planes_eq_1->SetResults(rgb_result, alpha_result);
             b.Append(if_planes_eq_1->True(), [&] {
                 // Sample the texel from the first plane and split into separate rgb and a values.
@@ -576,20 +573,19 @@ struct State {
 
                 // Convert the combined yuv value into rgb and set the alpha to 1.0.
                 b.ExitIf(if_planes_eq_1,
-                         b.Multiply(vec3f, b.Construct(vec4f, y, uv, 1_f), yuv_to_rgb_conversion),
-                         1_f);
+                         b.Multiply(b.Construct(vec4f, y, uv, 1_f), yuv_to_rgb_conversion), 1_f);
             });
 
             // Apply gamma correction if needed.
             auto* final_result = b.InstructionResult(vec3f);
-            auto* if_gamma_correct = b.If(b.Equal(ty.bool_(), yuv_to_rgb_conversion_only, 0_u));
+            auto* if_gamma_correct = b.If(b.Equal(yuv_to_rgb_conversion_only, 0_u));
             if_gamma_correct->SetResult(final_result);
             b.Append(if_gamma_correct->True(), [&] {
                 auto* gamma_decode_params = b.Access(GammaTransferParams(), params, 3_u);
                 auto* gamma_encode_params = b.Access(GammaTransferParams(), params, 4_u);
                 auto* gamut_conversion_matrix = b.Access(ty.mat3x3<f32>(), params, 5_u);
                 auto* decoded = b.Call(vec3f, GammaCorrection(), rgb_result, gamma_decode_params);
-                auto* converted = b.Multiply(vec3f, gamut_conversion_matrix, decoded);
+                auto* converted = b.Multiply(gamut_conversion_matrix, decoded);
                 auto* encoded = b.Call(vec3f, GammaCorrection(), converted, gamma_encode_params);
                 b.ExitIf(if_gamma_correct, encoded);
             });

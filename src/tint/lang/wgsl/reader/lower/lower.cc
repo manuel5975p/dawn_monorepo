@@ -195,8 +195,14 @@ core::BuiltinFn Convert(wgsl::BuiltinFn fn) {
         CASE(kSubgroupMatrixStore)
         CASE(kSubgroupMatrixMultiply)
         CASE(kSubgroupMatrixMultiplyAccumulate)
+        CASE(kSubgroupMatrixScalarAdd)
+        CASE(kSubgroupMatrixScalarSubtract)
+        CASE(kSubgroupMatrixScalarMultiply)
         CASE(kPrint)
-
+        CASE(kHasBinding)
+        CASE(kGetBinding)
+        CASE(kHasResource)
+        CASE(kGetResource)
         case tint::wgsl::BuiltinFn::kBitcast:               // should lower to ir::Bitcast
         case tint::wgsl::BuiltinFn::kWorkgroupUniformLoad:  // should be handled in Lower()
         case tint::wgsl::BuiltinFn::kTintMaterialize:
@@ -214,6 +220,8 @@ Result<SuccessType> Lower(core::ir::Module& mod) {
                                           core::ir::Capabilities{
                                               core::ir::Capability::kAllowMultipleEntryPoints,
                                               core::ir::Capability::kAllowOverrides,
+                                              core::ir::Capability::kAllowResourceBinding,
+                                              core::ir::Capability::kAllow8BitIntegers,
                                           });
     if (res != Success) {
         return res.Failure();

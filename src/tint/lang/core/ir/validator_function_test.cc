@@ -333,13 +333,13 @@ TEST_F(IR_ValidatorTest, Function_Param_Struct_MissingIOAnnotations) {
 TEST_F(IR_ValidatorTest, Function_Param_Struct_DuplicateAnnotations) {
     auto* f = ComputeEntryPoint("my_func");
     IOAttributes attr;
-    attr.location = 0;
+    attr.builtin = BuiltinValue::kPosition;
     auto* str_ty =
         ty.Struct(mod.symbols.New("MyStruct"), {
                                                    {mod.symbols.New("a"), ty.vec4<f32>(), attr},
                                                });
     auto* p = b.FunctionParam("my_param", str_ty);
-    p->SetLocation(0);
+    p->SetBuiltin(BuiltinValue::kPosition);
     f->SetParams({p});
 
     b.Append(f->Block(), [&] { b.Return(f); });
@@ -349,8 +349,8 @@ TEST_F(IR_ValidatorTest, Function_Param_Struct_DuplicateAnnotations) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:5:54 error: input param struct member has same IO annotation, as top-level struct, '@location'
-%my_func = @compute @workgroup_size(1u, 1u, 1u) func(%my_param:MyStruct [@location(0)]):void {
+            R"(:5:54 error: input param struct member has same IO annotation, as top-level struct, 'built-in'
+%my_func = @compute @workgroup_size(1u, 1u, 1u) func(%my_param:MyStruct [@position]):void {
                                                      ^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
 }
@@ -395,6 +395,1167 @@ TEST_F(IR_ValidatorTest, Function_Param_Struct_WorkgroupPlusOtherIOAnnotations) 
             R"(:5:54 error: input param struct member has more than one IO annotation, [ @location, <workgroup> ]
 %my_func = @compute @workgroup_size(1u, 1u, 1u) func(%my_param:MyStruct):void {
                                                      ^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Param_Location_InvalidType) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* p = b.FunctionParam("my_param", ty.bool_());
+    p->SetLocation(0);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:27 error: fragment entry point params can only be a bool if decorated with @builtin(front_facing)
+%my_func = @fragment func(%my_param:bool [@location(0)]):void {
+                          ^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Param_Struct_Location_InvalidType) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.location = 0;
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.bool_(), attr},
+                                               });
+    auto* p = b.FunctionParam("my_param", str_ty);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:5:27 error: fragment entry point params can only be a bool if decorated with @builtin(front_facing)
+%my_func = @fragment func(%my_param:MyStruct):void {
+                          ^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Param_Location_Struct_WithCapability) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* str_ty = ty.Struct(mod.symbols.New("MyStruct"), {
+                                                              {mod.symbols.New("a"), ty.f32()},
+                                                          });
+    auto* p = b.FunctionParam("my_param", str_ty);
+    p->SetLocation(0);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowLocationForNumericElements});
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Param_Location_Struct_WithoutCapability) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* str_ty = ty.Struct(mod.symbols.New("MyStruct"), {
+                                                              {mod.symbols.New("a"), ty.f32()},
+                                                          });
+    auto* p = b.FunctionParam("my_param", str_ty);
+    p->SetLocation(0);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:5:27 error: input param with a location attribute must be a numeric scalar or vector, but has type MyStruct
+%my_func = @fragment func(%my_param:MyStruct [@location(0)]):void {
+                          ^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_InputLocation_Duplicate_InParams) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* p1 = b.FunctionParam("p1", ty.f32());
+    p1->SetLocation(0);
+    auto* p2 = b.FunctionParam("p2", ty.f32());
+    p2->SetLocation(0);
+    f->SetParams({p1, p2});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:1:51 error: duplicate location(0) on entry point input
+%my_func = @fragment func(%p1:f32 [@location(0)], %p2:f32 [@location(0)]):void {
+                                                  ^^^^^^^
+
+:1:27 note: %p1 declared here
+%my_func = @fragment func(%p1:f32 [@location(0)], %p2:f32 [@location(0)]):void {
+                          ^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_InputLocation_Duplicate_InParamAndMSV) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* p1 = b.FunctionParam("p1", ty.f32());
+    p1->SetLocation(0);
+    f->SetParams({p1});
+
+    auto* v = b.Var("v", AddressSpace::kIn, ty.f32());
+    v->SetLocation(0);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Load(v);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:2:29 error: var: duplicate location(0) on entry point input
+  %v:ptr<__in, f32, read> = var undef @location(0)
+                            ^^^
+
+:5:27 note: %p1 declared here
+%my_func = @fragment func(%p1:f32 [@location(0)]):void {
+                          ^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_OutputLocation_Duplicate_InReturnAndMSV) {
+    auto* f = FragmentEntryPoint("my_func");
+    f->SetReturnType(ty.f32());
+    f->SetReturnLocation(0);
+
+    auto* v = b.Var("v", AddressSpace::kOut, ty.f32());
+    v->SetLocation(0);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Store(v, 1.0_f);
+        b.Return(f, 1.0_f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:2:36 error: var: duplicate location(0) on entry point output
+  %v:ptr<__out, f32, read_write> = var undef @location(0)
+                                   ^^^
+
+:5:1 note: %my_func declared here
+%my_func = @fragment func():f32 [@location(0)] {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_OutputLocation_Duplicate_InReturnStruct) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.location = 0;
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr},
+                                                   {mod.symbols.New("b"), ty.f32(), attr},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:6:1 error: duplicate location(0) on entry point output
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+
+:6:1 note: %my_func declared here
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_Compute_InputLocation_InParam) {
+    auto* f = ComputeEntryPoint("my_func");
+
+    auto* p = b.FunctionParam("p", ty.f32());
+    p->SetLocation(0);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:1:54 error: location attribute is not valid for compute shader inputs
+%my_func = @compute @workgroup_size(1u, 1u, 1u) func(%p:f32 [@location(0)]):void {
+                                                     ^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_Compute_InputLocation_InMSV) {
+    auto* f = ComputeEntryPoint("my_func");
+
+    auto* v = b.Var("v", AddressSpace::kIn, ty.f32());
+    v->SetLocation(0);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Load(v);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:2:29 error: var: location attribute is not valid for compute shader inputs
+  %v:ptr<__in, f32, read> = var undef @location(0)
+                            ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_Compute_OutputLocation) {
+    auto* f = ComputeEntryPoint("my_func");
+
+    auto* v = b.Var("v", AddressSpace::kOut, ty.f32());
+    v->SetLocation(0);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Store(v, 1.0_f);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_SameLocation_InputAndOutput) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* p = b.FunctionParam("p", ty.f32());
+    p->SetLocation(0);
+    f->SetParams({p});
+
+    f->SetReturnType(ty.f32());
+    f->SetReturnLocation(0);
+
+    b.Append(f->Block(), [&] { b.Return(f, 1.0_f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_SameLocation_DifferentEntryPoints) {
+    auto* f1 = FragmentEntryPoint("f1");
+    auto* p1 = b.FunctionParam("p1", ty.f32());
+    p1->SetLocation(0);
+    f1->SetParams({p1});
+    b.Append(f1->Block(), [&] { b.Return(f1); });
+
+    auto* f2 = FragmentEntryPoint("f2");
+    auto* p2 = b.FunctionParam("p2", ty.f32());
+    p2->SetLocation(0);
+    f2->SetParams({p2});
+    b.Append(f2->Block(), [&] { b.Return(f2); });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowMultipleEntryPoints});
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_Valid) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 1;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr0},
+                                                   {mod.symbols.New("b"), ty.f32(), attr1},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_TooManyLocations) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 1;
+
+    IOAttributes attr2;
+    attr2.location = 1;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr0},
+                                                   {mod.symbols.New("b"), ty.f32(), attr1},
+                                                   {mod.symbols.New("c"), ty.f32(), attr2},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:7:1 error: structs with blend_src members must have exactly 2 members with location annotations
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_Input) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 1;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr0},
+                                                   {mod.symbols.New("b"), ty.f32(), attr1},
+                                               });
+    auto* p = b.FunctionParam("p", str_ty);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(R"(:6:27 error: blend_src can only be used on fragment shader outputs
+%my_func = @fragment func(%p:MyStruct):void {
+                          ^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_NotFragment) {
+    auto* f = ComputeEntryPoint("my_func");
+
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 1;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr0},
+                                                   {mod.symbols.New("b"), ty.f32(), attr1},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(R"(:6:1 error: blend_src can only be used on fragment shader outputs
+%my_func = @compute @workgroup_size(1u, 1u, 1u) func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_WrongMemberCount) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {{mod.symbols.New("a"), ty.f32(), attr0}});
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:5:1 error: structs with blend_src members must have exactly 2 members with location annotations
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_WrongLocation) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr0;
+    attr0.location = 1;
+    attr0.blend_src = 0;
+
+    IOAttributes attr1;
+    attr1.location = 1;
+    attr1.blend_src = 1;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr0},
+                                                   {mod.symbols.New("b"), ty.f32(), attr1},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:6:1 error: struct members with blend_src must be located at 0
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_MissingLocation) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+
+    IOAttributes attr1;
+    attr1.blend_src = 1;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr0},
+                                                   {mod.symbols.New("b"), ty.f32(), attr1},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:6:1 error: struct members with blend_src must be located at 0
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_DifferentMemberTypes) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 1;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.vec4<f32>(), attr0},
+                                                   {mod.symbols.New("b"), ty.f32(), attr1},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:6:1 error: blend_src type f32 does not match other blend_src type vec4<f32>
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_InvalidMemberType) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 1;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.bool_(), attr0},
+                                                   {mod.symbols.New("b"), ty.bool_(), attr1},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:6:1 error: blend_src must be a numeric scalar or vector, but has type bool
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_MissingBlendSrc0) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.location = 0;
+    attr.blend_src = 1;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr},
+                                                   {mod.symbols.New("b"), ty.f32(), attr},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:6:1 error: if any @blend_src is used on an output, then @blend_src(0) and @blend_src(1) must be used
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_MissingBlendSrc1) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.location = 0;
+    attr.blend_src = 0;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr},
+                                                   {mod.symbols.New("b"), ty.f32(), attr},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:6:1 error: if any @blend_src is used on an output, then @blend_src(0) and @blend_src(1) must be used
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_InvalidBlendSrcValue) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 2;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr0},
+                                                   {mod.symbols.New("b"), ty.f32(), attr1},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:6:1 error: blend_src value must be 0 or 1
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_DuplicateBlendSrcValue) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 0;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr0},
+                                                   {mod.symbols.New("b"), ty.f32(), attr1},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:6:1 error: duplicate blend_src(0) on entry point output
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_DuplicateLocation_Unused) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    // A valid blend_src struct at location 0.
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 1;
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr0},
+                                                   {mod.symbols.New("b"), ty.f32(), attr1},
+                                               });
+    f->SetReturnType(str_ty);
+
+    // Another output variable also at location 0.
+    auto* v = b.Var("v", AddressSpace::kOut, ty.f32());
+    v->SetLocation(0);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_DuplicateLocation_Used) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    // A valid blend_src struct at location 0.
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 1;
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr0},
+                                                   {mod.symbols.New("b"), ty.f32(), attr1},
+                                               });
+    f->SetReturnType(str_ty);
+
+    // Another output variable also at location 0.
+    auto* v = b.Var("v", AddressSpace::kOut, ty.f32());
+    v->SetLocation(0);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Store(v, 1.0_f);
+        b.Unreachable();
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:7:36 error: var: duplicate location(0) on entry point output
+  %v:ptr<__out, f32, read_write> = var undef @location(0)
+                                   ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_ArrayOfStructs) {
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 1;
+    auto* blend_struct_ty =
+        ty.Struct(mod.symbols.New("BlendStruct"), {
+                                                      {mod.symbols.New("a"), ty.f32(), attr0},
+                                                      {mod.symbols.New("b"), ty.f32(), attr1},
+                                                  });
+
+    auto* array_ty = ty.array(blend_struct_ty, 2u);
+    auto* v = b.Var("v", AddressSpace::kOut, array_ty);
+    mod.root_block->Append(v);
+
+    auto* f = FragmentEntryPoint("my_func");
+    b.Append(f->Block(), [&] {
+        b.Store(v, b.Zero(array_ty));
+        b.Unreachable();
+    });
+
+    // Need to add Capability::kAllowUnannotatedModuleIOVariables to prevent earlier checks
+    // rejecting the shader
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowUnannotatedModuleIOVariables});
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:7:54 error: var: blend_src cannot be used on members of non-top level structs
+  %v:ptr<__out, array<BlendStruct, 2>, read_write> = var undef
+                                                     ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_NestedStruct) {
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 1;
+    auto* blend_struct_ty =
+        ty.Struct(mod.symbols.New("BlendStruct"), {
+                                                      {mod.symbols.New("a"), ty.f32(), attr0},
+                                                      {mod.symbols.New("b"), ty.f32(), attr1},
+                                                  });
+
+    auto* outer_struct_ty =
+        ty.Struct(mod.symbols.New("OuterStruct"), {{mod.symbols.New("inner"), blend_struct_ty}});
+    auto* v = b.Var("v", AddressSpace::kOut, outer_struct_ty);
+    mod.root_block->Append(v);
+
+    auto* f = FragmentEntryPoint("my_func");
+    b.Append(f->Block(), [&] { b.Store(v, b.Zero(outer_struct_ty)); });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowUnannotatedModuleIOVariables});
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:11:44 error: var: blend_src cannot be used on members of non-top level structs
+  %v:ptr<__out, OuterStruct, read_write> = var undef
+                                           ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_PartialStruct) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.location = 0;
+    attr.blend_src = 0;
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr},
+                                               });
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:5:1 error: structs with blend_src members must have exactly 2 members with location annotations
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+
+:5:1 error: if any @blend_src is used on an output, then @blend_src(0) and @blend_src(1) must be used
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_PartialStructAndMSV) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr0;
+    attr0.location = 0;
+    attr0.blend_src = 0;
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.f32(), attr0},
+                                               });
+    f->SetReturnType(str_ty);
+
+    // MSV for the missing blend_src
+    IOAttributes attr1;
+    attr1.location = 0;
+    attr1.blend_src = 1;
+    auto* v = b.Var("v", AddressSpace::kOut, ty.f32());
+    v->SetAttributes(attr1);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Store(v, 1.0_f);
+        b.Unreachable();
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:9:1 error: structs with blend_src members must have exactly 2 members with location annotations
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_NonMember_WithoutCapability) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* var0 = b.Var("var0", ty.ptr(AddressSpace::kOut, ty.f32()));
+    var0->SetLocation(0);
+    var0->SetBlendSrc(0);
+    mod.root_block->Append(var0);
+
+    auto* var1 = b.Var("var1", ty.ptr(AddressSpace::kOut, ty.f32()));
+    var1->SetLocation(0);
+    var1->SetBlendSrc(1);
+    mod.root_block->Append(var1);
+
+    b.Append(f->Block(), [&] {
+        b.Store(var0, 1_f);
+        b.Store(var1, 1_f);
+        b.Return(f);
+    });
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:2:39 error: var: blend_src cannot be used on non-struct-member types
+  %var0:ptr<__out, f32, read_write> = var undef @location(0) @blend_src(0)
+                                      ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_BlendSrc_NonMember_WithCapability) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* var0 = b.Var("var0", ty.ptr(AddressSpace::kOut, ty.f32()));
+    var0->SetLocation(0);
+    var0->SetBlendSrc(0);
+    mod.root_block->Append(var0);
+
+    auto* var1 = b.Var("var1", ty.ptr(AddressSpace::kOut, ty.f32()));
+    var1->SetLocation(0);
+    var1->SetBlendSrc(1);
+    mod.root_block->Append(var1);
+
+    b.Append(f->Block(), [&] {
+        b.Store(var0, 1_f);
+        b.Store(var1, 1_f);
+        b.Return(f);
+    });
+    auto res = ir::Validate(mod, Capabilities{
+                                     Capability::kLoosenValidationForShaderIO,
+                                 });
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Interpolate_WithLocation) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* p = b.FunctionParam("p", ty.f32());
+    p->SetLocation(0);
+    p->SetInterpolation(Interpolation{.type = InterpolationType::kLinear,
+                                      .sampling = InterpolationSampling::kCenter});
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Interpolate_WithoutLocation) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* p = b.FunctionParam("p", ty.f32());
+    p->SetInterpolation(Interpolation{.type = InterpolationType::kLinear,
+                                      .sampling = InterpolationSampling::kCenter});
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:1:27 error: interpolation attribute requires a location attribute
+%my_func = @fragment func(%p:f32):void {
+                          ^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_WithLocation) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.location = 0;
+    attr.interpolation = {InterpolationType::kLinear, InterpolationSampling::kCenter};
+    auto* str = ty.Struct(mod.symbols.New("S"), {
+                                                    {mod.symbols.New("a"), ty.f32(), attr},
+                                                });
+    auto* p = b.FunctionParam("p", str);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_WithoutLocation) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.interpolation = {InterpolationType::kLinear, InterpolationSampling::kCenter};
+    auto* str = ty.Struct(mod.symbols.New("S"), {
+                                                    {mod.symbols.New("a"), ty.f32(), attr},
+                                                });
+    auto* p = b.FunctionParam("p", str);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:5:27 error: interpolation attribute requires a location attribute
+%my_func = @fragment func(%p:S):void {
+                          ^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnStruct_WithCapability) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.interpolation = {InterpolationType::kLinear, InterpolationSampling::kCenter};
+    auto* str = ty.Struct(mod.symbols.New("S"), {
+                                                    {mod.symbols.New("a"), ty.f32(), attr},
+                                                });
+    auto* p = b.FunctionParam("p", str);
+    p->SetLocation(0);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowLocationForNumericElements});
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnStruct_WithoutCapability) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.interpolation = {InterpolationType::kLinear, InterpolationSampling::kCenter};
+    auto* str = ty.Struct(mod.symbols.New("S"), {
+                                                    {mod.symbols.New("a"), ty.f32(), attr},
+                                                });
+    auto* p = b.FunctionParam("p", str);
+    p->SetLocation(0);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:5:27 error: input param with a location attribute must be a numeric scalar or vector, but has type S
+%my_func = @fragment func(%p:S [@location(0)]):void {
+                          ^^^^
+)")) << res.Failure();
+}
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_WithoutCapability) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr_a;
+    attr_a.location = 0;
+    auto* str = ty.Struct(mod.symbols.New("S"), {
+                                                    {mod.symbols.New("a"), ty.f32(), attr_a},
+                                                });
+    auto* p = b.FunctionParam("p", str);
+    p->SetInterpolation(Interpolation{InterpolationType::kLinear, InterpolationSampling::kCenter});
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:5:27 error: interpolation cannot be applied to a struct without 'kAllowLocationForNumericElements' capability
+%my_func = @fragment func(%p:S):void {
+                          ^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnAllMembers_WithCapability) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr_a;
+    attr_a.location = 0;
+    IOAttributes attr_b;
+    attr_b.location = 1;
+    auto* str = ty.Struct(mod.symbols.New("S"), {
+                                                    {mod.symbols.New("a"), ty.f32(), attr_a},
+                                                    {mod.symbols.New("b"), ty.f32(), attr_b},
+                                                });
+    auto* p = b.FunctionParam("p", str);
+    p->SetInterpolation(Interpolation{InterpolationType::kLinear, InterpolationSampling::kCenter});
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowLocationForNumericElements});
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnAllMembers_WithoutCapability) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr_a;
+    attr_a.location = 0;
+    IOAttributes attr_b;
+    attr_b.location = 1;
+    auto* str = ty.Struct(mod.symbols.New("S"), {
+                                                    {mod.symbols.New("a"), ty.f32(), attr_a},
+                                                    {mod.symbols.New("b"), ty.f32(), attr_b},
+                                                });
+    auto* p = b.FunctionParam("p", str);
+    p->SetInterpolation(Interpolation{InterpolationType::kLinear, InterpolationSampling::kCenter});
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:6:27 error: interpolation cannot be applied to a struct without 'kAllowLocationForNumericElements' capability
+%my_func = @fragment func(%p:S):void {
+                          ^^^^
+
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Interpolate_Struct_LocationOnSomeMembers_WithCapability) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr_a;
+    attr_a.location = 0;
+    auto* str = ty.Struct(mod.symbols.New("S"), {
+                                                    {mod.symbols.New("a"), ty.f32(), attr_a},
+                                                    {mod.symbols.New("b"), ty.f32()},
+                                                });
+    auto* p = b.FunctionParam("p", str);
+    p->SetInterpolation(Interpolation{InterpolationType::kLinear, InterpolationSampling::kCenter});
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowLocationForNumericElements});
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:6:27 error: interpolation attribute requires a location attribute
+%my_func = @fragment func(%p:S):void {
+                          ^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Interpolate_WithBuiltin_WithCapability) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* p = b.FunctionParam("p", ty.u32());
+    p->SetBuiltin(BuiltinValue::kSampleIndex);
+    p->SetInterpolation(Interpolation{.type = InterpolationType::kFlat,
+                                      .sampling = InterpolationSampling::kUndefined});
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kLoosenValidationForShaderIO});
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Interpolate_WithBuiltin_WithoutCapability) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* p = b.FunctionParam("p", ty.u32());
+    p->SetBuiltin(BuiltinValue::kSampleIndex);
+    p->SetInterpolation(Interpolation{.type = InterpolationType::kFlat,
+                                      .sampling = InterpolationSampling::kUndefined});
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:1:27 error: interpolation attribute requires a location attribute
+%my_func = @fragment func(%p:u32 [@interpolate(flat), @sample_index]):void {
+                          ^^^^^^
 )")) << res.Failure();
 }
 
@@ -482,7 +1643,7 @@ TEST_F(IR_ValidatorTest, Function_Param_InvariantWithoutPosition) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:1:17 error: invariant can only decorate a param iff it is also decorated with position
+            R"(:1:17 error: invariant can only decorate a value if it is also decorated with position
 %my_func = func(%my_param:vec4<f32> [@invariant]):void {
                 ^^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -527,9 +1688,267 @@ TEST_F(IR_ValidatorTest, Function_Param_Struct_InvariantWithoutPosition) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:5:17 error: invariant can only decorate a param member iff it is also decorated with position
+            R"(:5:17 error: invariant can only decorate a value if it is also decorated with position
 %my_func = func(%my_param:MyStruct):void {
                 ^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Param_StructNested_InvariantWithoutPosition) {
+    IOAttributes attr;
+    attr.invariant = true;
+
+    auto* inner_ty =
+        ty.Struct(mod.symbols.New("Inner"), {{mod.symbols.New("pos"), ty.vec4<f32>(), attr}});
+
+    auto* str_ty = ty.Struct(mod.symbols.New("MyStruct"), {{mod.symbols.New("i"), inner_ty}});
+
+    auto* f = b.Function("my_func", ty.void_());
+    auto* p = b.FunctionParam("my_param", str_ty);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:9:17 error: invariant can only decorate a value if it is also decorated with position
+%my_func = func(%my_param:MyStruct):void {
+                ^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Param_Color_NonFragment) {
+    auto* f = b.ComputeFunction("my_func");
+    auto* p = b.FunctionParam("my_param", ty.vec4<f32>());
+    p->SetColor(0);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:54 error: color IO attributes cannot be declared for a compute shader input. They can only be used for a fragment shader input.
+%my_func = @compute @workgroup_size(1u, 1u, 1u) func(%my_param:vec4<f32> [@color(0)]):void {
+                                                     ^^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Param_Struct_Color_NonFragment) {
+    IOAttributes attr;
+    attr.color = 0;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("pos"), ty.vec4<f32>(), attr},
+                                               });
+
+    auto* f = b.ComputeFunction("my_func");
+    auto* p = b.FunctionParam("my_param", str_ty);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:5:54 error: color IO attributes cannot be declared for a compute shader input. They can only be used for a fragment shader input.
+%my_func = @compute @workgroup_size(1u, 1u, 1u) func(%my_param:MyStruct):void {
+                                                     ^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Return_Color) {
+    auto* f = FragmentEntryPoint("my_func");
+    f->SetReturnType(ty.vec4<f32>());
+
+    IOAttributes attr;
+    attr.color = 0;
+    f->SetReturnAttributes(attr);
+
+    b.Append(f->Block(), [&] { b.Return(f, b.Zero(ty.vec4<f32>())); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:1 error: color IO attributes cannot be declared for a fragment shader output. They can only be used for a fragment shader input.
+%my_func = @fragment func():vec4<f32> {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Return_Struct_Color) {
+    IOAttributes attr;
+    attr.color = 0;
+
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("pos"), ty.vec4<f32>(), attr},
+                                               });
+
+    auto* f = FragmentEntryPoint("my_func");
+    f->SetReturnType(str_ty);
+
+    b.Append(f->Block(), [&] { b.Return(f, b.Zero(str_ty)); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:5:1 error: color IO attributes cannot be declared for a fragment shader output. They can only be used for a fragment shader input.
+%my_func = @fragment func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_MSV_Color_Output) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* v = b.Var("v", AddressSpace::kOut, ty.vec4<f32>());
+    v->SetColor(0);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Store(v, b.Zero(ty.vec4<f32>()));
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:2:42 error: var: color IO attributes cannot be declared for a fragment shader output. They can only be used for a fragment shader input.
+  %v:ptr<__out, vec4<f32>, read_write> = var undef
+                                         ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_MSV_Struct_Color_Output) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.color = 0;
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("col"), ty.vec4<f32>(), attr},
+                                               });
+
+    auto* v = b.Var("v", AddressSpace::kOut, str_ty);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Store(v, b.Zero(str_ty));
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:6:41 error: var: color IO attributes cannot be declared for a fragment shader output. They can only be used for a fragment shader input.
+  %v:ptr<__out, MyStruct, read_write> = var undef
+                                        ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_MSV_Color_Input_Fragment) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    auto* v = b.Var("v", AddressSpace::kIn, ty.vec4<f32>());
+    v->SetColor(0);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Load(v);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_MSV_Struct_Color_Input_Fragment) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.color = 0;
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("col"), ty.vec4<f32>(), attr},
+                                               });
+
+    auto* v = b.Var("v", AddressSpace::kIn, str_ty);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Load(v);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_MSV_Color_Input_NonFragment) {
+    auto* f = VertexEntryPoint("my_func");
+
+    auto* v = b.Var("v", AddressSpace::kIn, ty.vec4<f32>());
+    v->SetColor(0);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Load(v);
+        b.Return(f, b.Zero(ty.vec4<f32>()));
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:2:35 error: var: color IO attributes cannot be declared for a vertex shader input. They can only be used for a fragment shader input.
+  %v:ptr<__in, vec4<f32>, read> = var undef
+                                  ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_MSV_Struct_Color_Input_NonFragment) {
+    auto* f = VertexEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.color = 0;
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("col"), ty.vec4<f32>(), attr},
+                                               });
+    auto* v = b.Var("v", AddressSpace::kIn, str_ty);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Store(v, b.Zero(str_ty));
+        b.Return(f, b.Zero(ty.vec4<f32>()));
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:6:34 error: var: color IO attributes cannot be declared for a vertex shader input. They can only be used for a fragment shader input.
+  %v:ptr<__in, MyStruct, read> = var undef
+                                 ^^^
 )")) << res.Failure();
 }
 
@@ -551,6 +1970,49 @@ TEST_F(IR_ValidatorTest, Function_Param_BindingPointWithoutCapability) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Function_Param_InputIndexAttachment) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.input_attachment_index = 0;
+    auto* p = b.FunctionParam("p", ty.u32());
+    p->SetAttributes(attr);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:27 error: input attachment index IO attributes cannot be declared for a fragment shader input. They can only be used for a fragment shader resource.
+%my_func = @fragment func(%p:u32):void {
+                          ^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Return_InputIndexAttachment) {
+    auto* f = FragmentEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.input_attachment_index = 0;
+    f->SetReturnAttributes(attr);
+    f->SetReturnType(ty.u32());
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:1 error: input attachment index IO attributes cannot be declared for a fragment shader output. They can only be used for a fragment shader resource.
+%my_func = @fragment func():u32 {
+^^^^^^^^
+)")) << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, Function_Return_MultipleIOAnnotations) {
     auto* f = VertexEntryPoint("my_func");
     f->SetReturnLocation(0);
@@ -562,7 +2024,7 @@ TEST_F(IR_ValidatorTest, Function_Return_MultipleIOAnnotations) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:1:1 error: return values has more than one IO annotation, [ @location, built-in ]
+            R"(:1:1 error: return value has more than one IO annotation, [ @location, built-in ]
 %my_func = @vertex func():vec4<f32> [@location(0), @position] {
 ^^^^^^^^
 )")) << res.Failure();
@@ -584,8 +2046,46 @@ TEST_F(IR_ValidatorTest, Function_Return_Struct_MultipleIOAnnotations) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:5:1 error: return values struct member has more than one IO annotation, [ @location, built-in ]
+            R"(:5:1 error: return value struct member has more than one IO annotation, [ @location, built-in ]
 %my_func = @vertex func():MyStruct {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Return_Location_InvalidType) {
+    auto* f = FragmentEntryPoint("my_func");
+    f->SetReturnType(ty.bool_());
+    f->SetReturnLocation(0);
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:1 error: return value with a location attribute must be a numeric scalar or vector, but has type bool
+%my_func = @fragment func():bool [@location(0)] {
+^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Return_Struct_Location_InvalidType) {
+    IOAttributes attr;
+    attr.location = 0;
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.bool_(), attr},
+                                               });
+    auto* f = b.Function("my_func", str_ty, Function::PipelineStage::kFragment);
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:5:1 error: return value struct member with a location attribute must be a numeric scalar or vector, but has type bool
+%my_func = @fragment func():MyStruct {
 ^^^^^^^^
 )")) << res.Failure();
 }
@@ -599,7 +2099,7 @@ TEST_F(IR_ValidatorTest, Function_Return_Void_IOAnnotation) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:1 error: return values with void type should never be annotated
+        testing::HasSubstr(R"(:1:1 error: return value with void type should never be annotated
 %f = @fragment func():void [@location(0)] {
 ^^
 )")) << res.Failure();
@@ -615,7 +2115,7 @@ TEST_F(IR_ValidatorTest, Function_Return_NonVoid_MissingIOAnnotations) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:1:1 error: return values must have at least one IO annotation, e.g. a binding point, a location, etc
+            R"(:1:1 error: return value must have at least one IO annotation, e.g. a binding point, a location, etc
 %my_func = @fragment func():f32 {
 ^^^^^^^^
 )")) << res.Failure();
@@ -634,7 +2134,7 @@ TEST_F(IR_ValidatorTest, Function_Return_NonVoid_Struct_MissingIOAnnotations) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:5:1 error: return values struct members must have at least one IO annotation, e.g. a binding point, a location, etc
+            R"(:5:1 error: return value struct members must have at least one IO annotation, e.g. a binding point, a location, etc
 %my_func = @fragment func():MyStruct {
 ^^^^^^^^
 )")) << res.Failure();
@@ -662,7 +2162,7 @@ TEST_F(IR_ValidatorTest, Function_Return_InvariantWithoutPosition) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:1:1 error: invariant can only decorate outputs iff they are also position builtins
+            R"(:1:1 error: invariant can only decorate a value if it is also decorated with position
 %my_func = func():vec4<f32> [@invariant] {
 ^^^^^^^^
 )")) << res.Failure();
@@ -677,11 +2177,42 @@ TEST_F(IR_ValidatorTest, Function_Return_Struct_InvariantWithPosition) {
                                                    {mod.symbols.New("pos"), ty.vec4<f32>(), attr},
                                                });
 
-    auto* f = b.Function("my_func", str_ty, Function::PipelineStage::kVertex);
+    auto* f = VertexEntryPoint("my_func");
+    f->SetReturnType(str_ty);
+    f->SetReturnAttributes({});
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
     auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Return_Struct_InvariantWithoutPosition_ViaMSV) {
+    auto* f = VertexEntryPoint("my_func");
+
+    IOAttributes attr;
+    attr.invariant = true;
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("pos"), ty.vec4<f32>(), attr},
+                                               });
+
+    auto* v = b.Var("v", AddressSpace::kOut, str_ty);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Store(v, b.Zero(str_ty));
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:6:41 error: var: invariant can only decorate a value if it is also decorated with position
+  %v:ptr<__out, MyStruct, read_write> = var undef
+                                        ^^^
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, Function_Return_Struct_InvariantWithoutPosition) {
@@ -693,7 +2224,8 @@ TEST_F(IR_ValidatorTest, Function_Return_Struct_InvariantWithoutPosition) {
                                                    {mod.symbols.New("pos"), ty.vec4<f32>(), attr},
                                                });
 
-    auto* f = b.Function("my_func", str_ty);
+    auto* f = VertexEntryPoint("my_func");
+    f->SetReturnType(str_ty);
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
     auto res = ir::Validate(mod);
@@ -701,9 +2233,32 @@ TEST_F(IR_ValidatorTest, Function_Return_Struct_InvariantWithoutPosition) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:5:1 error: invariant can only decorate output members iff they are also position builtins
-%my_func = func():MyStruct {
+            R"(:5:1 error: invariant can only decorate a value if it is also decorated with position
+%my_func = @vertex func():MyStruct [@position] {
 ^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Return_InvariantWithoutPosition_ViaMSV) {
+    auto* f = VertexEntryPoint("my_func");
+
+    auto* v = b.Var("v", AddressSpace::kOut, ty.vec4<f32>());
+    v->SetInvariant(true);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Store(v, b.Zero(ty.vec4<f32>()));
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:2:42 error: var: invariant can only decorate a value if it is also decorated with position
+  %v:ptr<__out, vec4<f32>, read_write> = var undef @invariant
+                                         ^^^
 )")) << res.Failure();
 }
 
@@ -882,6 +2437,22 @@ TEST_F(IR_ValidatorTest, Function_WorkgroupSize_ParamsSameType) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Function_WorkgroupSize_InvalidValueKind) {
+    auto* f = ComputeEntryPoint();
+    f->SetWorkgroupSize({b.Constant(1_u), b.FunctionParam("p", ty.u32()), b.Constant(3_u)});
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowOverrides});
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(R"(:1:1 error: @workgroup_size must be an InstructionResult or a Constant
+%f = @compute @workgroup_size(1u, %p, 3u) func():void {
+^^
+)")) << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, Function_WorkgroupSize_ParamsTooSmall) {
     auto* f = ComputeEntryPoint();
     f->SetWorkgroupSize({b.Constant(-1_i), b.Constant(2_i), b.Constant(3_i)});
@@ -893,6 +2464,54 @@ TEST_F(IR_ValidatorTest, Function_WorkgroupSize_ParamsTooSmall) {
     EXPECT_THAT(res.Failure().reason,
                 testing::HasSubstr(R"(:1:1 error: @workgroup_size params must be greater than 0
 %f = @compute @workgroup_size(-1i, 2i, 3i) func():void {
+^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_WorkgroupSize_ParamZero) {
+    auto* f = ComputeEntryPoint();
+    f->SetWorkgroupSize({b.Constant(0_i), b.Constant(2_i), b.Constant(3_i)});
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:1:1 error: @workgroup_size params must be greater than 0
+%f = @compute @workgroup_size(0i, 2i, 3i) func():void {
+^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_WorkgroupSize_ParamsTooLarge) {
+    auto* f = ComputeEntryPoint();
+    f->SetWorkgroupSize({b.Constant(1048576_i), b.Constant(1048576_i), b.Constant(1048576_i)});
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:1:1 error: workgroup grid size cannot exceed 0xffffffff
+%f = @compute @workgroup_size(1048576i, 1048576i, 1048576i) func():void {
+^^
+)")) << res.Failure();
+}
+
+// Test the case where the intermediate workgroup product overflows a uint64_t and wraps back around
+// to be a valid uint32_t value.
+TEST_F(IR_ValidatorTest, Function_WorkgroupSize_ParamsTooLarge_U64Overflow) {
+    auto* f = ComputeEntryPoint();
+    f->SetWorkgroupSize(
+        {b.Constant(1526726656_i), b.Constant(1526726656_i), b.Constant(1526726656_i)});
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:1:1 error: workgroup grid size cannot exceed 0xffffffff
+%f = @compute @workgroup_size(1526726656i, 1526726656i, 1526726656i) func():void {
 ^^
 )")) << res.Failure();
 }
@@ -1048,7 +2667,7 @@ TEST_F(IR_ValidatorTest, Function_NonFragment_BoolOutput) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(R"(:6:1 error: entry point return members can not be 'bool'
+                testing::HasSubstr(R"(:6:1 error: entry point returns can not be 'bool'
 %f = @vertex func():OutputStruct {
 ^^
 )")) << res.Failure();
@@ -1105,9 +2724,9 @@ TEST_F(IR_ValidatorTest, Function_BoolOutput_via_MSV) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:5:1 error: IO address space values referenced by shader entry points can only be 'bool' if in the input space, used only by fragment shaders and decorated with @builtin(front_facing)
-%f = @compute @workgroup_size(1u, 1u, 1u) func():void {
-^^
+            R"(:2:37 error: var: IO address space values referenced by shader entry points can only be 'bool' if in the input space, used only by fragment shaders and decorated with @builtin(front_facing)
+  %1:ptr<__out, bool, read_write> = var undef @location(0)
+                                    ^^^
 )")) << res.Failure();
 }
 
@@ -1130,9 +2749,9 @@ TEST_F(IR_ValidatorTest, Function_BoolInputWithoutFrontFacing_via_MSV) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:5:1 error: input address space values referenced by fragment shaders can only be 'bool' if decorated with @builtin(front_facing)
-%f = @fragment func():void {
-^^
+            R"(:2:36 error: var: input address space values referenced by fragment shaders can only be 'bool' if decorated with @builtin(front_facing)
+  %invalid:ptr<__in, bool, read> = var undef @location(0)
+                                   ^^^
 )")) << res.Failure();
 }
 

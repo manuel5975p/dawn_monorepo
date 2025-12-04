@@ -37,6 +37,9 @@
 #include <utility>
 #include <vector>
 
+#define SPV_ENABLE_UTILITY_CODE
+#include "spirv/unified1/spirv.hpp11"
+
 // This header is in an external dependency, so warnings cannot be fixed without upstream changes.
 TINT_BEGIN_DISABLE_WARNING(NEWLINE_EOF);
 TINT_BEGIN_DISABLE_WARNING(OLD_STYLE_CAST);
@@ -130,6 +133,7 @@ class Parser {
             auto name = ext.GetOperand(0).AsString();
             if (name != "SPV_KHR_storage_buffer_storage_class" &&
                 name != "SPV_KHR_non_semantic_info" &&     //
+                name != "SPV_KHR_16bit_storage" &&         //
                 name != "SPV_KHR_terminate_invocation" &&  //
                 // TODO(423644565): We assume the barriers are correct. We should check for any
                 // operation that makes barrier assumptions that aren't consistent with WGSL and
@@ -199,6 +203,11 @@ class Parser {
             // Handle the case of the struct members all being marked as `NonWritable`
             if (consider_non_writable_.contains(str)) {
                 access_mode = core::Access::kRead;
+            }
+
+            // Storage buffer can not be `write` only
+            if (access_mode == core::Access::kWrite) {
+                access_mode = core::Access::kReadWrite;
             }
 
             var->Result()->SetType(ty_.ptr(core::AddressSpace::kStorage, str, access_mode));
@@ -325,7 +334,7 @@ class Parser {
                         spirv_context_->get_constant_mgr()->GetConstant(ty, std::vector{literal});
 
                     core::ir::Value* value = tint::Switch(
-                        Type(ty),  //
+                        Type(spirv_context_->get_type_mgr()->GetId(ty)),  //
                         [&](const core::type::I32*) {
                             return b_.Constant(i32(constant->GetS32()));
                         },
@@ -476,13 +485,11 @@ class Parser {
                                           "OpSpecConstantOp maps to a WGSL override declaration, "
                                           "but WGSL overrides must have scalar type";
                         case spv::Op::OpSelect:
-                            if (!Type(inst.type_id())->IsScalar()) {
-                                TINT_ICE()
-                                    << "can't translate OpSpecConstantOp with Select that returns "
-                                       "a vector: "
-                                       "OpSpecConstantOp maps to a WGSL override declaration, "
-                                       "but WGSL overrides must have scalar type";
-                            }
+                            TINT_ASSERT(Type(inst.type_id())->IsScalar())
+                                << "can't translate OpSpecConstantOp with Select that returns "
+                                   "a vector: "
+                                   "OpSpecConstantOp maps to a WGSL override declaration, "
+                                   "but WGSL overrides must have scalar type";
                             EmitSpirvBuiltinCall(inst, spirv::BuiltinFn::kSelect, 3);
                             break;
                         default:
@@ -500,10 +507,8 @@ class Parser {
                 }
                 case spv::Op::OpSpecConstantComposite: {
                     auto spec_id = GetSpecId(inst);
-                    if (spec_id.has_value()) {
-                        TINT_ICE()
-                            << "OpSpecConstantCompositeOp not supported when set with a SpecId";
-                    }
+                    TINT_ASSERT(!spec_id.has_value())
+                        << "OpSpecConstantCompositeOp not supported when set with a SpecId";
 
                     auto* cnst = SpvConstant(inst.result_id());
                     if (cnst != nullptr) {
@@ -585,6 +590,8 @@ class Parser {
                 return core::AddressSpace::kHandle;
             case spv::StorageClass::Workgroup:
                 return core::AddressSpace::kWorkgroup;
+            case spv::StorageClass::PushConstant:
+                return core::AddressSpace::kImmediate;
             default:
                 TINT_UNIMPLEMENTED()
                     << "unhandled SPIR-V storage class: " << static_cast<uint32_t>(sc);
@@ -625,6 +632,8 @@ class Parser {
                 return core::BuiltinValue::kSubgroupSize;
             case spv::BuiltIn::SubgroupLocalInvocationId:
                 return core::BuiltinValue::kSubgroupInvocationId;
+            case spv::BuiltIn::NumSubgroups:
+                return core::BuiltinValue::kNumSubgroups;
             case spv::BuiltIn::VertexIndex:
                 return core::BuiltinValue::kVertexIndex;
             case spv::BuiltIn::WorkgroupId:
@@ -634,17 +643,19 @@ class Parser {
             case spv::BuiltIn::CullDistance:
                 return core::BuiltinValue::kCullDistance;
             case spv::BuiltIn::PrimitiveId:
-                return core::BuiltinValue::kPrimitiveId;
+                return core::BuiltinValue::kPrimitiveIndex;
             default:
-                TINT_UNIMPLEMENTED() << "unhandled SPIR-V BuiltIn: " << static_cast<uint32_t>(b);
+                TINT_UNIMPLEMENTED() << "unhandled SPIR-V BuiltIn: " << spv::BuiltInToString(b)
+                                     << " (val = " << static_cast<uint32_t>(b) << ")";
         }
     }
 
-    /// @param type a SPIR-V type object
+    /// @param id a SPIR-V result ID for a type declaration instruction
     /// @param access_mode an optional access mode (for pointers)
     /// @returns a Tint type object
-    const core::type::Type* Type(const spvtools::opt::analysis::Type* type,
-                                 core::Access access_mode = core::Access::kUndefined) {
+    const core::type::Type* Type(uint32_t id, core::Access access_mode = core::Access::kUndefined) {
+        auto* type = spirv_context_->get_type_mgr()->GetType(id);
+
         // Only use the access mode for the map key if it is used as part of the type in Tint IR.
         auto key_mode = core::Access::kUndefined;
         if (type->kind() == spvtools::opt::analysis::Type::kImage ||
@@ -652,7 +663,7 @@ class Parser {
             key_mode = access_mode;
         }
 
-        return types_.GetOrAdd(TypeKey{type, key_mode}, [&]() -> const core::type::Type* {
+        return types_.GetOrAdd(TypeKey{id, key_mode}, [&]() -> const core::type::Type* {
             uint32_t array_stride = 0;
             bool set_as_storage_buffer = false;
             for (auto& deco : type->decorations()) {
@@ -680,8 +691,11 @@ class Parser {
             }
             // ArrayStride is only handled on the array type for now
             if (array_stride > 0) {
-                TINT_ASSERT(type->kind() == spvtools::opt::analysis::Type::kArray ||
-                            type->kind() == spvtools::opt::analysis::Type::kRuntimeArray);
+                if (type->kind() != spvtools::opt::analysis::Type::kArray &&
+                    type->kind() != spvtools::opt::analysis::Type::kRuntimeArray) {
+                    TINT_UNREACHABLE()
+                        << "ArrayStride is only accepted on an Array or RuntimeArray";
+                }
             }
 
             switch (type->kind()) {
@@ -714,50 +728,33 @@ class Parser {
                 case spvtools::opt::analysis::Type::kVector: {
                     auto* vec_ty = type->AsVector();
                     TINT_ASSERT(vec_ty->element_count() <= 4);
-                    return ty_.vec(Type(vec_ty->element_type()), vec_ty->element_count());
+                    return ty_.vec(
+                        Type(spirv_context_->get_type_mgr()->GetId(vec_ty->element_type())),
+                        vec_ty->element_count());
                 }
                 case spvtools::opt::analysis::Type::kMatrix: {
                     auto* mat_ty = type->AsMatrix();
                     TINT_ASSERT(mat_ty->element_count() <= 4);
-                    return ty_.mat(As<core::type::Vector>(Type(mat_ty->element_type())),
-                                   mat_ty->element_count());
+                    return ty_.mat(
+                        As<core::type::Vector>(
+                            Type(spirv_context_->get_type_mgr()->GetId(mat_ty->element_type()))),
+                        mat_ty->element_count());
                 }
                 case spvtools::opt::analysis::Type::kArray: {
-                    return EmitArray(type->AsArray(), array_stride);
+                    return EmitArray(id, array_stride);
                 }
                 case spvtools::opt::analysis::Type::kRuntimeArray: {
-                    auto* arr_ty = type->AsRuntimeArray();
-
-                    auto* elem_ty = Type(arr_ty->element_type());
-                    uint32_t implicit_stride = tint::RoundUp(elem_ty->Align(), elem_ty->Size());
-                    if (array_stride == 0 || array_stride == implicit_stride) {
-                        return ty_.runtime_array(elem_ty);
-                    }
-
-                    return ty_.Get<spirv::type::ExplicitLayoutArray>(
-                        elem_ty, ty_.Get<core::type::RuntimeArrayCount>(), elem_ty->Align(),
-                        static_cast<uint32_t>(array_stride), array_stride);
+                    return EmitRuntimeArray(id, array_stride);
                 }
                 case spvtools::opt::analysis::Type::kStruct: {
-                    const core::type::Struct* str_ty = EmitStruct(type->AsStruct());
+                    const core::type::Struct* str_ty = EmitStruct(id);
                     if (set_as_storage_buffer) {
                         storage_buffer_types_.insert(str_ty);
                     }
                     return str_ty;
                 }
                 case spvtools::opt::analysis::Type::kPointer: {
-                    auto* ptr_ty = type->AsPointer();
-                    auto* subtype = Type(ptr_ty->pointee_type(), access_mode);
-
-                    // In a few cases we need to adjust the access mode.
-                    //
-                    // 1. Handle is always a read pointer
-                    // 2. If the SPIR-V type should be considered NonWritable
-                    if (subtype->IsHandle() || consider_non_writable_.contains(subtype)) {
-                        access_mode = core::Access::kRead;
-                    }
-
-                    return ty_.ptr(AddressSpace(ptr_ty->storage_class()), subtype, access_mode);
+                    return EmitPointer(id, access_mode);
                 }
                 case spvtools::opt::analysis::Type::kSampler: {
                     return ty_.sampler();
@@ -765,7 +762,8 @@ class Parser {
                 case spvtools::opt::analysis::Type::kImage: {
                     auto* img = type->AsImage();
 
-                    auto* sampled_ty = Type(img->sampled_type());
+                    auto* sampled_ty =
+                        Type(spirv_context_->get_type_mgr()->GetId(img->sampled_type()));
                     auto dim = static_cast<type::Dim>(img->dim());
                     auto depth = static_cast<type::Depth>(img->depth());
                     auto arrayed =
@@ -782,12 +780,13 @@ class Parser {
                     if (img->dim() != spv::Dim::Dim1D && img->dim() != spv::Dim::Dim2D &&
                         img->dim() != spv::Dim::Dim3D && img->dim() != spv::Dim::Cube &&
                         img->dim() != spv::Dim::SubpassData) {
-                        TINT_ICE() << "Unsupported texture dimension: "
-                                   << static_cast<uint32_t>(img->dim());
+                        TINT_ICE()
+                            << "Unsupported texture dimension: " << spv::DimToString(img->dim())
+                            << " (val = " << static_cast<uint32_t>(img->dim()) << ")";
                     }
-                    if (img->sampled() == 0) {
-                        TINT_ICE() << "Unsupported texture sample setting: Known at Runtime";
-                    }
+                    TINT_ASSERT(img->sampled() != 0)
+                        << "Unsupported texture sample setting: Known at Runtime";
+
                     if (depth == type::Depth::kDepth && !sampled_ty->Is<core::type::F32>()) {
                         TINT_ICE() << "Unsupported depth texture sampled type (must be f32)";
                     }
@@ -797,7 +796,8 @@ class Parser {
                 }
                 case spvtools::opt::analysis::Type::kSampledImage: {
                     auto* sampled = type->AsSampledImage();
-                    return ty_.Get<spirv::type::SampledImage>(Type(sampled->image_type()));
+                    return ty_.Get<spirv::type::SampledImage>(
+                        Type(spirv_context_->get_type_mgr()->GetId(sampled->image_type())));
                 }
                 default: {
                     TINT_UNIMPLEMENTED() << "unhandled SPIR-V type: " << type->str();
@@ -856,17 +856,52 @@ class Parser {
         TINT_ICE() << "invalid image format: " << int(fmt);
     }
 
-    /// @param id a SPIR-V result ID for a type declaration instruction
-    /// @param access_mode an optional access mode (for pointers)
-    /// @returns a Tint type object
-    const core::type::Type* Type(uint32_t id, core::Access access_mode = core::Access::kUndefined) {
-        return Type(spirv_context_->get_type_mgr()->GetType(id), access_mode);
+    /// @param type_id the pointer result_id
+    /// @param access_mode the access mode
+    /// @returns a Tint pointer object
+    const core::type::Type* EmitPointer(uint32_t type_id, core::Access access_mode) {
+        auto* inst = spirv_context_->get_def_use_mgr()->GetDef(type_id);
+
+        auto* subtype = Type(inst->GetInOperand(1).AsId(), access_mode);
+
+        // In a few cases we need to adjust the access mode.
+        //
+        // 1. Handle is always a read pointer
+        // 2. If the SPIR-V type should be considered NonWritable
+        if (subtype->IsHandle() || consider_non_writable_.contains(subtype)) {
+            access_mode = core::Access::kRead;
+        }
+
+        // Using the deduplicated pointer should be fine because the storage classes must have
+        // matched if it was a duplicate.
+        auto* ptr_ty = spirv_context_->get_type_mgr()->GetType(type_id)->AsPointer();
+        return ty_.ptr(AddressSpace(ptr_ty->storage_class()), subtype, access_mode);
     }
 
-    /// @param arr_ty a SPIR-V array object
+    /// @param type_id the spirv result_id
+    /// @returns a Tint runtime array object
+    const core::type::Type* EmitRuntimeArray(uint32_t type_id, uint32_t array_stride) {
+        auto* inst = spirv_context_->get_def_use_mgr()->GetDef(type_id);
+
+        auto* elem_ty = Type(inst->GetInOperand(0).AsId());
+        uint32_t implicit_stride = tint::RoundUp(elem_ty->Align(), elem_ty->Size());
+        if (array_stride == 0 || array_stride == implicit_stride) {
+            return ty_.runtime_array(elem_ty);
+        }
+
+        return ty_.Get<spirv::type::ExplicitLayoutArray>(
+            elem_ty, ty_.Get<core::type::RuntimeArrayCount>(), static_cast<uint32_t>(array_stride),
+            array_stride);
+    }
+
+    /// @param type_id the spirv result_id for the type
+    /// @param array_stride the stride
     /// @returns a Tint array object
-    const core::type::Type* EmitArray(const spvtools::opt::analysis::Array* arr_ty,
-                                      uint32_t array_stride) {
+    const core::type::Type* EmitArray(uint32_t type_id, uint32_t array_stride) {
+        auto* inst = spirv_context_->get_def_use_mgr()->GetDef(type_id);
+
+        // Even deduplicated the length info must match, so safe to use the type manager info here.
+        auto* arr_ty = spirv_context_->get_type_mgr()->GetType(type_id)->AsArray();
         const auto& length = arr_ty->length_info();
         TINT_ASSERT(!length.words.empty());
         if (length.words[0] != spvtools::opt::analysis::Array::LengthInfo::kConstant) {
@@ -880,7 +915,7 @@ class Parser {
         const uint64_t count_val = count_const->GetZeroExtendedValue();
         TINT_ASSERT(count_val <= UINT32_MAX);
 
-        auto* elem_ty = Type(arr_ty->element_type());
+        auto* elem_ty = Type(inst->GetInOperand(0).AsId());
         uint32_t implicit_stride = tint::RoundUp(elem_ty->Align(), elem_ty->Size());
         if (array_stride == 0 || array_stride == implicit_stride) {
             return ty_.array(elem_ty, static_cast<uint32_t>(count_val));
@@ -888,7 +923,7 @@ class Parser {
 
         return ty_.Get<spirv::type::ExplicitLayoutArray>(
             elem_ty, ty_.Get<core::type::ConstantArrayCount>(static_cast<uint32_t>(count_val)),
-            elem_ty->Align(), static_cast<uint32_t>(array_stride * count_val), array_stride);
+            static_cast<uint32_t>(array_stride * count_val), array_stride);
     }
 
     /// Calculate the size of a struct member type that has a matrix stride decoration.
@@ -912,29 +947,30 @@ class Parser {
             TINT_ICE_ON_NO_MATCH);
     }
 
-    /// @param struct_ty a SPIR-V struct object
+    /// @param type_id the struct type id
     /// @returns a Tint struct object
-    const core::type::Struct* EmitStruct(const spvtools::opt::analysis::Struct* struct_ty) {
-        if (struct_ty->NumberOfComponents() == 0) {
-            TINT_ICE() << "empty structures are not supported";
-        }
+    const core::type::Struct* EmitStruct(uint32_t type_id) {
+        auto* inst = spirv_context_->get_def_use_mgr()->GetDef(type_id);
 
-        auto* type_mgr = spirv_context_->get_type_mgr();
-        auto struct_id = type_mgr->GetId(struct_ty);
+        uint32_t member_count = inst->NumInOperandWords();
+        TINT_ASSERT(member_count != 0) << "empty structures are not supported";
 
         std::vector<std::string>* member_names = nullptr;
-        auto struct_to_member_iter = struct_to_member_names_.find(struct_id);
+        auto struct_to_member_iter = struct_to_member_names_.find(type_id);
         if (struct_to_member_iter != struct_to_member_names_.end()) {
             member_names = &((*struct_to_member_iter).second);
         }
 
+        // We can use the struct type for the decorations, since even if it was deduplicated then
+        // the decorations must be the same.
+        auto* struct_ty = spirv_context_->get_type_mgr()->GetType(type_id)->AsStruct();
+
         // Build a list of struct members.
         uint32_t current_size = 0u;
-        uint32_t member_count = static_cast<uint32_t>(struct_ty->NumberOfComponents());
         uint32_t non_writable_members = 0;
         Vector<core::type::StructMember*, 4> members;
         for (uint32_t i = 0; i < member_count; i++) {
-            auto* member_ty = Type(struct_ty->element_types()[i]);
+            auto* member_ty = Type(inst->GetInOperand(i).AsId());
             uint32_t align = std::max<uint32_t>(member_ty->Align(), 1u);
             uint32_t offset = tint::RoundUp(align, current_size);
             core::IOAttributes attributes;
@@ -1039,7 +1075,7 @@ class Parser {
             current_size = offset + size;
         }
 
-        Symbol name = GetUniqueSymbolFor(struct_id);
+        Symbol name = GetUniqueSymbolFor(type_id);
         if (!name.IsValid()) {
             name = ir_.symbols.New();
         }
@@ -1202,6 +1238,12 @@ class Parser {
             // control as we're jumping over the control to its parent control. (This is an
             // `if` inside a `loop` where the `if` is doing a `break`).
             if (ctrl->Exits().IsEmpty()) {
+                if (ctrl->Is<core::ir::Loop>()) {
+                    TINT_UNREACHABLE()
+                        << "loop detected with no exits which means it's an infinite loop. "
+                           "Infinite loops are not supported in WGSL";
+                }
+
                 TINT_ASSERT(ctrl->Is<core::ir::If>());
                 blk = ctrl->Block();
                 continue;
@@ -1329,6 +1371,24 @@ class Parser {
             return val;
         }
 
+        // If we didn't have a value already, and this instruction is a constructed constant, then
+        // do the construction.
+        const spvtools::opt::Instruction* inst = spirv_context_->get_def_use_mgr()->GetDef(id);
+        if (inst->opcode() == spv::Op::OpConstantComposite) {
+            Vector<const core::constant::Value*, 4> args;
+            args.Reserve(inst->NumInOperands());
+
+            for (uint32_t i = 0; i < inst->NumInOperands(); ++i) {
+                auto* cnst = Value(inst->GetSingleWordInOperand(i))->As<core::ir::Constant>();
+                TINT_ASSERT(cnst);
+                args.Push(cnst->Value());
+            }
+
+            auto* composite = b_.Composite(Type(inst->type_id()), args);
+            AddValue(id, composite);
+            return composite;
+        }
+
         // If this was a spec composite, then it currently isn't in scope, so we construct
         // a new copy and assign the constant ID to the new construct in this scope.
         auto iter = spec_composites_.find(id);
@@ -1374,7 +1434,8 @@ class Parser {
     const core::constant::Value* Constant(const spvtools::opt::analysis::Constant* constant) {
         // Handle OpConstantNull for all types.
         if (constant->AsNullConstant()) {
-            return ir_.constant_values.Zero(Type(constant->type()));
+            return ir_.constant_values.Zero(
+                Type(spirv_context_->get_type_mgr()->GetId(constant->type())));
         }
 
         if (auto* bool_ = constant->AsBoolConstant()) {
@@ -1404,28 +1465,32 @@ class Parser {
             for (auto& el : v->GetComponents()) {
                 elements.Push(Constant(el));
             }
-            return ir_.constant_values.Composite(Type(v->type()), std::move(elements));
+            return ir_.constant_values.Composite(
+                Type(spirv_context_->get_type_mgr()->GetId(v->type())), std::move(elements));
         }
         if (auto* m = constant->AsMatrixConstant()) {
             Vector<const core::constant::Value*, 4> columns;
             for (auto& el : m->GetComponents()) {
                 columns.Push(Constant(el));
             }
-            return ir_.constant_values.Composite(Type(m->type()), std::move(columns));
+            return ir_.constant_values.Composite(
+                Type(spirv_context_->get_type_mgr()->GetId(m->type())), std::move(columns));
         }
         if (auto* a = constant->AsArrayConstant()) {
             Vector<const core::constant::Value*, 16> elements;
             for (auto& el : a->GetComponents()) {
                 elements.Push(Constant(el));
             }
-            return ir_.constant_values.Composite(Type(a->type()), std::move(elements));
+            return ir_.constant_values.Composite(
+                Type(spirv_context_->get_type_mgr()->GetId(a->type())), std::move(elements));
         }
         if (auto* s = constant->AsStructConstant()) {
             Vector<const core::constant::Value*, 16> elements;
             for (auto& el : s->GetComponents()) {
                 elements.Push(Constant(el));
             }
-            return ir_.constant_values.Composite(Type(s->type()), std::move(elements));
+            return ir_.constant_values.Composite(
+                Type(spirv_context_->get_type_mgr()->GetId(s->type())), std::move(elements));
         }
         TINT_UNIMPLEMENTED() << "unhandled constant type";
     }
@@ -1474,9 +1539,15 @@ class Parser {
                 case spv::Op::OpVariable:
                     EmitVar(inst);
                     break;
-                case spv::Op::OpUndef:
-                    AddValue(inst.result_id(), b_.Zero(Type(inst.type_id())));
+                case spv::Op::OpUndef: {
+                    auto* ty = Type(inst.type_id());
+
+                    TINT_ASSERT(!ty->Is<core::type::MemoryView>())
+                        << "cannot create an undef memory view in WGSL";
+
+                    AddValue(inst.result_id(), b_.Zero(ty));
                     break;
+                }
                 default:
                     break;
             }
@@ -1777,6 +1848,12 @@ class Parser {
     }
 
     void EmitContinueBlock(uint32_t src_id, uint32_t continue_id, core::ir::Loop* loop) {
+        // We're emitting the continue block, so remove it from the continue targets as it can no
+        // longer be a target for this loop. This will allow it to be _reused_ as the continue
+        // target for a single block loop if needed (which may have this same block as the
+        // continue).
+        continue_targets_.erase(continue_id);
+
         // Push id stack entry for the continuing block. We don't use EmitBlockParent to do this
         // because we need the scope to exist until after we process any `continue_blk_phis_`.
         id_stack_.emplace_back();
@@ -1817,9 +1894,9 @@ class Parser {
                         // TODO(dsinclair): Need to change the break-if insertion if there happens
                         // to be exit values, but those are rare, so leave this for when we have
                         // test case.
-                        TINT_ASSERT(bi->ExitValues().IsEmpty());
+                        TINT_ASSERT(bi->ExitValues().empty());
 
-                        auto len = bi->NextIterValues().Length();
+                        auto len = bi->NextIterValues().size();
                         bi->PushOperand(value);
                         bi->SetNumNextIterValues(len + 1);
                     },
@@ -2329,7 +2406,8 @@ class Parser {
                     break;
                 default:
                     TINT_UNIMPLEMENTED()
-                        << "unhandled SPIR-V instruction: " << static_cast<uint32_t>(inst.opcode());
+                        << "unhandled SPIR-V instruction: " << spv::OpToString(inst.opcode())
+                        << " (val = " << static_cast<uint32_t>(inst.opcode()) << ")";
             }
         }
     }
@@ -2340,18 +2418,16 @@ class Parser {
         TINT_ASSERT(cnst);
 
         uint32_t scope = cnst->Value()->ValueAs<uint32_t>();
-        if (static_cast<spv::Scope>(scope) != spv::Scope::Subgroup) {
-            TINT_ICE() << "subgroup scope required for GroupNonUniform instructions";
-        }
+        TINT_ASSERT(static_cast<spv::Scope>(scope) == spv::Scope::Subgroup)
+            << "subgroup scope required for GroupNonUniform instructions";
     }
 
     void EmitSubgroupBitwise(spvtools::opt::Instruction& inst, core::BuiltinFn fn) {
         ValidateScope(inst);
 
         auto group = inst.GetSingleWordInOperand(1);
-        if (static_cast<spv::GroupOperation>(group) != spv::GroupOperation::Reduce) {
-            TINT_ICE() << "GroupNonUniformBitwise operations require a Reduce group operation";
-        }
+        TINT_ASSERT(static_cast<spv::GroupOperation>(group) == spv::GroupOperation::Reduce)
+            << "GroupNonUniformBitwise operations require a Reduce group operation";
 
         Emit(b_.Call(Type(inst.type_id()), fn, Args(inst, 4)), inst.result_id());
     }
@@ -2400,9 +2476,8 @@ class Parser {
         ValidateScope(inst);
 
         auto group = inst.GetSingleWordInOperand(1);
-        if (static_cast<spv::GroupOperation>(group) != spv::GroupOperation::Reduce) {
-            TINT_ICE() << "group operand Reduce required for `Min`/`Max` instructions";
-        }
+        TINT_ASSERT(static_cast<spv::GroupOperation>(group) == spv::GroupOperation::Reduce)
+            << "group operand Reduce required for `Min`/`Max` instructions";
 
         Emit(b_.Call(Type(inst.type_id()), fn, Args(inst, 4)), inst.result_id());
     }
@@ -2411,9 +2486,8 @@ class Parser {
         ValidateScope(inst);
 
         auto group = inst.GetSingleWordInOperand(1);
-        if (static_cast<spv::GroupOperation>(group) != spv::GroupOperation::Reduce) {
-            TINT_ICE() << "group operand Reduce required for `Min`/`Max` instructions";
-        }
+        TINT_ASSERT(static_cast<spv::GroupOperation>(group) == spv::GroupOperation::Reduce)
+            << "group operand Reduce required for `Min`/`Max` instructions";
 
         Emit(
             b_.Call<spirv::ir::BuiltinCall>(Type(inst.type_id()), fn,                      //
@@ -2431,9 +2505,8 @@ class Parser {
         //
         // For QuadBroadcast this will remain an error as there is no WGSL equivalent.
         // For QuadSwap this will remain an error as there is no WGSL equivalent.
-        if (!id->Is<core::ir::Constant>()) {
-            TINT_ICE() << "non-constant GroupNonUniform `Invocation Id` not supported";
-        }
+        TINT_ASSERT(id->Is<core::ir::Constant>())
+            << "non-constant GroupNonUniform `Invocation Id` not supported";
 
         ValidateScope(inst);
         Emit(b_.Call<spirv::ir::BuiltinCall>(Type(inst.type_id()), fn, Args(inst, 2)),
@@ -2781,6 +2854,13 @@ class Parser {
                 block_phi_values_[blk_id] = {value_id};
             }
 
+            auto v = values_.Get(value_id);
+            if (v) {
+                // If the value exists, then try to get it to force the propagation. If it doesn't
+                // exist, then it will come later in the header and we'll deal with it later.
+                Value(value_id);
+            }
+
             core::ir::Terminator* term = nullptr;
             // The referenced block hasn't been emitted yet (continue blocks have this
             // behaviour). So, store the fact that it needs to return a given value away for
@@ -2797,7 +2877,7 @@ class Parser {
                     continue;
                 }
 
-                // The loop header is the terminator, so synthesize a continue blockhand append
+                // The loop header is the terminator, so synthesize a continue block and append
                 // to that a next iteration.
                 if (loop->Continuing()->IsEmpty()) {
                     b_.Append(loop->Continuing(), [&] { term = b_.NextIteration(loop); });
@@ -2983,7 +3063,7 @@ class Parser {
     void EmitImage(const spvtools::opt::Instruction& inst) {
         auto* si = Value(inst.GetSingleWordInOperand(0));
         Emit(b_.CallExplicit<spirv::ir::BuiltinCall>(
-                 Type(inst.type_id()), spirv::BuiltinFn::kImage,
+                 Type(inst.type_id()), spirv::BuiltinFn::kOpImage,
                  Vector{si->Type()->As<spirv::type::SampledImage>()->Image()}, Args(inst, 2)),
              inst.result_id());
     }
@@ -2992,12 +3072,10 @@ class Parser {
         auto* tex = Value(inst.GetSingleWordInOperand(0));
         auto* img_type = tex->Type()->As<type::Image>();
         TINT_ASSERT(img_type);
-        if (img_type->GetMultisampled() == type::Multisampled::kMultisampled) {
-            TINT_ICE()
-                << "Creating an OpTypeSampledImage from a multisampled image is not supported";
-        }
+        TINT_ASSERT(img_type->GetMultisampled() != type::Multisampled::kMultisampled)
+            << "Creating an OpTypeSampledImage from a multisampled image is not supported";
         Emit(b_.CallExplicit<spirv::ir::BuiltinCall>(Type(inst.type_id()),
-                                                     spirv::BuiltinFn::kSampledImage,
+                                                     spirv::BuiltinFn::kOpSampledImage,
                                                      Vector{tex->Type()}, Args(inst, 2)),
              inst.result_id());
     }
@@ -3127,9 +3205,7 @@ class Parser {
                 TINT_ASSERT(lod->Type()->As<core::type::F32>());
 
                 auto v = lod->As<core::ir::Constant>()->Value()->ValueAs<float>();
-                if (v != 0.0f) {
-                    TINT_ICE() << "Dref LOD values must be 0.0";
-                }
+                TINT_ASSERT(v == 0.0f) << "Dref LOD values must be 0.0";
             }
         } else {
             args.Push(b_.Zero(ty_.u32()));
@@ -3241,19 +3317,17 @@ class Parser {
         uint32_t memory = get_constant(1);
         uint32_t semantics = get_constant(2);
 
-        if (execution != uint32_t(spv::Scope::Workgroup)) {
-            TINT_ICE() << "unsupported control barrier execution scope: "
-                       << "expected Workgroup (2), got: " << execution;
-        }
+        TINT_ASSERT(execution == uint32_t(spv::Scope::Workgroup))
+            << "unsupported control barrier execution scope: "
+            << "expected Workgroup (2), got: " << execution;
 
         if (semantics & uint32_t(spv::MemorySemanticsMask::AcquireRelease)) {
             semantics &= ~static_cast<uint32_t>(spv::MemorySemanticsMask::AcquireRelease);
         } else {
             TINT_ICE() << "control barrier semantics requires acquire and release";
         }
-        if (memory != uint32_t(spv::Scope::Workgroup)) {
-            TINT_ICE() << "control barrier requires workgroup memory scope";
-        }
+        TINT_ASSERT(memory == uint32_t(spv::Scope::Workgroup))
+            << "control barrier requires workgroup memory scope";
 
         if (semantics & uint32_t(spv::MemorySemanticsMask::WorkgroupMemory)) {
             EmitWithoutSpvResult(b_.Call(ty_.void_(), core::BuiltinFn::kWorkgroupBarrier));
@@ -3270,24 +3344,20 @@ class Parser {
             semantics &= ~static_cast<uint32_t>(spv::MemorySemanticsMask::ImageMemory);
         }
 
-        if (semantics) {
-            TINT_ICE() << "unsupported control barrier semantics: " << semantics;
-        }
+        TINT_ASSERT(!semantics) << "unsupported control barrier semantics: " << semantics;
     }
 
     void CheckAtomicNotFloat(const spvtools::opt::Instruction& inst) {
         auto* ty = Type(inst.type_id());
-        if (ty->IsFloatScalar()) {
-            TINT_ICE() << "Atomic operations on floating point values not supported.";
-        }
+        TINT_ASSERT(!ty->UnwrapPtr()->IsFloatScalar())
+            << "Atomic operations on floating point values not supported.";
     }
 
     void EmitAtomicStore(const spvtools::opt::Instruction& inst) {
         auto* v = Value(inst.GetSingleWordInOperand(0));
         auto* ty = v->Type()->UnwrapPtr();
-        if (ty->IsFloatScalar()) {
-            TINT_ICE() << "Atomic operations on floating point values not supported.";
-        }
+        TINT_ASSERT(!ty->IsFloatScalar())
+            << "Atomic operations on floating point values not supported.";
 
         EmitWithoutSpvResult(b_.Call<spirv::ir::BuiltinCall>(
             ty_.void_(), spirv::BuiltinFn::kAtomicStore, Args(inst, 0)));
@@ -3320,9 +3390,8 @@ class Parser {
 
         // Disallow fallthrough
         for (auto& switch_blocks : current_switch_blocks_) {
-            if (switch_blocks.count(dest_id) != 0) {
-                TINT_ICE() << "switch fallthrough not supported by the SPIR-V reader";
-            }
+            TINT_ASSERT(switch_blocks.count(dest_id) == 0)
+                << "switch fallthrough not supported by the SPIR-V reader";
         }
 
         // The destination is a continuing block, so insert a `continue`
@@ -3500,7 +3569,7 @@ class Parser {
                 return true;
             }
             if (false_id == merge_id && true_is_header) {
-                auto* val = b_.Not(cond->Type(), cond);
+                auto* val = b_.Not(cond);
                 EmitWithoutSpvResult(val);
                 EmitWithoutResult(b_.BreakIf(loop, val));
                 return true;
@@ -3682,12 +3751,12 @@ class Parser {
         auto merge_id = merge_inst->GetSingleWordInOperand(0);
         walk_stop_blocks_.insert({merge_id, switch_});
 
+        size_t switch_blocks_id = current_switch_blocks_.size();
         current_switch_blocks_.push_back({});
-        auto& switch_blocks = current_switch_blocks_.back();
 
         auto* default_blk = b_.DefaultCase(switch_);
         if (default_id != merge_id) {
-            switch_blocks.emplace(default_id);
+            current_switch_blocks_[switch_blocks_id].emplace(default_id);
 
             const auto& bb_default = current_spirv_function_->FindBlock(default_id);
             EmitBlockParent(default_blk, *bb_default);
@@ -3703,7 +3772,7 @@ class Parser {
             auto blk_id = inst.GetSingleWordInOperand(i + 1);
 
             if (blk_id != merge_id) {
-                switch_blocks.emplace(blk_id);
+                current_switch_blocks_[switch_blocks_id].emplace(blk_id);
             }
         }
 
@@ -4128,7 +4197,7 @@ class Parser {
                    core::UnaryOp op,
                    uint32_t first_operand_idx = 2) {
         auto* val = Value(inst.GetSingleWordOperand(first_operand_idx));
-        auto* unary = b_.Unary(op, Type(inst.type_id()), val);
+        auto* unary = b_.Unary(op, val);
         Emit(unary, inst.result_id());
     }
 
@@ -4152,7 +4221,7 @@ class Parser {
         auto* binary = b_.Binary(op, Type(inst.type_id()), lhs, rhs);
         EmitWithoutSpvResult(binary);
 
-        auto* res = b_.Not(Type(inst.type_id()), binary);
+        auto* res = b_.Not(binary);
         Emit(res, inst.result_id());
     }
 
@@ -4342,6 +4411,9 @@ class Parser {
                 case spv::Decoration::Coherent:
                     // Tint has coherent memory semantics, so this is a no-op.
                     break;
+                case spv::Decoration::Restrict:
+                    // Hint to the compiler that it may compile as if there is no aliasing. Ignore.
+                    break;
                 default:
                     TINT_UNIMPLEMENTED() << "unhandled decoration " << d;
             }
@@ -4410,17 +4482,17 @@ class Parser {
     /// TypeKey describes a SPIR-V type with an access mode.
     struct TypeKey {
         /// The SPIR-V type object.
-        const spvtools::opt::analysis::Type* type;
+        uint32_t type_id;
         /// The access mode.
         core::Access access_mode;
 
         // Equality operator for TypeKey.
         bool operator==(const TypeKey& other) const {
-            return type == other.type && access_mode == other.access_mode;
+            return type_id == other.type_id && access_mode == other.access_mode;
         }
 
         /// @returns the hash code of the TypeKey
-        tint::HashCode HashCode() const { return Hash(type, access_mode); }
+        tint::HashCode HashCode() const { return Hash(type_id, access_mode); }
     };
 
     /// The parser options

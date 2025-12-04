@@ -43,7 +43,7 @@ WireResult Server::DoAdapterRequestDevice(Known<WGPUAdapter> adapter,
                                           WGPUFuture deviceLostFuture,
                                           const WGPUDeviceDescriptor* descriptor) {
     Reserved<WGPUDevice> device;
-    WIRE_TRY(Objects<WGPUDevice>().Allocate(&device, deviceHandle, AllocationState::Reserved));
+    WIRE_TRY(Allocate(&device, deviceHandle, AllocationState::Reserved));
 
     auto userdata = MakeUserdata<RequestDeviceUserdata>();
     userdata->eventManager = eventManager;
@@ -57,21 +57,25 @@ WireResult Server::DoAdapterRequestDevice(Known<WGPUAdapter> adapter,
     deviceLostUserdata->future = deviceLostFuture;
 
     WGPUDeviceDescriptor desc = *descriptor;
-    desc.deviceLostCallbackInfo = {nullptr, WGPUCallbackMode_AllowProcessEvents,
-                                   ForwardToServer<&Server::OnDeviceLost>,
-                                   deviceLostUserdata.release(), nullptr};
+    desc.deviceLostCallbackInfo =
+        MakeCallbackInfo<WGPUDeviceLostCallbackInfo, &Server::OnDeviceLost>(
+            deviceLostUserdata.release());
     desc.uncapturedErrorCallbackInfo = {
         nullptr,
         [](WGPUDevice const*, WGPUErrorType type, WGPUStringView message, void*, void* userdata) {
             DeviceInfo* info = static_cast<DeviceInfo*>(userdata);
-            info->server->OnUncapturedError(info->self, type, message);
+            {
+                auto serverGuard = info->server->GetGuard();
+                info->server->OnUncapturedError(info->self, type, message);
+            }
+            info->server->Flush();
         },
         nullptr, device->info.get()};
 
     mProcs.adapterRequestDevice(
         adapter->handle, &desc,
-        {nullptr, WGPUCallbackMode_AllowSpontaneous,
-         ForwardToServer<&Server::OnRequestDeviceCallback>, userdata.release(), nullptr});
+        MakeCallbackInfo<WGPURequestDeviceCallbackInfo, &Server::OnRequestDeviceCallback,
+                         WGPUCallbackMode_AllowSpontaneous>(userdata.release()));
     return WireResult::Success;
 }
 

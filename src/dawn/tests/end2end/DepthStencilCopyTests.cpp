@@ -665,6 +665,9 @@ TEST_P(DepthCopyTests, FromNonZeroMipDepthAspect) {
 // inevitably written. So we need to make sure the original content of the buffer that's outside of
 // the copy extent is still correctly preserved.
 TEST_P(DepthCopyTests, PreserveBufferContent) {
+    // TODO(crbug.com/461837996): Flaky on Snapdragon X Elite.
+    DAWN_SUPPRESS_TEST_IF(IsWindows() && IsQualcomm());
+
     constexpr uint32_t kBufferCopyOffsets[] = {0u, 4u, 512u};
     constexpr uint32_t kTestTextureSizes[][2] = {
         {1, 1},
@@ -1200,9 +1203,6 @@ TEST_P(StencilCopyTests, FromStencilAspectAtNonZeroOffset) {
 
 // Test copying the non-zero mip, stencil-only aspect into a buffer.
 TEST_P(StencilCopyTests, FromNonZeroMipStencilAspect) {
-    // TODO(crbug.com/dawn/2273): Failing on ANGLE/D3D11 for unknown reasons.
-    DAWN_SUPPRESS_TEST_IF(IsANGLED3D11());
-
     // TODO(42242119): hang/crash on Qualcomm Adreno X1.
     DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsQualcomm());
 
@@ -1220,6 +1220,9 @@ TEST_P(StencilCopyTests, FromNonZeroMipStencilAspect) {
 // inevitably written. So we need to make sure the original content of the buffer that's outside of
 // the copy extent is still correctly preserved.
 TEST_P(StencilCopyTests, PreserveBufferContent) {
+    // TODO(crbug.com/461837996): Flaky on Snapdragon X Elite.
+    DAWN_SUPPRESS_TEST_IF(IsWindows() && IsQualcomm());
+
     constexpr uint32_t kBufferCopyOffsets[] = {0u, 4u, 512u};
     constexpr uint32_t kTestTextureSizes[][2] = {
         {1, 1},
@@ -1431,8 +1434,6 @@ TEST_P(StencilCopyTests_Compat, FromStencilAspectAtNonZeroOffset) {
 
 // Test copying the non-zero mip, stencil-only aspect into a buffer.
 TEST_P(StencilCopyTests_Compat, FromNonZeroMipStencilAspect) {
-    // TODO(crbug.com/dawn/2273): Failing on ANGLE/D3D11 for unknown reasons.
-    DAWN_SUPPRESS_TEST_IF(IsANGLED3D11());
     constexpr uint32_t kWidth = 9;
     constexpr uint32_t kHeight = 9;
     constexpr uint32_t kBufferCopyOffset = 0;
@@ -1574,7 +1575,7 @@ DAWN_INSTANTIATE_TEST_P(
                    "use_blit_for_buffer_to_stencil_texture_copy"}),
      OpenGLBackend(), OpenGLESBackend(),
      // Test with the vulkan_use_s8 toggle forced on and off.
-     VulkanBackend({"vulkan_use_s8"}, {}), VulkanBackend({}, {"vulkan_use_s8"})},
+     VulkanBackend({"vulkan_use_s8"}, {}), VulkanBackend({}, {"vulkan_use_s8"}), WebGPUBackend()},
     std::vector<wgpu::TextureFormat>(utils::kDepthAndStencilFormats.begin(),
                                      utils::kDepthAndStencilFormats.end()));
 
@@ -1582,7 +1583,8 @@ DAWN_INSTANTIATE_TEST_P(DepthCopyTests,
                         {D3D11Backend(), D3D12Backend(),
                          D3D12Backend({"d3d12_use_temp_buffer_in_depth_stencil_texture_and_buffer_"
                                        "copy_with_non_zero_buffer_offset"}),
-                         MetalBackend(), OpenGLBackend(), OpenGLESBackend(), VulkanBackend()},
+                         MetalBackend(), OpenGLBackend(), OpenGLESBackend(), VulkanBackend(),
+                         WebGPUBackend()},
                         std::vector<wgpu::TextureFormat>(kValidDepthCopyTextureFormats.begin(),
                                                          kValidDepthCopyTextureFormats.end()));
 DAWN_INSTANTIATE_TEST_P(DepthCopyTests_Compat,
@@ -1596,7 +1598,7 @@ DAWN_INSTANTIATE_TEST_P(DepthCopyFromBufferTests,
                                        "copy_with_non_zero_buffer_offset"}),
                          MetalBackend(),
                          MetalBackend({"use_blit_for_buffer_to_depth_texture_copy"}),
-                         OpenGLBackend(), OpenGLESBackend(), VulkanBackend()},
+                         OpenGLBackend(), OpenGLESBackend(), VulkanBackend(), WebGPUBackend()},
                         std::vector<wgpu::TextureFormat>(kValidDepthCopyFromBufferFormats.begin(),
                                                          kValidDepthCopyFromBufferFormats.end()));
 
@@ -1612,7 +1614,7 @@ DAWN_INSTANTIATE_TEST_P(
      MetalBackend({"use_blit_for_buffer_to_stencil_texture_copy"}), OpenGLBackend(),
      OpenGLESBackend(), OpenGLESBackend({"gl_force_es_31_and_no_extensions"}),
      // Test with the vulkan_use_s8 toggle forced on and off.
-     VulkanBackend({"vulkan_use_s8"}, {}), VulkanBackend({}, {"vulkan_use_s8"})},
+     VulkanBackend({"vulkan_use_s8"}, {}), VulkanBackend({}, {"vulkan_use_s8"}), WebGPUBackend()},
     std::vector<wgpu::TextureFormat>(utils::kStencilFormats.begin(), utils::kStencilFormats.end()));
 
 DAWN_INSTANTIATE_TEST_P(StencilCopyTests_Compat,
@@ -1627,7 +1629,7 @@ DAWN_INSTANTIATE_TEST_P(
      D3D12Backend({"use_blit_for_depth_texture_to_texture_copy_to_nonzero_subresource"}),
      MetalBackend(),
      MetalBackend({"use_blit_for_depth_texture_to_texture_copy_to_nonzero_subresource"}),
-     OpenGLBackend(), OpenGLESBackend(), VulkanBackend()},
+     OpenGLBackend(), OpenGLESBackend(), VulkanBackend(), WebGPUBackend()},
     std::vector<wgpu::TextureFormat>{wgpu::TextureFormat::Depth16Unorm,
                                      wgpu::TextureFormat::Depth32FloatStencil8,
                                      wgpu::TextureFormat::Depth24Plus});

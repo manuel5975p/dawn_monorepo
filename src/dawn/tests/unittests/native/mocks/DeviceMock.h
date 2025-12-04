@@ -67,11 +67,13 @@ class DeviceMock : public DeviceBase {
                 CopyFromStagingToBuffer,
                 (BufferBase*, uint64_t, BufferBase*, uint64_t, uint64_t),
                 (override));
-    MOCK_METHOD(
-        MaybeError,
-        CopyFromStagingToTextureImpl,
-        (const BufferBase*, const TexelCopyBufferLayout&, const TextureCopy&, const Extent3D&),
-        (override));
+    MOCK_METHOD(MaybeError,
+                CopyFromStagingToTextureImpl,
+                (BufferBase * source,
+                 const TexelCopyBufferLayout& src,
+                 const TextureCopy& dst,
+                 const Extent3D& copySizePixels),
+                (override));
 
     MOCK_METHOD(uint32_t, GetOptimalBytesPerRowAlignment, (), (const, override));
     MOCK_METHOD(uint64_t, GetOptimalBufferToTextureCopyOffsetAlignment, (), (const, override));
@@ -117,8 +119,7 @@ class DeviceMock : public DeviceBase {
     MOCK_METHOD(ResultOrError<Ref<ShaderModuleBase>>,
                 CreateShaderModuleImpl,
                 (const UnpackedPtr<ShaderModuleDescriptor>&,
-                 const std::vector<tint::wgsl::Extension>&,
-                 ShaderModuleParseResult*),
+                 const std::vector<tint::wgsl::Extension>&),
                 (override));
     MOCK_METHOD(ResultOrError<Ref<SwapChainBase>>,
                 CreateSwapChainImpl,

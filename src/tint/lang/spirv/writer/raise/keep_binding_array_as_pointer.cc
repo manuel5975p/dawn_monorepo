@@ -65,7 +65,7 @@ struct State {
             if (ba_type == nullptr) {
                 continue;
             }
-            TINT_ASSERT(ba_type->IsHandle());
+            TINT_IR_ASSERT(ir, ba_type->IsHandle());
 
             auto* ba_ptr = load->From();
             auto* element_ptr_ty = ty.ptr<handle>(ba_type->ElemType());
@@ -91,7 +91,8 @@ struct State {
 }  // namespace
 
 Result<SuccessType> KeepBindingArrayAsPointer(core::ir::Module& ir) {
-    auto result = ValidateAndDumpIfNeeded(ir, "spirv.KeepBindingArrayAsPointer");
+    auto result = ValidateAndDumpIfNeeded(ir, "spirv.KeepBindingArrayAsPointer",
+                                          kKeepBindingArrayAsPointerCapabilities);
     if (result != Success) {
         return result;
     }

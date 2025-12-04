@@ -829,7 +829,9 @@ const analysis::Constant* FoldFPBinaryOp(
     // Build the constant object and return it.
     std::vector<uint32_t> ids;
     for (const analysis::Constant* member : results_components) {
-      ids.push_back(const_mgr->GetDefiningInstruction(member)->result_id());
+      Instruction* def = const_mgr->GetDefiningInstruction(member);
+      if (!def) return nullptr;
+      ids.push_back(def->result_id());
     }
     return const_mgr->GetConstant(vector_type, ids);
   } else {
@@ -1124,6 +1126,26 @@ ConstantFoldingRule FoldFUnordGreaterThanEqual() {
   return FoldFPBinaryOp(FOLD_FPCMP_OP(>=, false));
 }
 
+ConstantFoldingRule FoldInvariantSelect() {
+  return [](IRContext*, Instruction* inst,
+            const std::vector<const analysis::Constant*>& constants)
+             -> const analysis::Constant* {
+    assert(inst->opcode() == spv::Op::OpSelect);
+    (void)inst;
+
+    if (!constants[1] || !constants[2]) {
+      return nullptr;
+    }
+    if (constants[1] == constants[2]) {
+      return constants[1];
+    }
+    if (constants[1]->IsZero() && constants[2]->IsZero()) {
+      return constants[1];
+    }
+    return nullptr;
+  };
+}
+
 // Folds an OpDot where all of the inputs are constants to a
 // constant.  A new constant is created if necessary.
 ConstantFoldingRule FoldOpDotWithConstants() {
@@ -1395,13 +1417,18 @@ ConstantFoldingRule FoldFMix() {
     if (base_type->AsFloat()->width() == 32) {
       one = const_mgr->GetConstant(base_type,
                                    utils::FloatProxy<float>(1.0f).GetWords());
-    } else {
+    } else if (base_type->AsFloat()->width() == 64) {
       one = const_mgr->GetConstant(base_type,
                                    utils::FloatProxy<double>(1.0).GetWords());
+    } else {
+      // We won't support folding half types.
+      return nullptr;
     }
 
     if (is_vector) {
-      uint32_t one_id = const_mgr->GetDefiningInstruction(one)->result_id();
+      Instruction* one_inst = const_mgr->GetDefiningInstruction(one);
+      if (one_inst == nullptr) return nullptr;
+      uint32_t one_id = one_inst->result_id();
       one =
           const_mgr->GetConstant(result_type, std::vector<uint32_t>(4, one_id));
     }
@@ -1428,19 +1455,46 @@ ConstantFoldingRule FoldFMix() {
   };
 }
 
+template <typename FloatType>
+static bool NegZeroAwareLessThan(FloatType a, FloatType b) {
+  if (a == 0.0 && b == 0.0) {
+    bool sba = std::signbit(a);
+    bool sbb = std::signbit(b);
+    if (sba && !sbb) {
+      return true;
+    }
+  }
+  return a < b;
+}
+
 const analysis::Constant* FoldMin(const analysis::Type* result_type,
                                   const analysis::Constant* a,
                                   const analysis::Constant* b,
                                   analysis::ConstantManager*) {
   if (const analysis::Integer* int_type = result_type->AsInteger()) {
-    if (int_type->width() == 32) {
+    if (int_type->width() <= 32) {
+      assert(
+          (a->AsIntConstant() != nullptr || a->AsNullConstant() != nullptr) &&
+          "Must be an integer or null constant.");
+      assert(
+          (b->AsIntConstant() != nullptr || b->AsNullConstant() != nullptr) &&
+          "Must be an integer or null constant.");
+
       if (int_type->IsSigned()) {
-        int32_t va = a->GetS32();
-        int32_t vb = b->GetS32();
+        int32_t va = (a->AsIntConstant() != nullptr)
+                         ? a->AsIntConstant()->GetS32BitValue()
+                         : 0;
+        int32_t vb = (b->AsIntConstant() != nullptr)
+                         ? b->AsIntConstant()->GetS32BitValue()
+                         : 0;
         return (va < vb ? a : b);
       } else {
-        uint32_t va = a->GetU32();
-        uint32_t vb = b->GetU32();
+        uint32_t va = (a->AsIntConstant() != nullptr)
+                          ? a->AsIntConstant()->GetU32BitValue()
+                          : 0;
+        uint32_t vb = (b->AsIntConstant() != nullptr)
+                          ? b->AsIntConstant()->GetU32BitValue()
+                          : 0;
         return (va < vb ? a : b);
       }
     } else if (int_type->width() == 64) {
@@ -1458,11 +1512,11 @@ const analysis::Constant* FoldMin(const analysis::Type* result_type,
     if (float_type->width() == 32) {
       float va = a->GetFloat();
       float vb = b->GetFloat();
-      return (va < vb ? a : b);
+      return NegZeroAwareLessThan(va, vb) ? a : b;
     } else if (float_type->width() == 64) {
       double va = a->GetDouble();
       double vb = b->GetDouble();
-      return (va < vb ? a : b);
+      return NegZeroAwareLessThan(va, vb) ? a : b;
     }
   }
   return nullptr;
@@ -1473,14 +1527,29 @@ const analysis::Constant* FoldMax(const analysis::Type* result_type,
                                   const analysis::Constant* b,
                                   analysis::ConstantManager*) {
   if (const analysis::Integer* int_type = result_type->AsInteger()) {
-    if (int_type->width() == 32) {
+    if (int_type->width() <= 32) {
+      assert(
+          (a->AsIntConstant() != nullptr || a->AsNullConstant() != nullptr) &&
+          "Must be an integer or null constant.");
+      assert(
+          (b->AsIntConstant() != nullptr || b->AsNullConstant() != nullptr) &&
+          "Must be an integer or null constant.");
+
       if (int_type->IsSigned()) {
-        int32_t va = a->GetS32();
-        int32_t vb = b->GetS32();
+        int32_t va = (a->AsIntConstant() != nullptr)
+                         ? a->AsIntConstant()->GetS32BitValue()
+                         : 0;
+        int32_t vb = (b->AsIntConstant() != nullptr)
+                         ? b->AsIntConstant()->GetS32BitValue()
+                         : 0;
         return (va > vb ? a : b);
       } else {
-        uint32_t va = a->GetU32();
-        uint32_t vb = b->GetU32();
+        uint32_t va = (a->AsIntConstant() != nullptr)
+                          ? a->AsIntConstant()->GetU32BitValue()
+                          : 0;
+        uint32_t vb = (b->AsIntConstant() != nullptr)
+                          ? b->AsIntConstant()->GetU32BitValue()
+                          : 0;
         return (va > vb ? a : b);
       }
     } else if (int_type->width() == 64) {
@@ -1498,11 +1567,71 @@ const analysis::Constant* FoldMax(const analysis::Type* result_type,
     if (float_type->width() == 32) {
       float va = a->GetFloat();
       float vb = b->GetFloat();
-      return (va > vb ? a : b);
+      return NegZeroAwareLessThan(vb, va) ? a : b;
     } else if (float_type->width() == 64) {
       double va = a->GetDouble();
       double vb = b->GetDouble();
-      return (va > vb ? a : b);
+      return NegZeroAwareLessThan(vb, va) ? a : b;
+    }
+  }
+  return nullptr;
+}
+
+const analysis::Constant* FoldNMin(const analysis::Type* result_type,
+                                   const analysis::Constant* a,
+                                   const analysis::Constant* b,
+                                   analysis::ConstantManager*) {
+  if (const analysis::Float* float_type = result_type->AsFloat()) {
+    if (float_type->width() == 32) {
+      float va = a->GetFloat();
+      float vb = b->GetFloat();
+      if (std::isnan(va)) {
+        return b;
+      }
+      if (std::isnan(vb)) {
+        return a;
+      }
+      return NegZeroAwareLessThan(va, vb) ? a : b;
+    } else if (float_type->width() == 64) {
+      double va = a->GetDouble();
+      double vb = b->GetDouble();
+      if (std::isnan(va)) {
+        return b;
+      }
+      if (std::isnan(vb)) {
+        return a;
+      }
+      return NegZeroAwareLessThan(va, vb) ? a : b;
+    }
+  }
+  return nullptr;
+}
+
+const analysis::Constant* FoldNMax(const analysis::Type* result_type,
+                                   const analysis::Constant* a,
+                                   const analysis::Constant* b,
+                                   analysis::ConstantManager*) {
+  if (const analysis::Float* float_type = result_type->AsFloat()) {
+    if (float_type->width() == 32) {
+      float va = a->GetFloat();
+      float vb = b->GetFloat();
+      if (std::isnan(va)) {
+        return b;
+      }
+      if (std::isnan(vb)) {
+        return a;
+      }
+      return NegZeroAwareLessThan(vb, va) ? a : b;
+    } else if (float_type->width() == 64) {
+      double va = a->GetDouble();
+      double vb = b->GetDouble();
+      if (std::isnan(va)) {
+        return b;
+      }
+      if (std::isnan(vb)) {
+        return a;
+      }
+      return NegZeroAwareLessThan(vb, va) ? a : b;
     }
   }
   return nullptr;
@@ -1581,6 +1710,88 @@ const analysis::Constant* FoldClamp3(
 
   const analysis::Constant* temp =
       FoldFPBinaryOp(FoldMin, inst->type_id(), {x, max_val}, context);
+  if (temp == max_val) {
+    // We can assume that |min_val| is less than |max_val|.  Therefore, if the
+    // result of the max operation is |min_val|, we know the result of the min
+    // operation, even if |max_val| is not a constant.
+    return max_val;
+  }
+  return nullptr;
+}
+
+// Fold an clamp instruction when all three operands are constant.
+const analysis::Constant* FoldNClamp1(
+    IRContext* context, Instruction* inst,
+    const std::vector<const analysis::Constant*>& constants) {
+  assert(inst->opcode() == spv::Op::OpExtInst &&
+         "Expecting an extended instruction.");
+  assert(inst->GetSingleWordInOperand(0) ==
+             context->get_feature_mgr()->GetExtInstImportId_GLSLstd450() &&
+         "Expecting a GLSLstd450 extended instruction.");
+
+  // Make sure all Clamp operands are constants.
+  for (uint32_t i = 1; i < 4; i++) {
+    if (constants[i] == nullptr) {
+      return nullptr;
+    }
+  }
+
+  const analysis::Constant* temp = FoldFPBinaryOp(
+      FoldNMax, inst->type_id(), {constants[1], constants[2]}, context);
+  if (temp == nullptr) {
+    return nullptr;
+  }
+  return FoldFPBinaryOp(FoldNMin, inst->type_id(), {temp, constants[3]},
+                        context);
+}
+
+// Fold a clamp instruction when |x <= min_val|.
+const analysis::Constant* FoldNClamp2(
+    IRContext* context, Instruction* inst,
+    const std::vector<const analysis::Constant*>& constants) {
+  assert(inst->opcode() == spv::Op::OpExtInst &&
+         "Expecting an extended instruction.");
+  assert(inst->GetSingleWordInOperand(0) ==
+             context->get_feature_mgr()->GetExtInstImportId_GLSLstd450() &&
+         "Expecting a GLSLstd450 extended instruction.");
+
+  const analysis::Constant* x = constants[1];
+  const analysis::Constant* min_val = constants[2];
+
+  if (x == nullptr || min_val == nullptr) {
+    return nullptr;
+  }
+
+  const analysis::Constant* temp =
+      FoldFPBinaryOp(FoldNMax, inst->type_id(), {x, min_val}, context);
+  if (temp == min_val) {
+    // We can assume that |min_val| is less than |max_val|.  Therefore, if the
+    // result of the max operation is |min_val|, we know the result of the min
+    // operation, even if |max_val| is not a constant.
+    return min_val;
+  }
+  return nullptr;
+}
+
+// Fold a clamp instruction when |x >= max_val|.
+const analysis::Constant* FoldNClamp3(
+    IRContext* context, Instruction* inst,
+    const std::vector<const analysis::Constant*>& constants) {
+  assert(inst->opcode() == spv::Op::OpExtInst &&
+         "Expecting an extended instruction.");
+  assert(inst->GetSingleWordInOperand(0) ==
+             context->get_feature_mgr()->GetExtInstImportId_GLSLstd450() &&
+         "Expecting a GLSLstd450 extended instruction.");
+
+  const analysis::Constant* x = constants[1];
+  const analysis::Constant* max_val = constants[3];
+
+  if (x == nullptr || max_val == nullptr) {
+    return nullptr;
+  }
+
+  const analysis::Constant* temp =
+      FoldFPBinaryOp(FoldNMin, inst->type_id(), {x, max_val}, context);
   if (temp == max_val) {
     // We can assume that |min_val| is less than |max_val|.  Therefore, if the
     // result of the max operation is |min_val|, we know the result of the min
@@ -1738,6 +1949,8 @@ void ConstantFoldingRules::AddFoldingRules() {
   rules_[spv::Op::OpFMul].push_back(FoldFMul());
   rules_[spv::Op::OpFSub].push_back(FoldFSub());
 
+  rules_[spv::Op::OpSelect].push_back(FoldInvariantSelect());
+
   rules_[spv::Op::OpFOrdEqual].push_back(FoldFOrdEqual());
 
   rules_[spv::Op::OpFUnordEqual].push_back(FoldFUnordEqual());
@@ -1841,12 +2054,16 @@ void ConstantFoldingRules::AddFoldingRules() {
         FoldFPBinaryOp(FoldMin));
     ext_rules_[{ext_inst_glslstd450_id, GLSLstd450FMin}].push_back(
         FoldFPBinaryOp(FoldMin));
+    ext_rules_[{ext_inst_glslstd450_id, GLSLstd450NMin}].push_back(
+        FoldFPBinaryOp(FoldNMin));
     ext_rules_[{ext_inst_glslstd450_id, GLSLstd450SMax}].push_back(
         FoldFPBinaryOp(FoldMax));
     ext_rules_[{ext_inst_glslstd450_id, GLSLstd450UMax}].push_back(
         FoldFPBinaryOp(FoldMax));
     ext_rules_[{ext_inst_glslstd450_id, GLSLstd450FMax}].push_back(
         FoldFPBinaryOp(FoldMax));
+    ext_rules_[{ext_inst_glslstd450_id, GLSLstd450NMax}].push_back(
+        FoldFPBinaryOp(FoldNMax));
     ext_rules_[{ext_inst_glslstd450_id, GLSLstd450UClamp}].push_back(
         FoldClamp1);
     ext_rules_[{ext_inst_glslstd450_id, GLSLstd450UClamp}].push_back(
@@ -1865,6 +2082,12 @@ void ConstantFoldingRules::AddFoldingRules() {
         FoldClamp2);
     ext_rules_[{ext_inst_glslstd450_id, GLSLstd450FClamp}].push_back(
         FoldClamp3);
+    ext_rules_[{ext_inst_glslstd450_id, GLSLstd450NClamp}].push_back(
+        FoldNClamp1);
+    ext_rules_[{ext_inst_glslstd450_id, GLSLstd450NClamp}].push_back(
+        FoldNClamp2);
+    ext_rules_[{ext_inst_glslstd450_id, GLSLstd450NClamp}].push_back(
+        FoldNClamp3);
     ext_rules_[{ext_inst_glslstd450_id, GLSLstd450Sin}].push_back(
         FoldFPUnaryOp(FoldFTranscendentalUnary(std::sin)));
     ext_rules_[{ext_inst_glslstd450_id, GLSLstd450Cos}].push_back(

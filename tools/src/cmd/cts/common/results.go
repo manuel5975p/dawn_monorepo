@@ -29,7 +29,6 @@ package common
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -130,17 +129,17 @@ func (r *ResultSource) getResultsImpl(ctx context.Context, cfg Config, auth auth
 	// CTS roll.
 	if ps.Change == 0 {
 		fmt.Println("no change specified, scanning gerrit for last CTS roll...")
-		gerrit, err := gerrit.New(ctx, auth, cfg.Gerrit.Host)
+		instance, err := gerrit.New(ctx, auth, cfg.Gerrit.Host)
 		if err != nil {
 			return nil, err
 		}
-		latest, err := LatestCTSRoll(gerrit)
+		latest, err := LatestCTSRoll(instance)
 		if err != nil {
 			return nil, err
 		}
 		fmt.Printf("scanning for latest patchset of %v...\n", latest.Number)
 		var resultsByExecutionMode result.ResultsByExecutionMode
-		resultsByExecutionMode, *ps, err = getRecentResults(ctx, cfg, r.CacheDir, gerrit, bb, client, latest.Number)
+		resultsByExecutionMode, *ps, err = getRecentResults(ctx, cfg, r.CacheDir, instance, bb, client, latest.Number)
 		if err != nil {
 			return nil, err
 		}
@@ -151,11 +150,11 @@ func (r *ResultSource) getResultsImpl(ctx context.Context, cfg Config, auth auth
 	// If a change, but no patchset was specified, then query the most recent
 	// patchset.
 	if ps.Patchset == 0 {
-		gerrit, err := gerrit.New(ctx, auth, cfg.Gerrit.Host)
+		instance, err := gerrit.New(ctx, auth, cfg.Gerrit.Host)
 		if err != nil {
 			return nil, err
 		}
-		*ps, err = gerrit.LatestPatchset(strconv.Itoa(ps.Change))
+		*ps, err = instance.LatestPatchset(strconv.Itoa(ps.Change))
 		if err != nil {
 			err := fmt.Errorf("failed to find latest patchset of change %v: %w",
 				ps.Change, err)
@@ -326,6 +325,33 @@ func GetRawUnsuppressedFailingResults(
 	return getRawResultsImpl(ctx, cfg, client, builds, client.QueryUnsuppressedFailingTestResults)
 }
 
+// getPythonClassFromTestConfig extracts the Python test class from a TestConfig.
+func getPythonClassFromTestConfig(test TestConfig) string {
+	for _, p := range test.Prefixes {
+		if strings.HasPrefix(p, "ninja://") {
+			parts := strings.Split(p, "/")
+			return strings.TrimSuffix(parts[len(parts)-1], ".")
+		}
+	}
+	return ""
+}
+
+// shouldSkipV2Result returns true if the new ID result should be
+// skipped because it belongs to a different test suite.
+func shouldSkipV2Result(isV2Prefix bool, pythonClass string, tags []resultsdb.TagPair) bool {
+	if !isV2Prefix {
+		return false
+	}
+	class := ""
+	for _, tagPair := range tags {
+		if tagPair.Key == "gpu_test_class" {
+			class = tagPair.Value
+			break
+		}
+	}
+	return pythonClass != "" && class != pythonClass
+}
+
 // Helper function to share the implementation between GetRawResults and
 // GetRawUnsuppressedFailingResults.
 func getRawResultsImpl(
@@ -341,8 +367,11 @@ func getRawResultsImpl(
 
 	resultsByExecutionMode := result.ResultsByExecutionMode{}
 	for _, test := range cfg.Tests {
+		pythonClass := getPythonClassFromTestConfig(test)
+
 		results := result.List{}
 		for _, prefix := range test.Prefixes {
+			isV2Prefix := !strings.HasPrefix(prefix, "ninja://")
 
 			err := queryFunc(ctx, builds.ids(), prefix, func(r *resultsdb.QueryResult) error {
 				if time.Since(lastPrintedDot) > 5*time.Second {
@@ -350,8 +379,12 @@ func getRawResultsImpl(
 					fmt.Printf(".")
 				}
 
+				if shouldSkipV2Result(isV2Prefix, pythonClass, r.Tags) {
+					return nil
+				}
+
 				if !strings.HasPrefix(r.TestId, prefix) {
-					return errors.New(fmt.Sprintf("Test ID %s did not start with %s even though query should have filtered.", r.TestId, prefix))
+					return fmt.Errorf("Test ID %s did not start with %s even though query should have filtered.", r.TestId, prefix)
 				}
 
 				testName := r.TestId[len(prefix):]
@@ -588,7 +621,7 @@ func CacheRecentUniqueSuppressedCompatResults(
 	return resultsByExecutionMode["compat"], nil
 }
 
-// CacheRecentRexpectationAffectedCiResults looks in the cache at 'cacheDir' for
+// CacheRecentUniqueSuppressedResults looks in the cache at 'cacheDir' for
 // CI results from the recent history. If the cache contains the results, they
 // are loaded and returned. If the cache does not contain the results, they are
 // fetched, cleaned with CleanResults(), saved to the cache directory, and
@@ -650,10 +683,17 @@ func getRecentUniqueSuppressedResults(
 
 	resultsByExecutionMode := result.ResultsByExecutionMode{}
 	for _, test := range cfg.Tests {
+		pythonClass := getPythonClassFromTestConfig(test)
+
 		results := result.List{}
 		for _, prefix := range test.Prefixes {
+			isV2Prefix := !strings.HasPrefix(prefix, "ninja://")
 
 			rowHandler := func(r *resultsdb.QueryResult) error {
+				if shouldSkipV2Result(isV2Prefix, pythonClass, r.Tags) {
+					return nil
+				}
+
 				if !strings.HasPrefix(r.TestId, prefix) {
 					return fmt.Errorf(
 						"Test ID %s did not start with %s even though query should have filtered.",
@@ -664,10 +704,14 @@ func getRecentUniqueSuppressedResults(
 				tags := result.NewTags()
 
 				for _, tagPair := range r.Tags {
-					if tagPair.Key != "typ_tag" {
-						return fmt.Errorf("Got tag key %v when only typ_tag should be present", tagPair.Key)
+					switch tagPair.Key {
+					case "typ_tag":
+						tags.Add(tagPair.Value)
+					case "gpu_test_class":
+						// Used for filtering, but not stored
+					default:
+						return fmt.Errorf("Got unexpected tag key %v", tagPair.Key)
 					}
-					tags.Add(tagPair.Value)
 				}
 
 				results = append(results, result.Result{

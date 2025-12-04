@@ -27,6 +27,7 @@
 
 #include "dawn/native/BindGroup.h"
 
+#include <algorithm>
 #include <limits>
 #include <variant>
 
@@ -42,10 +43,12 @@
 #include "dawn/native/Buffer.h"
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/Device.h"
+#include "dawn/native/DynamicArrayState.h"
 #include "dawn/native/ExternalTexture.h"
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/ObjectType_autogen.h"
 #include "dawn/native/Sampler.h"
+#include "dawn/native/TexelBufferView.h"
 #include "dawn/native/Texture.h"
 #include "dawn/native/utils/WGPUHelpers.h"
 
@@ -123,7 +126,7 @@ MaybeError ValidateBufferBinding(const DeviceBase* device,
             DAWN_UNREACHABLE();
     }
 
-    DAWN_INVALID_IF(!IsAligned(entry.offset, requiredBindingAlignment),
+    DAWN_INVALID_IF(!IsAligned(static_cast<uint32_t>(entry.offset), requiredBindingAlignment),
                     "Offset (%u) of %s does not satisfy the minimum %s alignment (%u).",
                     entry.offset, entry.buffer, layout.type, requiredBindingAlignment);
 
@@ -167,7 +170,7 @@ MaybeError ValidateBufferBinding(const DeviceBase* device,
     return {};
 }
 
-MaybeError ValidateTextureBindGroupEntry(DeviceBase* device, const BindGroupEntry& entry) {
+MaybeError ValidateTextureBindGroupEntry(const DeviceBase* device, const BindGroupEntry& entry) {
     DAWN_INVALID_IF(entry.textureView == nullptr, "Binding entry textureView not set.");
 
     DAWN_INVALID_IF(entry.sampler != nullptr || entry.buffer != nullptr,
@@ -307,8 +310,41 @@ MaybeError ValidateStorageTextureBinding(DeviceBase* device,
     DAWN_INVALID_IF(view->GetLevelCount() != 1, "mipLevelCount (%u) of %s expected to be 1.",
                     view->GetLevelCount(), view);
 
+    // TODO(450506641): Precompute allowed usages of texture views (including swizzle identity
+    // check) instead of recomputing.
+    DAWN_INVALID_IF(!view->IsSwizzleIdentity(), "Swizzle of %s must be identity.", view);
+
     if (!device->HasFlexibleTextureViews()) {
         DAWN_TRY(ValidateCompatibilityModeTextureViewArrayLayer(device, view, texture));
+    }
+
+    return {};
+}
+
+MaybeError ValidateTexelBufferBinding(DeviceBase* device,
+                                      const UnpackedPtr<BindGroupEntry>& entry,
+                                      const TexelBufferBindingInfo& layout,
+                                      UsageValidationMode mode) {
+    const TexelBufferBindingEntry* texelBufferEntry = entry.Get<TexelBufferBindingEntry>();
+    DAWN_INVALID_IF(texelBufferEntry == nullptr, "Expected a texelBufferView.");
+
+    DAWN_TRY(entry.ValidateSubset<TexelBufferBindingEntry>());
+    DAWN_INVALID_IF(
+        entry->buffer != nullptr || entry->sampler != nullptr || entry->textureView != nullptr,
+        "Expected only texelBufferView to be set for binding entry.");
+
+    DAWN_TRY(device->ValidateObject(texelBufferEntry->texelBufferView));
+
+    BufferBase* buffer = texelBufferEntry->texelBufferView->GetBuffer();
+    DAWN_TRY(ValidateCanUseAs(buffer, wgpu::BufferUsage::TexelBuffer));
+
+    DAWN_INVALID_IF(texelBufferEntry->texelBufferView->GetFormat() != layout.format,
+                    "Format (%s) of %s expected to be (%s).",
+                    texelBufferEntry->texelBufferView->GetFormat(),
+                    texelBufferEntry->texelBufferView, layout.format);
+
+    if (layout.access == wgpu::TexelBufferAccess::ReadWrite) {
+        DAWN_TRY(ValidateCanUseAs(buffer, wgpu::BufferUsage::Storage));
     }
 
     return {};
@@ -356,25 +392,20 @@ MaybeError ValidateSamplerBinding(const DeviceBase* device,
     return {};
 }
 
-MaybeError ValidateExternalTextureBinding(
-    const DeviceBase* device,
-    const BindGroupEntry& entry,
-    const ExternalTextureBindingEntry* externalTextureBindingEntry,
-    const ExternalTextureBindingExpansionMap& expansions) {
-    DAWN_INVALID_IF(externalTextureBindingEntry == nullptr,
-                    "Binding entry external texture not set.");
+MaybeError ValidateExternalTextureBinding(DeviceBase* device,
+                                          const UnpackedPtr<BindGroupEntry>& entry) {
+    auto* externalTextureBindingEntry = entry.Get<ExternalTextureBindingEntry>();
 
+    // It is possible to use texture views in lieu of external textures.
+    if (externalTextureBindingEntry == nullptr) {
+        return ValidateTextureViewBindingUsedAsExternalTexture(device, **entry);
+    }
+
+    DAWN_TRY(entry.ValidateSubset<ExternalTextureBindingEntry>());
     DAWN_INVALID_IF(
-        entry.sampler != nullptr || entry.textureView != nullptr || entry.buffer != nullptr,
+        entry->sampler != nullptr || entry->textureView != nullptr || entry->buffer != nullptr,
         "Expected only external texture to be set for binding entry.");
-
-    DAWN_INVALID_IF(!expansions.contains(BindingNumber(entry.binding)),
-                    "External texture binding entry %u is not present in the bind group layout.",
-                    entry.binding);
-
-    DAWN_TRY(device->ValidateObject(externalTextureBindingEntry->externalTexture));
-
-    return {};
+    return device->ValidateObject(externalTextureBindingEntry->externalTexture);
 }
 
 template <typename F>
@@ -392,36 +423,44 @@ void ForEachUnverifiedBufferBindingIndexImpl(const BindGroupLayoutInternalBase* 
 MaybeError ValidateStaticSamplersWithSampledTextures(
     const UnpackedPtr<BindGroupDescriptor>& descriptor,
     const BindGroupLayoutInternalBase* layout) {
-    absl::flat_hash_map<BindingNumber, uint32_t> bindingNumberToEntryIndexMap;
+    // Cache the position of all the sampled texture in descriptor->entries to later validate them
+    // against their static sampler (if they are used with the static sampler).
+    absl::flat_hash_map<BindingIndex, uint32_t> textureIndexToEntryIndex;
     for (uint32_t i = 0; i < descriptor->entryCount; ++i) {
-        bindingNumberToEntryIndexMap[BindingNumber(descriptor->entries[i].binding)] = i;
+        APIBindingIndex apiIndex =
+            layout->GetBindingMap().at(BindingNumber(descriptor->entries[i].binding));
+        const auto& bindingInfo = layout->GetAPIBindingInfo(apiIndex);
+        if (std::holds_alternative<TextureBindingInfo>(bindingInfo.bindingLayout)) {
+            textureIndexToEntryIndex[layout->AsBindingIndex(apiIndex)] = i;
+        }
     }
 
-    // Entry indices of YCbCr textures sampled by a static sampler.
+    // Gather the indices of YCbCr textures sampled by a static sampler.
     ityp::bitset<uint32_t, kMaxBindingsPerPipelineLayout> sampledYcbcrTextures;
     for (BindingIndex index{0}; index < layout->GetBindingCount(); ++index) {
         const BindingInfo& bindingInfo = layout->GetBindingInfo(index);
         auto* staticSamplerLayout =
             std::get_if<StaticSamplerBindingInfo>(&bindingInfo.bindingLayout);
-        if (staticSamplerLayout && staticSamplerLayout->isUsedForSingleTextureBinding) {
-            const SamplerBase* sampler = staticSamplerLayout->sampler.Get();
+        if (!staticSamplerLayout || !staticSamplerLayout->isUsedForSingleTexture) {
+            continue;
+        }
 
-            uint32_t textureEntryIndex = bindingNumberToEntryIndexMap.at(
-                BindingNumber(staticSamplerLayout->sampledTextureBinding));
-            const TextureViewBase* textureView = descriptor->entries[textureEntryIndex].textureView;
+        const SamplerBase* sampler = staticSamplerLayout->sampler.Get();
+        uint32_t textureEntryIndex =
+            textureIndexToEntryIndex.at(staticSamplerLayout->sampledTextureIndex);
+        const TextureViewBase* textureView = descriptor->entries[textureEntryIndex].textureView;
 
-            // Compare static sampler and sampled textures to make sure they are compatible.
-            if (sampler->IsYCbCr()) {
-                DAWN_INVALID_IF(!textureView->IsYCbCr(),
-                                "YCbCr static sampler at binding (%u) samples a non-YCbCr texture.",
-                                bindingInfo.binding);
+        // Compare static sampler and sampled textures to make sure they are compatible.
+        if (sampler->IsYCbCr()) {
+            DAWN_INVALID_IF(!textureView->IsYCbCr(),
+                            "YCbCr static sampler at binding (%u) samples a non-YCbCr texture.",
+                            bindingInfo.binding);
 
-                sampledYcbcrTextures.set(textureEntryIndex);
-            } else {
-                DAWN_INVALID_IF(textureView->IsYCbCr(),
-                                "Non-YCbCr static sampler at binding (%u) samples a YCbCr texture.",
-                                bindingInfo.binding);
-            }
+            sampledYcbcrTextures.set(textureEntryIndex);
+        } else {
+            DAWN_INVALID_IF(textureView->IsYCbCr(),
+                            "Non-YCbCr static sampler at binding (%u) samples a YCbCr texture.",
+                            bindingInfo.binding);
         }
     }
 
@@ -430,7 +469,7 @@ MaybeError ValidateStaticSamplersWithSampledTextures(
     for (uint32_t i = 0; i < descriptor->entryCount; ++i) {
         const BindGroupEntry& entry = descriptor->entries[i];
         const BindingInfo& bindingInfo =
-            layout->GetBindingInfo(bindingMap.at(BindingNumber(entry.binding)));
+            layout->GetAPIBindingInfo(bindingMap.at(BindingNumber(entry.binding)));
         if (std::holds_alternative<TextureBindingInfo>(bindingInfo.bindingLayout) &&
             entry.textureView && entry.textureView->IsYCbCr()) {
             DAWN_INVALID_IF(!sampledYcbcrTextures.test(i),
@@ -442,7 +481,29 @@ MaybeError ValidateStaticSamplersWithSampledTextures(
     return {};
 }
 
-MaybeError ValidateBindGroupDynamicBindingArray(DeviceBase* device,
+MaybeError ValidateDynamicBindingArrayEntry(const DeviceBase* device,
+                                            wgpu::DynamicBindingKind kind,
+                                            const BindGroupEntry& entry) {
+    switch (kind) {
+        case wgpu::DynamicBindingKind::SampledTexture: {
+            DAWN_TRY(ValidateTextureBindGroupEntry(device, entry));
+            TextureViewBase* view = entry.textureView;
+            DAWN_INVALID_IF(
+                (view->GetUsage() & kTextureViewOnlyUsages) != wgpu::TextureUsage::TextureBinding,
+                "%s's usages (%s) are not exactly %s.", view,
+                view->GetUsage() & kTextureViewOnlyUsages, wgpu::TextureUsage::TextureBinding);
+            DAWN_INVALID_IF(view->IsYCbCr(), "%s is YCbCr.", view);
+            break;
+        }
+
+        case wgpu::DynamicBindingKind::Undefined:
+            DAWN_UNREACHABLE();
+    }
+
+    return {};
+}
+
+MaybeError ValidateBindGroupDynamicBindingArray(const DeviceBase* device,
                                                 const UnpackedPtr<BindGroupDescriptor> descriptor,
                                                 UsageValidationMode mode) {
     auto* dynamic = descriptor.Get<BindGroupDynamicBindingArray>();
@@ -455,10 +516,10 @@ MaybeError ValidateBindGroupDynamicBindingArray(DeviceBase* device,
                     "Dynamic binding array used without the %s feature enabled.",
                     wgpu::FeatureName::ChromiumExperimentalBindless);
 
-    DAWN_INVALID_IF(!layout->HasDynamicArray() && dynamic->dynamicArraySize != 0,
-                    "Dynamic binding array size (%u) is non-zero when the layout (%s) doesn't "
-                    "contain a dynamic binding array.",
-                    dynamic->dynamicArraySize, layout);
+    DAWN_INVALID_IF(
+        !layout->HasDynamicArray(),
+        "dynamicArraySize specified when the layout (%s) doesn't contain a dynamic binding array.",
+        layout);
 
     const uint32_t maxDynamicBindingArraySize =
         device->GetLimits().dynamicBindingArrayLimits.maxDynamicBindingArraySize;
@@ -466,7 +527,7 @@ MaybeError ValidateBindGroupDynamicBindingArray(DeviceBase* device,
                     "dynamicArraySize (%u) exceeds the maxDynamicBindingArraySize limit (%u).",
                     dynamic->dynamicArraySize, maxDynamicBindingArraySize);
 
-    const BindingNumber dynamicArrayStart = layout->GetDynamicArrayStart();
+    const BindingNumber dynamicArrayStart = layout->GetAPIDynamicArrayStart();
     const BindingNumber dynamicArraySize = BindingNumber(dynamic->dynamicArraySize);
 
     // Validate that any non-static entry fits in the dynamic binding array and that they match its
@@ -487,24 +548,39 @@ MaybeError ValidateBindGroupDynamicBindingArray(DeviceBase* device,
                         i, binding, dynamicArrayStart, dynamicArrayStart + dynamicArraySize);
 
         DAWN_INVALID_IF(dynamicBindingsSeen.contains(binding),
-                        "In entries[%u], binding index %u already used by a previous entry", i,
+                        "In entries[%u], binding index %u already used by a previous entry.", i,
                         binding);
         dynamicBindingsSeen.insert(binding);
 
-        switch (layout->GetDynamicArrayKind()) {
-            case wgpu::DynamicBindingKind::SampledTexture:
-                // TODO(https://issues.chromium.org/435251399): Figure out the additional validation
-                // rules for the texture kind. Also figure out how we should honor the
-                // UsageValidationMode.
-                DAWN_TRY(ValidateTextureBindGroupEntry(device, entry));
-                break;
-
-            case wgpu::DynamicBindingKind::Undefined:
-                DAWN_UNREACHABLE();
-        }
+        DAWN_TRY_CONTEXT(
+            ValidateDynamicBindingArrayEntry(device, layout->GetDynamicArrayKind(), entry),
+            "validating that entries[%i] can be used in the dynamic binding array.", i);
     }
 
     return {};
+}
+
+BindGroupEntryContents ToBindGroupEntryContents(const BindGroupEntry& entry) {
+    return {
+        .nextInChain = entry.nextInChain,
+        .buffer = entry.buffer,
+        .offset = entry.offset,
+        .size = entry.size,
+        .sampler = entry.sampler,
+        .textureView = entry.textureView,
+    };
+}
+
+BindGroupEntry ToBindGroupEntry(BindingNumber binding, const BindGroupEntryContents& contents) {
+    return {
+        .nextInChain = contents.nextInChain,
+        .binding = uint32_t(binding),
+        .buffer = contents.buffer,
+        .offset = contents.offset,
+        .size = contents.size,
+        .sampler = contents.sampler,
+        .textureView = contents.textureView,
+    };
 }
 
 }  // anonymous namespace
@@ -527,7 +603,7 @@ ResultOrError<UnpackedPtr<BindGroupDescriptor>> ValidateBindGroupDescriptor(
     // needed.
     uint32_t staticEntryCount = 0;
     bool needsCrossBindingValidation = layout->NeedsCrossBindingValidation();
-    ityp::bitset<BindingIndex, kMaxBindingsPerPipelineLayout> bindingsSet;
+    ityp::bitset<APIBindingIndex, kMaxBindingsPerPipelineLayout> bindingsSet;
     for (uint32_t i = 0; i < descriptor->entryCount; ++i) {
         const BindGroupEntry& entry = descriptor->entries[i];
         BindingNumber binding = BindingNumber(entry.binding);
@@ -537,7 +613,7 @@ ResultOrError<UnpackedPtr<BindGroupDescriptor>> ValidateBindGroupDescriptor(
         const auto& it = staticBindingMap.find(binding);
         if (it == staticBindingMap.end()) {
             if (descriptor.Has<BindGroupDynamicBindingArray>() &&
-                binding >= layout->GetDynamicArrayStart()) {
+                binding >= layout->GetAPIDynamicArrayStart()) {
                 continue;
             }
             return DAWN_VALIDATION_ERROR(
@@ -548,13 +624,13 @@ ResultOrError<UnpackedPtr<BindGroupDescriptor>> ValidateBindGroupDescriptor(
         staticEntryCount++;
 
         // Check for redundant static entries.
-        BindingIndex bindingIndex = it->second;
+        APIBindingIndex bindingIndex = it->second;
         DAWN_INVALID_IF(bindingsSet[bindingIndex],
                         "In entries[%u], binding index %u already used by a previous entry", i,
                         binding);
         bindingsSet.set(bindingIndex);
 
-        const BindingInfo& bindingInfo = layout->GetBindingInfo(bindingIndex);
+        const BindingInfo& bindingInfo = layout->GetAPIBindingInfo(bindingIndex);
 
         // Below this block we validate entries based on the bind group layout, in which
         // external textures have been expanded into their underlying contents. For this reason
@@ -563,76 +639,47 @@ ResultOrError<UnpackedPtr<BindGroupDescriptor>> ValidateBindGroupDescriptor(
         // TODO(42240282): Store external textures in
         // BindGroupLayoutBase::BindingDataPointers::bindings so checking external textures can
         // be moved in the switch below.
-        if (layout->GetExternalTextureBindingExpansionMap().contains(binding)) {
-            UnpackedPtr<BindGroupEntry> unpacked;
-            DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(&entry));
-            if (auto* externalTextureBindingEntry = unpacked.Get<ExternalTextureBindingEntry>()) {
-                DAWN_TRY(ValidateExternalTextureBinding(
-                    device, entry, externalTextureBindingEntry,
-                    layout->GetExternalTextureBindingExpansionMap()));
-                continue;
-            }
-            if (!device->IsToggleEnabled(Toggle::DisableTextureViewBindingUsedAsExternalTexture)) {
-                DAWN_TRY_CONTEXT(ValidateTextureViewBindingUsedAsExternalTexture(device, entry),
-                                 "validating entries[%u] as a TextureView."
-                                 "\nExpected entry layout: %s",
-                                 i, layout);
-                continue;
-            }
-            return DAWN_VALIDATION_ERROR(
-                "entries[%u] not an ExternalTexture when the layout contains an ExternalTexture "
-                "entry.",
-                i);
-        }
-        DAWN_INVALID_IF(entry.nextInChain != nullptr, "nextInChain must be nullptr.");
+        UnpackedPtr<BindGroupEntry> unpacked;
+        DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(&entry));
 
         // Perform binding-type specific validation.
-        DAWN_TRY(MatchVariant(
-            bindingInfo.bindingLayout,
-            [&](const BufferBindingInfo& layout) -> MaybeError {
-                // TODO(dawn:1485): Validate buffer binding with usage validation mode.
-                DAWN_TRY_CONTEXT(ValidateBufferBinding(device, entry, layout),
-                                 "validating entries[%u] as a Buffer."
-                                 "\nExpected entry layout: %s",
-                                 i, layout);
-                return {};
-            },
-            [&](const TextureBindingInfo& layout) -> MaybeError {
-                DAWN_TRY_CONTEXT(ValidateSampledTextureBinding(device, entry, layout, mode),
-                                 "validating entries[%u] as a Sampled Texture."
-                                 "\nExpected entry layout: %s",
-                                 i, layout);
-                if (entry.textureView->IsYCbCr()) {
-                    // Need to validate that the YCbCr texture is statically sampled.
-                    needsCrossBindingValidation = true;
-                }
+        DAWN_TRY_CONTEXT(
+            MatchVariant(
+                bindingInfo.bindingLayout,
+                [&](const BufferBindingInfo& layout) -> MaybeError {
+                    // TODO(dawn:1485): Validate buffer binding with usage validation mode.
+                    return ValidateBufferBinding(device, entry, layout);
+                },
+                [&](const TextureBindingInfo& layout) -> MaybeError {
+                    DAWN_TRY(ValidateSampledTextureBinding(device, entry, layout, mode));
 
-                return {};
-            },
-            [&](const StorageTextureBindingInfo& layout) -> MaybeError {
-                DAWN_TRY_CONTEXT(ValidateStorageTextureBinding(device, entry, layout, mode),
-                                 "validating entries[%u] as a Storage Texture."
-                                 "\nExpected entry layout: %s",
-                                 i, layout);
-                return {};
-            },
-            [&](const SamplerBindingInfo& layout) -> MaybeError {
-                DAWN_TRY_CONTEXT(ValidateSamplerBinding(device, entry, layout),
-                                 "validating entries[%u] as a Sampler."
-                                 "\nExpected entry layout: %s",
-                                 i, layout);
-                return {};
-            },
-            [&](const StaticSamplerBindingInfo& layout) -> MaybeError {
-                return DAWN_VALIDATION_ERROR(
-                    "entries[%u] is provided when the layout contains a static sampler for that "
-                    "binding.",
-                    i);
-            },
-            [](const InputAttachmentBindingInfo&) -> MaybeError {
-                // Internal use only. No validation.
-                return {};
-            }));
+                    if (entry.textureView->IsYCbCr()) {
+                        // Need to validate that the YCbCr texture is statically sampled.
+                        needsCrossBindingValidation = true;
+                    }
+                    return {};
+                },
+                [&](const StorageTextureBindingInfo& layout) -> MaybeError {
+                    return ValidateStorageTextureBinding(device, entry, layout, mode);
+                },
+                [&](const TexelBufferBindingInfo& layout) -> MaybeError {
+                    return ValidateTexelBufferBinding(device, unpacked, layout, mode);
+                },
+                [&](const SamplerBindingInfo& layout) -> MaybeError {
+                    return ValidateSamplerBinding(device, entry, layout);
+                },
+                [&](const StaticSamplerBindingInfo& layout) -> MaybeError {
+                    return DAWN_VALIDATION_ERROR("An entry is provided for a static sampler.");
+                },
+                [&](const ExternalTextureBindingInfo& layout) -> MaybeError {
+                    return ValidateExternalTextureBinding(device, unpacked);
+                },
+
+                [](const InputAttachmentBindingInfo&) -> MaybeError {
+                    // Internal use only. No validation.
+                    return {};
+                }),
+            "validating entries[%u] against %s.", i, bindingInfo);
     }
 
     // Check that we have all the required static entries.
@@ -663,6 +710,10 @@ ResultOrError<UnpackedPtr<BindGroupDescriptor>> ValidateBindGroupDescriptor(
     // Validate the dynamic entries.
     if (descriptor.Has<BindGroupDynamicBindingArray>()) {
         DAWN_TRY(ValidateBindGroupDynamicBindingArray(device, descriptor, mode));
+    } else {
+        DAWN_INVALID_IF(
+            layout->HasDynamicArray(),
+            "dynamicArraySize is not specified when the layout contains a dynamic binding array.");
     }
 
     return descriptor;
@@ -692,7 +743,7 @@ MaybeError BindGroupBase::Initialize(const UnpackedPtr<BindGroupDescriptor>& des
     // being in the dynamic array. This keeps the condition in the loop below simple.
     BindingNumber dynamicArrayStart = std::numeric_limits<BindingNumber>::max();
     if (layout->HasDynamicArray()) {
-        dynamicArrayStart = layout->GetDynamicArrayStart();
+        dynamicArrayStart = layout->GetAPIDynamicArrayStart();
     }
 
     // Gather static bindings.
@@ -704,102 +755,101 @@ MaybeError BindGroupBase::Initialize(const UnpackedPtr<BindGroupDescriptor>& des
             continue;
         }
 
-        BindingIndex bindingIndex = layout->GetBindingIndex(binding);
-        DAWN_ASSERT(bindingIndex < layout->GetBindingCount());
+        APIBindingIndex apiBindingIndex = layout->GetAPIBindingIndex(binding);
 
-        // Only a single binding type should be set, so once we found it we can skip to the
-        // next loop iteration.
+        DAWN_TRY(MatchVariant(
+            layout->GetAPIBindingInfo(apiBindingIndex).bindingLayout,
+            [&](const BufferBindingInfo&) -> MaybeError {
+                BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
+                DAWN_ASSERT(mBindingData.bindings[bindingIndex] == nullptr);
+                mBindingData.bindings[bindingIndex] = entry->buffer;
+                mBindingData.bufferData[bindingIndex].offset = entry->offset;
+                uint64_t bufferSize = (entry->size == wgpu::kWholeSize)
+                                          ? entry->buffer->GetSize() - entry->offset
+                                          : entry->size;
+                mBindingData.bufferData[bindingIndex].size = bufferSize;
+                return {};
+            },
 
-        if (entry->buffer != nullptr) {
-            DAWN_ASSERT(mBindingData.bindings[bindingIndex] == nullptr);
-            mBindingData.bindings[bindingIndex] = entry->buffer;
-            mBindingData.bufferData[bindingIndex].offset = entry->offset;
-            uint64_t bufferSize = (entry->size == wgpu::kWholeSize)
-                                      ? entry->buffer->GetSize() - entry->offset
-                                      : entry->size;
-            mBindingData.bufferData[bindingIndex].size = bufferSize;
-            continue;
-        }
-
-        if (entry->textureView != nullptr) {
-            // TODO(42240282): Store external textures in
-            // BindGroupLayoutBase::BindingDataPointers::bindings so that we can have a MatchVariant
-            // that contains the ExternalTextureInfo.
-            ExternalTextureBindingExpansionMap expansions =
-                layout->GetExternalTextureBindingExpansionMap();
-            ExternalTextureBindingExpansionMap::iterator it =
-                expansions.find(BindingNumber(entry->binding));
-
-            if (it == expansions.end()) {
+            [&](const TextureBindingInfo&) -> MaybeError {
+                BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
                 DAWN_ASSERT(mBindingData.bindings[bindingIndex] == nullptr);
                 mBindingData.bindings[bindingIndex] = entry->textureView;
-            } else {
+                return {};
+            },
+            [&](const StorageTextureBindingInfo&) -> MaybeError {
+                BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
+                DAWN_ASSERT(mBindingData.bindings[bindingIndex] == nullptr);
+                mBindingData.bindings[bindingIndex] = entry->textureView;
+                return {};
+            },
+            [&](const InputAttachmentBindingInfo&) -> MaybeError {
+                BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
+                DAWN_ASSERT(mBindingData.bindings[bindingIndex] == nullptr);
+                mBindingData.bindings[bindingIndex] = entry->textureView;
+                return {};
+            },
+            [&](const SamplerBindingInfo&) -> MaybeError {
+                BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
+                DAWN_ASSERT(mBindingData.bindings[bindingIndex] == nullptr);
+                mBindingData.bindings[bindingIndex] = entry->sampler;
+                return {};
+            },
+            [&](const TexelBufferBindingInfo&) -> MaybeError {
+                BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
+                DAWN_ASSERT(mBindingData.bindings[bindingIndex] == nullptr);
+                auto* texelBufferBindingEntry = entry.Get<TexelBufferBindingEntry>();
+                mBindingData.bindings[bindingIndex] = texelBufferBindingEntry->texelBufferView;
+                return {};
+            },
+
+            [&](const ExternalTextureBindingInfo& info) -> MaybeError {
+                // Here we unpack external texture bindings into multiple additional bindings for
+                // the external texture's contents. New binding locations previously determined in
+                // the bind group layout are created in this bind group and filled with the external
+                // texture's underlying resources.
+                if (auto* externalTextureBindingEntry = entry.Get<ExternalTextureBindingEntry>()) {
+                    mBoundExternalTextures.push_back(externalTextureBindingEntry->externalTexture);
+
+                    DAWN_ASSERT(mBindingData.bindings[info.plane0] == nullptr);
+                    mBindingData.bindings[info.plane0] =
+                        externalTextureBindingEntry->externalTexture->GetTextureViews()[0];
+
+                    DAWN_ASSERT(mBindingData.bindings[info.plane1] == nullptr);
+                    mBindingData.bindings[info.plane1] =
+                        externalTextureBindingEntry->externalTexture->GetTextureViews()[1];
+
+                    DAWN_ASSERT(mBindingData.bindings[info.metadata] == nullptr);
+                    mBindingData.bindings[info.metadata] =
+                        externalTextureBindingEntry->externalTexture->GetParamsBuffer();
+                    mBindingData.bufferData[info.metadata].offset = 0;
+                    mBindingData.bufferData[info.metadata].size =
+                        sizeof(dawn::native::ExternalTextureParams);
+                    return {};
+                }
+
                 // If this is for a texture view that is used as an external texture, we need to
                 // also provide placeholder for the second plane and a parameter buffer.
-                BindingIndex plane0BindingIndex = layout->GetBindingIndex(it->second.plane0);
-                BindingIndex plane1BindingIndex = layout->GetBindingIndex(it->second.plane1);
-                BindingIndex paramsBindingIndex = layout->GetBindingIndex(it->second.params);
+                DAWN_ASSERT(entry->textureView != nullptr);
 
-                DAWN_ASSERT(mBindingData.bindings[plane0BindingIndex] == nullptr);
-                mBindingData.bindings[plane0BindingIndex] = entry->textureView;
+                DAWN_ASSERT(mBindingData.bindings[info.plane0] == nullptr);
+                mBindingData.bindings[info.plane0] = entry->textureView;
 
-                DAWN_ASSERT(mBindingData.bindings[plane1BindingIndex] == nullptr);
-                DAWN_TRY_ASSIGN(mBindingData.bindings[plane1BindingIndex],
+                DAWN_ASSERT(mBindingData.bindings[info.plane1] == nullptr);
+                DAWN_TRY_ASSIGN(mBindingData.bindings[info.plane1],
                                 GetDevice()->GetOrCreatePlaceholderTextureViewForExternalTexture());
 
-                DAWN_ASSERT(mBindingData.bindings[paramsBindingIndex] == nullptr);
+                DAWN_ASSERT(mBindingData.bindings[info.metadata] == nullptr);
                 Ref<BufferBase> paramsBuffer;
                 DAWN_TRY_ASSIGN(paramsBuffer,
                                 MakeParamsBufferForSimpleView(GetDevice(), entry->textureView));
-                mBindingData.bindings[paramsBindingIndex] = paramsBuffer;
-                mBindingData.bufferData[paramsBindingIndex].offset = 0;
-                mBindingData.bufferData[paramsBindingIndex].size = paramsBuffer->GetSize();
-            }
-            continue;
-        }
+                mBindingData.bindings[info.metadata] = paramsBuffer;
+                mBindingData.bufferData[info.metadata].offset = 0;
+                mBindingData.bufferData[info.metadata].size = paramsBuffer->GetSize();
+                return {};
+            },
 
-        if (entry->sampler != nullptr) {
-            DAWN_ASSERT(mBindingData.bindings[bindingIndex] == nullptr);
-            mBindingData.bindings[bindingIndex] = entry->sampler;
-            continue;
-        }
-
-        // Here we unpack external texture bindings into multiple additional bindings for the
-        // external texture's contents. New binding locations previously determined in the bind
-        // group layout are created in this bind group and filled with the external texture's
-        // underlying resources.
-        if (auto* externalTextureBindingEntry = entry.Get<ExternalTextureBindingEntry>()) {
-            mBoundExternalTextures.push_back(externalTextureBindingEntry->externalTexture);
-
-            ExternalTextureBindingExpansionMap expansions =
-                layout->GetExternalTextureBindingExpansionMap();
-            ExternalTextureBindingExpansionMap::iterator it =
-                expansions.find(BindingNumber(entry->binding));
-
-            DAWN_ASSERT(it != expansions.end());
-
-            BindingIndex plane0BindingIndex = layout->GetBindingIndex(it->second.plane0);
-            BindingIndex plane1BindingIndex = layout->GetBindingIndex(it->second.plane1);
-            BindingIndex paramsBindingIndex = layout->GetBindingIndex(it->second.params);
-
-            DAWN_ASSERT(mBindingData.bindings[plane0BindingIndex] == nullptr);
-
-            mBindingData.bindings[plane0BindingIndex] =
-                externalTextureBindingEntry->externalTexture->GetTextureViews()[0];
-
-            DAWN_ASSERT(mBindingData.bindings[plane1BindingIndex] == nullptr);
-            mBindingData.bindings[plane1BindingIndex] =
-                externalTextureBindingEntry->externalTexture->GetTextureViews()[1];
-
-            DAWN_ASSERT(mBindingData.bindings[paramsBindingIndex] == nullptr);
-            mBindingData.bindings[paramsBindingIndex] =
-                externalTextureBindingEntry->externalTexture->GetParamsBuffer();
-            mBindingData.bufferData[paramsBindingIndex].offset = 0;
-            mBindingData.bufferData[paramsBindingIndex].size =
-                sizeof(dawn::native::ExternalTextureParams);
-
-            continue;
-        }
+            [](const StaticSamplerBindingInfo&) -> MaybeError { DAWN_UNREACHABLE(); }));
     }
 
     ForEachUnverifiedBufferBindingIndexImpl(layout,
@@ -807,6 +857,31 @@ MaybeError BindGroupBase::Initialize(const UnpackedPtr<BindGroupDescriptor>& des
                                                 mBindingData.unverifiedBufferSizes[packedIndex] =
                                                     mBindingData.bufferData[bindingIndex].size;
                                             });
+
+    // Gather dynamic binding entries in a second loop to put the handling off the critical path.
+    if (auto* dynamic = descriptor.Get<BindGroupDynamicBindingArray>()) {
+        mDynamicArray = AcquireRef(new DynamicArrayState(
+            GetDevice(), BindingIndex(dynamic->dynamicArraySize), layout->GetDynamicArrayKind()));
+        DAWN_TRY(mDynamicArray->Initialize());
+
+        for (uint32_t i = 0; i < descriptor->entryCount; ++i) {
+            UnpackedPtr<BindGroupEntry> entry = Unpack(&descriptor->entries[i]);
+            BindingNumber binding = BindingNumber(entry->binding);
+
+            if (binding < layout->GetAPIDynamicArrayStart()) {
+                continue;
+            }
+
+            BindGroupEntryContents entryContents = ToBindGroupEntryContents(**entry);
+            mDynamicArray->Update(layout->GetDynamicBindingIndex(binding), entryContents);
+        }
+
+        // Add the metadata storage buffer in the static bindings.
+        BindingIndex metadataIndex = layout->GetDynamicArrayMetadataBinding();
+        mBindingData.bindings[metadataIndex] = mDynamicArray->GetMetadataBuffer();
+        mBindingData.bufferData[metadataIndex].offset = 0;
+        mBindingData.bufferData[metadataIndex].size = mDynamicArray->GetMetadataBuffer()->GetSize();
+    }
 
     DAWN_TRY(InitializeImpl());
 
@@ -822,25 +897,146 @@ void BindGroupBase::DestroyImpl() {
             mBindingData.bindings[i].~Ref<ObjectBase>();
         }
     }
+
+    if (mDynamicArray != nullptr && !mDynamicArray->IsDestroyed()) {
+        DAWN_ASSERT(!IsError());
+        mDynamicArray->Destroy();
+    }
 }
 
 BindGroupBase::BindGroupBase(DeviceBase* device, ObjectBase::ErrorTag tag, StringView label)
     : ApiObjectBase(device, tag, label), mBindingData() {}
 
 // static
-Ref<BindGroupBase> BindGroupBase::MakeError(DeviceBase* device, StringView label) {
+Ref<BindGroupBase> BindGroupBase::MakeError(DeviceBase* device,
+                                            const BindGroupDescriptor* descriptor) {
     class ErrorBindGroupBase final : public BindGroupBase {
       public:
-        explicit ErrorBindGroupBase(DeviceBase* device, StringView label)
-            : BindGroupBase(device, ObjectBase::kError, label) {}
+        explicit ErrorBindGroupBase(DeviceBase* device, const BindGroupDescriptor* descriptor)
+            : BindGroupBase(device, ObjectBase::kError, descriptor->label) {
+            // Create a DynamicArrayState even for an error bindgroup because we need to do state
+            // tracking used for the validation of synchronous errors.
+            BindGroupLayoutBase* layout = descriptor->layout;
+            if (!layout->IsError() && layout->GetInternalBindGroupLayout()->HasDynamicArray()) {
+                SetErrorDynamicArrayState(descriptor);
+            }
+        }
+
+        void SetErrorDynamicArrayState(const BindGroupDescriptor* descriptor) {
+            // Avoid allocating tons of memory if dynamicArraySize is huge, instead clamp to
+            // maxDynamicBindingArraySize.
+            uint32_t dynamicArraySize =
+                GetDevice()->GetLimits().dynamicBindingArrayLimits.maxDynamicBindingArraySize;
+
+            for (const wgpu::ChainedStruct* chain = descriptor->nextInChain; chain != nullptr;
+                 chain = chain->nextInChain) {
+                if (chain->sType == wgpu::SType::BindGroupDynamicBindingArray) {
+                    auto* dynamic = reinterpret_cast<const BindGroupDynamicBindingArray*>(chain);
+                    dynamicArraySize = std::min(dynamicArraySize, dynamic->dynamicArraySize);
+                    break;
+                }
+            }
+
+            // TODO(https://issues.chromium.org/435317394): Take into accounts that entries that are
+            // listed in range of the dynamic binding array should be marked as used from creation
+            // even for error bind groups. (to match what a client-side state tracking would do).
+            // Port this TO-DO over to GPUResourceTable instead of handling it for the "dynamic
+            // binding array" proposal.
+
+            mLayout = descriptor->layout;
+            mDynamicArray = AcquireRef(new DynamicArrayState(
+                GetDevice(), BindingIndex(dynamicArraySize),
+                mLayout->GetInternalBindGroupLayout()->GetDynamicArrayKind()));
+        }
 
         MaybeError InitializeImpl() override { DAWN_UNREACHABLE(); }
     };
-    return AcquireRef(new ErrorBindGroupBase(device, label));
+
+    return AcquireRef(new ErrorBindGroupBase(device, descriptor));
 }
 
 ObjectType BindGroupBase::GetType() const {
     return ObjectType::BindGroup;
+}
+
+void BindGroupBase::APIDestroy() {
+    if (GetDevice()->IsValidationEnabled() &&
+        GetDevice()->ConsumedError(ValidateDestroy(), "validating %s.Destroy()", this)) {
+        return;
+    }
+
+    // Destroy only the dynamic array part. Static bindings are always supposed to be valid so that
+    // SetBindGroup can iterate them without first checking if the BindGroup is destroyed. This also
+    // makes the behavior match between the bind groups with only static bindings and the static
+    // bindings part of the bind groups with dynamic arrays.
+    if (!mDynamicArray->IsDestroyed()) {
+        mDynamicArray->Destroy();
+    }
+}
+
+wgpu::Status BindGroupBase::APIUpdate(const BindGroupEntry* entry) {
+    std::optional<BindingIndex> slot = GetValidDynamicArraySlotFor(BindingNumber(entry->binding));
+    if (!slot.has_value()) {
+        return wgpu::Status::Error;
+    }
+
+    // Prevent replacing a binding that may be in use by the GPU.
+    if (!mDynamicArray->CanBeUpdated(slot.value())) {
+        return wgpu::Status::Error;
+    }
+
+    // Perform validation that produces a validation error, but unconditionally mark the slot as
+    // used since we need to match client-side validation that doesn't perform these checks.
+    if (GetDevice()->ConsumedError(  //
+            ([&]() -> MaybeError {
+                DAWN_TRY(GetDevice()->ValidateObject(this));
+                return ValidateDynamicBindingArrayEntry(GetDevice(), mDynamicArray->GetKind(),
+                                                        *entry);
+            })(),
+            "validating %s.Update()", this)) {
+        BindGroupEntryContents nothing = {};
+        mDynamicArray->Update(slot.value(), nothing);
+    } else {
+        BindGroupEntryContents entryContents = ToBindGroupEntryContents(*entry);
+        mDynamicArray->Update(slot.value(), entryContents);
+    }
+
+    return wgpu::Status::Success;
+}
+
+uint32_t BindGroupBase::APIInsertBinding(const BindGroupEntryContents* contents) {
+    if (mDynamicArray == nullptr || mDynamicArray->IsDestroyed()) {
+        return wgpu::kInvalidBinding;
+    }
+
+    std::optional<BindingIndex> freeSlot = mDynamicArray->GetFreeSlot();
+    if (!freeSlot) {
+        return wgpu::kInvalidBinding;
+    }
+
+    BindingNumber binding =
+        GetLayout()->GetAPIDynamicArrayStart() + BindingNumber(uint32_t(*freeSlot));
+
+    BindGroupEntry entry = ToBindGroupEntry(binding, *contents);
+    wgpu::Status updateStatus = APIUpdate(&entry);
+    DAWN_ASSERT(updateStatus == wgpu::Status::Success);
+
+    return uint32_t(binding);
+}
+
+wgpu::Status BindGroupBase::APIRemoveBinding(uint32_t binding) {
+    std::optional<BindingIndex> slot = GetValidDynamicArraySlotFor(BindingNumber(binding));
+    if (!slot.has_value()) {
+        return wgpu::Status::Error;
+    }
+
+    // Always remove the binding, even if a validation error happens, so that we match client-side
+    // validation.
+    mDynamicArray->Remove(slot.value());
+
+    [[maybe_unused]] bool error = GetDevice()->ConsumedError(
+        GetDevice()->ValidateObject(this), "validating %s.RemoveBinding(%u)", this, binding);
+    return wgpu::Status::Success;
 }
 
 BindGroupLayoutBase* BindGroupBase::GetFrontendLayout() {
@@ -854,12 +1050,12 @@ const BindGroupLayoutBase* BindGroupBase::GetFrontendLayout() const {
 }
 
 BindGroupLayoutInternalBase* BindGroupBase::GetLayout() {
-    DAWN_ASSERT(!IsError());
+    DAWN_ASSERT(mLayout != nullptr);
     return mLayout->GetInternalBindGroupLayout();
 }
 
 const BindGroupLayoutInternalBase* BindGroupBase::GetLayout() const {
-    DAWN_ASSERT(!IsError());
+    DAWN_ASSERT(mLayout != nullptr);
     return mLayout->GetInternalBindGroupLayout();
 }
 
@@ -905,13 +1101,78 @@ BufferBinding BindGroupBase::GetBindingAsBufferBinding(BindingIndex bindingIndex
             mBindingData.bufferData[bindingIndex].size};
 }
 
+TexelBufferViewBase* BindGroupBase::GetBindingAsTexelBufferView(BindingIndex bindingIndex) {
+    DAWN_ASSERT(!IsError());
+    const BindGroupLayoutInternalBase* layout = GetLayout();
+    DAWN_ASSERT(bindingIndex < layout->GetBindingCount());
+    DAWN_ASSERT(std::holds_alternative<TexelBufferBindingInfo>(
+        layout->GetBindingInfo(bindingIndex).bindingLayout));
+    return static_cast<TexelBufferViewBase*>(mBindingData.bindings[bindingIndex].Get());
+}
+
 const std::vector<Ref<ExternalTextureBase>>& BindGroupBase::GetBoundExternalTextures() const {
+    DAWN_ASSERT(!IsError());
     return mBoundExternalTextures;
 }
 
 void BindGroupBase::ForEachUnverifiedBufferBindingIndex(
     std::function<void(BindingIndex, uint32_t)> fn) const {
     ForEachUnverifiedBufferBindingIndexImpl(GetLayout(), fn);
+}
+
+bool BindGroupBase::HasDynamicArray() const {
+    DAWN_ASSERT(!IsError());
+    return mDynamicArray != nullptr;
+}
+
+ityp::span<BindingIndex, const Ref<TextureViewBase>> BindGroupBase::GetDynamicArrayBindings()
+    const {
+    DAWN_ASSERT(!IsError());
+    DAWN_ASSERT(HasDynamicArray());
+    return mDynamicArray->GetBindings();
+}
+
+MaybeError BindGroupBase::ValidateCanUseOnQueueNow() const {
+    DAWN_ASSERT(!IsError());
+    DAWN_ASSERT(HasDynamicArray());
+
+    DAWN_INVALID_IF(mDynamicArray->IsDestroyed(), "Destroyed bind group %s used in a submit.",
+                    this);
+    return {};
+}
+
+DynamicArrayState* BindGroupBase::GetDynamicArray() const {
+    DAWN_ASSERT(!IsError());
+    DAWN_ASSERT(HasDynamicArray());
+    return mDynamicArray.Get();
+}
+
+MaybeError BindGroupBase::ValidateDestroy() const {
+    // On the queue we only validate that dynamic array bind groups are alive in a submit because
+    // validating for all bind groups would be too expensive. For that reason only allow dynamic
+    // arrays to be destroyed early.
+    DAWN_INVALID_IF(mDynamicArray == nullptr, "%s doesn't contain a dynamic array.", this);
+    return {};
+}
+
+std::optional<BindingIndex> BindGroupBase::GetValidDynamicArraySlotFor(
+    BindingNumber binding) const {
+    // Some validation is required to return a synchronous error. It needs to be able to run even on
+    // error BindGroups because it must act the same way as an implementation running on top of the
+    // wire client-side and doesn't know if objects are errors or not.
+    if (mDynamicArray == nullptr || mDynamicArray->IsDestroyed()) {
+        return {};
+    }
+
+    if (binding < GetLayout()->GetAPIDynamicArrayStart()) {
+        return {};
+    }
+    BindingIndex slot = GetLayout()->GetDynamicBindingIndex(binding);
+    if (slot >= mDynamicArray->GetAPISize()) {
+        return {};
+    }
+
+    return slot;
 }
 
 }  // namespace dawn::native

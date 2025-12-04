@@ -1,11 +1,14 @@
 package androidx.webgpu
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SmallTest
 import androidx.webgpu.helper.Util
+import androidx.webgpu.GPU.createInstance
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
+@SmallTest
 class ObjectTest {
     init {
         Util  // Hack to force library initialization.
@@ -13,9 +16,9 @@ class ObjectTest {
 
     @Test
     fun sameObjectCompare() {
-        val surface = createInstance().createSurface(SurfaceDescriptor(
+        val surface = createInstance().createSurface(GPUSurfaceDescriptor(
             surfaceSourceAndroidNativeWindow =
-                SurfaceSourceAndroidNativeWindow(0)
+                GPUSurfaceSourceAndroidNativeWindow(0)
         ))
 
         val texture1 = surface.getCurrentTexture().texture
@@ -35,9 +38,9 @@ class ObjectTest {
     fun differentObjectCompare() {
         val instance = createInstance()
 
-        val surfaceDescriptor = SurfaceDescriptor(
+        val surfaceDescriptor = GPUSurfaceDescriptor(
             surfaceSourceAndroidNativeWindow =
-                SurfaceSourceAndroidNativeWindow(0)
+                GPUSurfaceSourceAndroidNativeWindow(0)
         )
 
         val surface1 = instance.createSurface(surfaceDescriptor)

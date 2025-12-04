@@ -73,10 +73,10 @@ inline std::ostream& operator<<(std::ostream& os, const VkResult& result) {
             return os << "VK_ERROR_OUT_OF_POOL_MEMORY";
         case (VK_ERROR_INVALID_EXTERNAL_HANDLE):
             return os << "VK_ERROR_INVALID_EXTERNAL_HANDLE";
-        case (VK_ERROR_FRAGMENTATION):
-            return os << "VK_ERROR_FRAGMENTATION";
         case (VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS):
             return os << "VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS";
+        case (VK_ERROR_FRAGMENTATION):
+            return os << "VK_ERROR_FRAGMENTATION";
         case (VK_PIPELINE_COMPILE_REQUIRED):
             return os << "VK_PIPELINE_COMPILE_REQUIRED";
         case (VK_ERROR_NOT_PERMITTED):
@@ -107,6 +107,8 @@ inline std::ostream& operator<<(std::ostream& os, const VkResult& result) {
             return os << "VK_ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR";
         case (VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT):
             return os << "VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT";
+        case (VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT):
+            return os << "VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT";
         case (VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT):
             return os << "VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT";
         case (VK_THREAD_IDLE_KHR):

@@ -34,6 +34,8 @@
 //                       Do not modify this file directly
 ////////////////////////////////////////////////////////////////////////////////
 
+// clang-format off
+
 #include "src/tint/lang/msl/builtin_fn.h"
 
 namespace tint::msl {
@@ -112,6 +114,10 @@ const char* str(BuiltinFn i) {
             return "quad_shuffle_xor";
         case BuiltinFn::kConvert:
             return "convert";
+        case BuiltinFn::kMakeFilledSimdgroupMatrix:
+            return "make_filled_simdgroup_matrix";
+        case BuiltinFn::kMakeDiagonalSimdgroupMatrix:
+            return "make_diagonal_simdgroup_matrix";
         case BuiltinFn::kSimdgroupLoad:
             return "simdgroup_load";
         case BuiltinFn::kSimdgroupStore:
@@ -144,8 +150,7 @@ tint::core::ir::Instruction::Accesses GetSideEffects(BuiltinFn fn) {
         case BuiltinFn::kThreadgroupBarrier:
         case BuiltinFn::kSimdBallot:
         case BuiltinFn::kQuadShuffleXor:
-            return core::ir::Instruction::Accesses{core::ir::Instruction::Access::kLoad,
-                                                   core::ir::Instruction::Access::kStore};
+            return core::ir::Instruction::Accesses{core::ir::Instruction::Access::kLoad, core::ir::Instruction::Access::kStore};
 
         case BuiltinFn::kAtomicLoadExplicit:
         case BuiltinFn::kGather:
@@ -177,6 +182,8 @@ tint::core::ir::Instruction::Accesses GetSideEffects(BuiltinFn fn) {
         case BuiltinFn::kConvert:
         case BuiltinFn::kSimdgroupMultiply:
         case BuiltinFn::kSimdgroupMultiplyAccumulate:
+        case BuiltinFn::kMakeDiagonalSimdgroupMatrix:
+        case BuiltinFn::kMakeFilledSimdgroupMatrix:
         case BuiltinFn::kOsLog:
         case BuiltinFn::kPointerOffset:
             break;
@@ -185,3 +192,5 @@ tint::core::ir::Instruction::Accesses GetSideEffects(BuiltinFn fn) {
 }
 
 }  // namespace tint::msl
+
+// clang-format on

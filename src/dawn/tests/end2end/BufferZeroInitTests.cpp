@@ -36,6 +36,9 @@
 namespace dawn {
 namespace {
 
+// Expect lazy clear count for test in device to increment by N after `statement`.
+// Note: WebGPU backend doesn't maintain the lazy clear count for testing but rely on the inner
+// layer implementation for the initialization.
 #define EXPECT_LAZY_CLEAR(N, statement)                                                  \
     do {                                                                                 \
         if (UsesWire()) {                                                                \
@@ -44,7 +47,9 @@ namespace {
             size_t lazyClearsBefore = native::GetLazyClearCountForTesting(device.Get()); \
             statement;                                                                   \
             size_t lazyClearsAfter = native::GetLazyClearCountForTesting(device.Get());  \
-            EXPECT_EQ(N, lazyClearsAfter - lazyClearsBefore);                            \
+            if (!IsWebGPUOnWebGPU()) {                                                   \
+                EXPECT_EQ(N, lazyClearsAfter - lazyClearsBefore);                        \
+            }                                                                            \
         }                                                                                \
     } while (0)
 
@@ -1302,6 +1307,9 @@ TEST_P(BufferZeroInitTest, ResolveQuerySet) {
     // without any copy commands on Metal on AMD GPU.
     DAWN_SUPPRESS_TEST_IF(IsMetal() && IsAMD());
 
+    // TODO(crbug.com/463893789): Get rid of explicit WebGPUOnXXX suppressions.
+    DAWN_SUPPRESS_TEST_IF(IsWebGPUOn(wgpu::BackendType::Metal));
+
     // Skip if timestamp feature is not supported on device
     DAWN_TEST_UNSUPPORTED_IF(!SupportsFeatures({wgpu::FeatureName::TimestampQuery}));
 
@@ -1370,7 +1378,8 @@ DAWN_INSTANTIATE_TEST(BufferZeroInitTest,
                       MetalBackend({"nonzero_clear_resources_on_creation_for_testing"}),
                       OpenGLBackend({"nonzero_clear_resources_on_creation_for_testing"}),
                       OpenGLESBackend({"nonzero_clear_resources_on_creation_for_testing"}),
-                      VulkanBackend({"nonzero_clear_resources_on_creation_for_testing"}));
+                      VulkanBackend({"nonzero_clear_resources_on_creation_for_testing"}),
+                      WebGPUBackend({"nonzero_clear_resources_on_creation_for_testing"}));
 
 }  // anonymous namespace
 }  // namespace dawn

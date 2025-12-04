@@ -319,6 +319,7 @@ struct State {
                     [&](core::ir::Access* a) {
                         CheckForStructForking(a);
                         values_to_convert_.Push(a->Object());
+                        values_to_fix_usages_.Push(a->Result());
                     },
                     [&](core::ir::Let* l) {
                         values_to_convert_.Push(l->Value());
@@ -558,6 +559,7 @@ Result<SuccessType> Atomics(core::ir::Module& ir) {
                                               core::ir::Capability::kAllowMultipleEntryPoints,
                                               core::ir::Capability::kAllowOverrides,
                                               core::ir::Capability::kAllowNonCoreTypes,
+                                              core::ir::Capability::kAllowPointerToHandle,
                                           });
     if (result != Success) {
         return result.Failure();

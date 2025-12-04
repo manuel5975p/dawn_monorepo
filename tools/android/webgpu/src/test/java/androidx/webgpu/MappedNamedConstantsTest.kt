@@ -50,6 +50,7 @@ class MappedNamedConstantsTest {
         CompareFunction::class,
         CompilationInfoRequestStatus::class,
         CompilationMessageType::class,
+        ComponentSwizzle::class,
         CompositeAlphaMode::class,
         CreatePipelineAsyncStatus::class,
         CullMode::class,
@@ -93,7 +94,6 @@ class MappedNamedConstantsTest {
         ToneMappingMode::class,
         VertexFormat::class,
         VertexStepMode::class,
-        WaitStatus::class,
         WGSLLanguageFeatureName::class
     )
 
@@ -135,9 +135,8 @@ class MappedNamedConstantsTest {
 
             for ((key, constantName) in namesMap) {
                 val constantProperty = companionConstants[constantName]
-                val actual = (constantProperty as KProperty1<*, *>).getter.call(companionObject)
-                val expected = clazz.primaryConstructor?.call(key)
-                assertEquals(expected, actual)
+                val actual = (constantProperty as KProperty1<*, *>).getter.call()
+                assertEquals(key, actual)
             }
         }
     }

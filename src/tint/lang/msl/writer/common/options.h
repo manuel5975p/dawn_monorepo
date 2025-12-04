@@ -33,49 +33,12 @@
 #include <unordered_map>
 
 #include "src/tint/api/common/binding_point.h"
+#include "src/tint/api/common/bindings.h"
+#include "src/tint/api/common/substitute_overrides_config.h"
 #include "src/tint/api/common/vertex_pulling_config.h"
 #include "src/tint/utils/reflection.h"
 
 namespace tint::msl::writer {
-
-/// An external texture
-struct ExternalTexture {
-    /// Metadata
-    BindingPoint metadata{};
-    /// Plane0 binding data
-    BindingPoint plane0{};
-    /// Plane1 binding data;
-    BindingPoint plane1{};
-
-    /// Reflect the fields of this class so that it can be used by tint::ForeachField()
-    TINT_REFLECT(ExternalTexture, metadata, plane0, plane1);
-    TINT_REFLECT_EQUALS(ExternalTexture);
-    TINT_REFLECT_HASH_CODE(ExternalTexture);
-};
-
-using BindingMap = std::unordered_map<BindingPoint, BindingPoint>;
-using ExternalTextureBindings = std::unordered_map<BindingPoint, ExternalTexture>;
-
-/// Binding information
-struct Bindings {
-    /// Uniform bindings
-    BindingMap uniform{};
-    /// Storage bindings
-    BindingMap storage{};
-    /// Texture bindings
-    BindingMap texture{};
-    /// Storage texture bindings
-    BindingMap storage_texture{};
-    /// Sampler bindings
-    BindingMap sampler{};
-    /// External bindings
-    ExternalTextureBindings external_texture{};
-
-    /// Reflect the fields of this class so that it can be used by tint::ForeachField()
-    TINT_REFLECT(Bindings, uniform, storage, texture, storage_texture, sampler, external_texture);
-    TINT_REFLECT_EQUALS(Bindings);
-    TINT_REFLECT_HASH_CODE(Bindings);
-};
 
 /// Options used to specify a mapping of binding points to indices into a UBO
 /// from which to load buffer sizes.
@@ -115,6 +78,57 @@ struct ArgumentBufferInfo {
 
 /// Configuration options used for generating MSL.
 struct Options {
+    /// The set of options which control workarounds for driver issues.
+    struct Workarounds {
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        // NOTE: When adding a new option here, it should also be added to the FuzzedOptions     //
+        // structure in writer_fuzz.cc.                                                          //
+        ///////////////////////////////////////////////////////////////////////////////////////////
+
+        /// Set to `true` to scalarize max min and clamp builtins.
+        bool scalarize_max_min_clamp = false;
+
+        /// Set to `true` to disable the module constant transform for f16
+        bool disable_module_constant_f16 = false;
+
+        /// Set to `true` to generate polyfill for `subgroupBroadcast(f16)`
+        bool polyfill_subgroup_broadcast_f16 = false;
+
+        /// Set to `true` to generate polyfill for `clamp(f16/f32)`
+        bool polyfill_clamp_float = false;
+
+        /// Set to `true` to polyfill `unpack2x16snorm()`.
+        bool polyfill_unpack_2x16_snorm = false;
+
+        /// Set to `true` to polyfill `unpack2x16unorm()`.
+        bool polyfill_unpack_2x16_unorm = false;
+
+        TINT_REFLECT(Workarounds,
+                     scalarize_max_min_clamp,
+                     disable_module_constant_f16,
+                     polyfill_subgroup_broadcast_f16,
+                     polyfill_clamp_float,
+                     polyfill_unpack_2x16_snorm,
+                     polyfill_unpack_2x16_unorm);
+        TINT_REFLECT_EQUALS(Workarounds);
+        TINT_REFLECT_HASH_CODE(Workarounds);
+    };
+
+    /// Any options which are controlled by the current Metal version.
+    struct Extensions {
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        // NOTE: When adding a new option here, it should also be added to the FuzzedOptions     //
+        // structure in writer_fuzz.cc.                                                          //
+        ///////////////////////////////////////////////////////////////////////////////////////////
+
+        /// Set to `true` to disable demote to helper transform
+        bool disable_demote_to_helper = false;
+
+        TINT_REFLECT(Extensions, disable_demote_to_helper);
+        TINT_REFLECT_EQUALS(Extensions);
+        TINT_REFLECT_HASH_CODE(Extensions);
+    };
+
     /// Constructor
     Options();
     /// Destructor
@@ -124,6 +138,14 @@ struct Options {
     /// Copy assignment
     /// @returns this Options
     Options& operator=(const Options&);
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    // NOTE: When adding a new option here, it should also be added to the FuzzedOptions     //
+    // structure in writer_fuzz.cc (if fuzzing is desired).                                  //
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+    /// The entry point name to emit.
+    std::string entry_point_name = {};
 
     /// An optional remapped name to use when emitting the entry point.
     std::string remapped_entry_point_name = {};
@@ -135,13 +157,10 @@ struct Options {
     bool disable_robustness = false;
 
     /// Set to `true` to enable integer range analysis in robustness transform.
-    bool enable_integer_range_analysis = false;
+    bool enable_integer_range_analysis = true;
 
     /// Set to `true` to disable workgroup memory zero initialization
     bool disable_workgroup_init = false;
-
-    /// Set to `true` to disable demote to helper transform
-    bool disable_demote_to_helper = false;
 
     /// Set to `true` to generate a [[point_size]] attribute which is set to 1.0
     /// for all vertex shaders in the module.
@@ -150,24 +169,14 @@ struct Options {
     /// Set to `true` to disable the polyfills on integer division and modulo.
     bool disable_polyfill_integer_div_mod = false;
 
-    /// Set to `true` to polyfill `unpack2x16snorm()`.
-    bool polyfill_unpack_2x16_snorm = false;
-
-    /// Set to `true` to scalarize max min and clamp builtins.
-    bool scalarize_max_min_clamp = false;
-
-    /// Set to `true` to disable the module constant transform for f16
-    bool disable_module_constant_f16 = false;
-
-    /// Set to `true` to generate polyfill for `subgroupBroadcast(f16)`
-    bool polyfill_subgroup_broadcast_f16 = false;
-
     /// Emit argument buffers
     bool use_argument_buffers = false;
 
-    /// The index to use when generating a UBO to receive storage buffer sizes.
-    /// Defaults to 30, which is the last valid buffer slot.
-    uint32_t buffer_size_ubo_index = 30;
+    /// Any workarounds to enable/disable.
+    Workarounds workarounds{};
+
+    /// Any used extensions
+    Extensions extensions{};
 
     /// The fixed sample mask to combine with fragment shader outputs.
     /// Defaults to 0xFFFFFFFF.
@@ -192,29 +201,30 @@ struct Options {
     /// The bindings.
     Bindings bindings;
 
+    // Substitute Overrides
+    SubstituteOverridesConfig substitute_overrides_config = {};
+
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(Options,
+                 entry_point_name,
                  remapped_entry_point_name,
                  strip_all_names,
                  disable_robustness,
                  enable_integer_range_analysis,
                  disable_workgroup_init,
-                 disable_demote_to_helper,
                  emit_vertex_point_size,
                  disable_polyfill_integer_div_mod,
-                 polyfill_unpack_2x16_snorm,
-                 scalarize_max_min_clamp,
-                 disable_module_constant_f16,
-                 polyfill_subgroup_broadcast_f16,
                  use_argument_buffers,
-                 buffer_size_ubo_index,
+                 workarounds,
+                 extensions,
                  fixed_sample_mask,
                  pixel_local_attachments,
                  array_length_from_constants,
                  vertex_pulling_config,
                  immediate_binding_point,
                  group_to_argument_buffer_info,
-                 bindings);
+                 bindings,
+                 substitute_overrides_config);
     TINT_REFLECT_EQUALS(Options);
     TINT_REFLECT_HASH_CODE(Options);
 };

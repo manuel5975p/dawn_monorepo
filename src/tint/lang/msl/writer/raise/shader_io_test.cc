@@ -83,7 +83,7 @@ TEST_F(MslWriter_ShaderIOTest, Parameters_NonStruct) {
     b.Append(ep->Block(), [&] {
         auto* ifelse = b.If(front_facing);
         b.Append(ifelse->True(), [&] {
-            b.Multiply(ty.vec4<f32>(), position, b.Add(ty.f32(), color1, color2));
+            b.Multiply(position, b.Add(color1, color2));
             b.ExitIf(ifelse);
         });
         b.Return(ep);
@@ -189,7 +189,7 @@ TEST_F(MslWriter_ShaderIOTest, Parameters_Struct) {
             auto* position = b.Access(ty.vec4<f32>(), str_param, 1_i);
             auto* color1 = b.Access(ty.f32(), str_param, 2_i);
             auto* color2 = b.Access(ty.f32(), str_param, 3_i);
-            b.Multiply(ty.vec4<f32>(), position, b.Add(ty.f32(), color1, color2));
+            b.Multiply(position, b.Add(color1, color2));
             b.ExitIf(ifelse);
         });
         b.Return(ep);
@@ -305,7 +305,7 @@ TEST_F(MslWriter_ShaderIOTest, Parameters_Mixed) {
         b.Append(ifelse->True(), [&] {
             auto* position = b.Access(ty.vec4<f32>(), str_param, 0_i);
             auto* color1 = b.Access(ty.f32(), str_param, 1_i);
-            b.Multiply(ty.vec4<f32>(), position, b.Add(ty.f32(), color1, color2));
+            b.Multiply(position, b.Add(color1, color2));
             b.ExitIf(ifelse);
         });
         b.Return(ep);
@@ -769,7 +769,7 @@ TEST_F(MslWriter_ShaderIOTest, StructWithAttributes_NotUsedForInterface) {
                                                   },
                                               });
 
-    auto* var = b.Var(ty.ptr(storage, str_ty, core::Access::kWrite));
+    auto* var = b.Var(ty.ptr(storage, str_ty, core::Access::kReadWrite));
     var->SetBindingPoint(0, 0);
 
     auto* buffer = mod.root_block->Append(var);
@@ -789,7 +789,7 @@ Outputs = struct @align(16) {
 }
 
 $B1: {  # root
-  %1:ptr<storage, Outputs, write> = var undef @binding_point(0, 0)
+  %1:ptr<storage, Outputs, read_write> = var undef @binding_point(0, 0)
 }
 
 %frag = @fragment func():void {
@@ -809,7 +809,7 @@ Outputs = struct @align(16) {
 }
 
 $B1: {  # root
-  %1:ptr<storage, Outputs, write> = var undef @binding_point(0, 0)
+  %1:ptr<storage, Outputs, read_write> = var undef @binding_point(0, 0)
 }
 
 %frag = @fragment func():void {
@@ -890,7 +890,7 @@ TEST_F(MslWriter_ShaderIOTest, Color_NonStruct) {
     ep->SetStage(core::ir::Function::PipelineStage::kFragment);
 
     b.Append(ep->Block(), [&] {
-        b.Add<f32>(color1, color2);
+        b.Add(color1, color2);
         b.Return(ep);
     });
 
@@ -1156,7 +1156,7 @@ TEST_F(MslWriter_ShaderIOTest, Color_Struct) {
     b.Append(ep->Block(), [&] {
         auto* color1 = b.Access<f32>(str_param, 0_i);
         auto* color2 = b.Access<f32>(str_param, 1_i);
-        b.Add<f32>(color1, color2);
+        b.Add(color1, color2);
         b.Return(ep);
     });
 
@@ -1202,6 +1202,57 @@ foo_inputs = struct @align(4) {
     %9:f32 = access %inputs_1, 1u
     %10:Inputs = construct %8, %9
     %11:void = call %foo_inner, %10
+    ret
+  }
+}
+)";
+
+    ShaderIOConfig config;
+    Run(ShaderIO, config);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_ShaderIOTest, UnnamedParameter) {
+    auto* ep = b.Function("foo", ty.void_());
+    auto* front_facing = b.FunctionParam(ty.bool_());
+    front_facing->SetBuiltin(core::BuiltinValue::kFrontFacing);
+    ep->SetParams({front_facing});
+    ep->SetStage(core::ir::Function::PipelineStage::kFragment);
+    b.Append(ep->Block(), [&] {
+        auto* ifelse = b.If(front_facing);
+        b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+%foo = @fragment func(%2:bool [@front_facing]):void {
+  $B1: {
+    if %2 [t: $B2] {  # if_1
+      $B2: {  # true
+        exit_if  # if_1
+      }
+    }
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo_inner = func(%2:bool):void {
+  $B1: {
+    if %2 [t: $B2] {  # if_1
+      $B2: {  # true
+        exit_if  # if_1
+      }
+    }
+    ret
+  }
+}
+%foo = @fragment func(%4:bool [@front_facing]):void {
+  $B3: {
+    %5:void = call %foo_inner, %4
     ret
   }
 }

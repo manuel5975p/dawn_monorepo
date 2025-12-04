@@ -987,30 +987,6 @@ TEST_F(Unorm16TextureFormatsValidationTests, RenderAndSample) {
     device.CreateTexture(&descriptor);
 }
 
-class Snorm16TextureFormatsValidationTests : public TextureValidationTest {
-  protected:
-    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
-        return {wgpu::FeatureName::Snorm16TextureFormats};
-    }
-};
-
-// Test that Norm16 formats are valid as renderable and sample-able texture if
-// 'norm16-texture-formats' is enabled.
-TEST_F(Snorm16TextureFormatsValidationTests, RenderAndSample) {
-    wgpu::TextureDescriptor descriptor;
-    descriptor.size = {1, 1, 1};
-    descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
-
-    descriptor.format = wgpu::TextureFormat::R16Snorm;
-    device.CreateTexture(&descriptor);
-
-    descriptor.format = wgpu::TextureFormat::RG16Snorm;
-    device.CreateTexture(&descriptor);
-
-    descriptor.format = wgpu::TextureFormat::RGBA16Snorm;
-    device.CreateTexture(&descriptor);
-}
-
 // Test that the Norm16 formats are not available even for just TextureBinding when the optional
 // feature is not specified.
 TEST_F(TextureValidationTest, Norm16NotAvailableWithoutExtension) {
@@ -1147,27 +1123,9 @@ TEST_F(TextureValidationTest, APIValidateTextureDescriptor) {
     ASSERT_DEVICE_ERROR(device.ValidateTextureDescriptor(&desc));
 }
 
-// Tests that specification of the transient attachment on an unsupported device
-// causes an error.
-TEST_F(TextureValidationTest, TransientAttachmentOnUnsupportedDevice) {
-    wgpu::TextureDescriptor desc;
-    desc.format = wgpu::TextureFormat::RGBA8Unorm;
-    desc.size = {1, 1, 1};
-    desc.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TransientAttachment;
-
-    ASSERT_DEVICE_ERROR(device.CreateTexture(&desc));
-}
-
-class TransientAttachmentValidationTest : public TextureValidationTest {
-  protected:
-    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
-        return {wgpu::FeatureName::TransientAttachments};
-    }
-};
-
 // Tests that specification of the transient attachment with supported usage on
 // a supported device does not raise a validation error.
-TEST_F(TransientAttachmentValidationTest, Success) {
+TEST_F(TextureValidationTest, Success) {
     wgpu::TextureDescriptor desc;
     desc.format = wgpu::TextureFormat::RGBA8Unorm;
     desc.size = {1, 1, 1};
@@ -1178,7 +1136,7 @@ TEST_F(TransientAttachmentValidationTest, Success) {
 
 // Tests that specification of the transient attachment without specification of
 // the render attachment causes an error.
-TEST_F(TransientAttachmentValidationTest, NoRenderAttachment) {
+TEST_F(TextureValidationTest, NoRenderAttachment) {
     wgpu::TextureDescriptor desc;
     desc.format = wgpu::TextureFormat::RGBA8Unorm;
     desc.size = {1, 1, 1};
@@ -1189,7 +1147,7 @@ TEST_F(TransientAttachmentValidationTest, NoRenderAttachment) {
 
 // Tests that specification of the transient attachment with flags beyond just
 // render attachment causes an error.
-TEST_F(TransientAttachmentValidationTest, FlagsBeyondRenderAttachment) {
+TEST_F(TextureValidationTest, FlagsBeyondRenderAttachment) {
     wgpu::TextureDescriptor desc;
     desc.format = wgpu::TextureFormat::RGBA8Unorm;
     desc.size = {1, 1, 1};

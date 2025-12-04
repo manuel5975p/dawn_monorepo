@@ -64,11 +64,16 @@ class PhysicalDevice : public PhysicalDeviceBase {
     bool IsAndroidQualcomm() const;
     bool IsAndroidARM() const;
     bool IsAndroidSamsung() const;
+    bool IsAndroidImgTec() const;
+    bool IsPixel10() const;
     bool IsIntelMesa() const;
+    bool IsAmdMesa() const;
     bool IsAndroidHuawei() const;
     bool IsSwiftshader() const;
 
     uint32_t GetDefaultComputeSubgroupSize() const;
+    std::vector<SubgroupMatrixConfig> EnumerateSubgroupMatrixConfigs(
+        const TogglesState& toggles) const;
 
     ResultOrError<PhysicalDeviceSurfaceCapabilities> GetSurfaceCapabilities(
         InstanceBase* instance,
@@ -101,11 +106,11 @@ class PhysicalDevice : public PhysicalDeviceBase {
     bool CheckSemaphoreSupport(DeviceExt deviceExt,
                                VkExternalSemaphoreHandleTypeFlagBits handleType) const;
 
-    void PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const override;
+    void PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
+                                   const TogglesState& adapterToggles) const override;
     void PopulateBackendFormatCapabilities(
         wgpu::TextureFormat format,
         UnpackedPtr<DawnFormatCapabilities>& capabilities) const override;
-    void PopulateSubgroupMatrixConfigs();
 
     // Sets core feature level as not being supported and stores `error` with
     // reason why core isn't supported.
@@ -118,8 +123,6 @@ class PhysicalDevice : public PhysicalDeviceBase {
     uint32_t mDefaultComputeSubgroupSize = 0;
     bool mSupportsCoreFeatureLevel = true;
     mutable std::unique_ptr<ErrorData> mCoreError;
-
-    std::vector<SubgroupMatrixConfig> mSubgroupMatrixConfigs;
 
 #if DAWN_PLATFORM_IS(ANDROID)
     std::unique_ptr<AHBFunctions> mAHBFunctions;

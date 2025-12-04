@@ -278,9 +278,14 @@ TEST_P(SharedTextureMemoryTests, GPUWriteThenCPURead) {
     exportInfo.nextInChain = &syncFdExportInfo;
     endState.fences[0].ExportInfo(&exportInfo);
 
+    // AHardwareBuffer_lock consumes the fd, so duplicate it before passing.
+    // The original fd will be closed when endState is destroyed.
+    const int dupFd = dup(syncFdExportInfo.handle);
+    EXPECT_GE(dupFd, 0);
+
     void* ptr;
-    EXPECT_EQ(AHardwareBuffer_lock(aHardwareBuffer, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN,
-                                   syncFdExportInfo.handle, nullptr, &ptr),
+    EXPECT_EQ(AHardwareBuffer_lock(aHardwareBuffer, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, dupFd,
+                                   nullptr, &ptr),
               0);
 
     auto* pixels = static_cast<utils::RGBA8*>(ptr);
@@ -297,6 +302,9 @@ TEST_P(SharedTextureMemoryTests, GPUWriteThenCPURead) {
 
 // Test writing the memory on the CPU, then sampling on the device.
 TEST_P(SharedTextureMemoryTests, CPUWriteThenGPURead) {
+    // TODO(crbug.com/444741058): Fails on Intel-based brya devices running Android Desktop.
+    DAWN_SUPPRESS_TEST_IF(IsVulkan() && IsIntel() && IsAndroid());
+
     AHardwareBuffer_Desc aHardwareBufferDesc = {
         .width = 4,
         .height = 4,
@@ -373,6 +381,9 @@ TEST_P(SharedTextureMemoryTests, CPUWriteThenGPURead) {
 TEST_P(SharedTextureMemoryTests, InvalidSharedTextureMemoryAHardwareBufferProperties) {
     DAWN_TEST_UNSUPPORTED_IF(!SupportsFeatures({wgpu::FeatureName::YCbCrVulkanSamplers}));
 
+    // TODO(crbug.com/444741058): Fails on Intel-based brya devices running Android Desktop.
+    DAWN_SUPPRESS_TEST_IF(IsVulkan() && IsIntel() && IsAndroid());
+
     AHardwareBuffer_Desc aHardwareBufferDesc = {
         .width = 4,
         .height = 4,
@@ -405,6 +416,9 @@ TEST_P(SharedTextureMemoryTests, InvalidSharedTextureMemoryAHardwareBufferProper
 // Test querying YCbCr info from the Device.
 TEST_P(SharedTextureMemoryTests, QueryYCbCrInfoFromDevice) {
     DAWN_TEST_UNSUPPORTED_IF(!SupportsFeatures({wgpu::FeatureName::YCbCrVulkanSamplers}));
+
+    // TODO(crbug.com/444741058): Fails on Intel-based brya devices running Android Desktop.
+    DAWN_SUPPRESS_TEST_IF(IsVulkan() && IsIntel() && IsAndroid());
 
     AHardwareBuffer_Desc aHardwareBufferDesc = {
         .width = 4,
@@ -468,6 +482,9 @@ TEST_P(SharedTextureMemoryTests, QueryYCbCrInfoFromDevice) {
 // Test querying YCbCr info from the SharedTextureMemory without external format.
 TEST_P(SharedTextureMemoryTests, QueryYCbCrInfoWithoutExternalFormat) {
     DAWN_TEST_UNSUPPORTED_IF(!SupportsFeatures({wgpu::FeatureName::YCbCrVulkanSamplers}));
+
+    // TODO(crbug.com/444741058): Fails on Intel-based brya devices running Android Desktop.
+    DAWN_SUPPRESS_TEST_IF(IsVulkan() && IsIntel() && IsAndroid());
 
     AHardwareBuffer_Desc aHardwareBufferDesc = {
         .width = 4,

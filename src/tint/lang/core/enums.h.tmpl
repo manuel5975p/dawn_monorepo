@@ -21,12 +21,15 @@ See:
 {{- $texel_format_enum := ($I.Sem.Enum "texel_format") -}}
 {{- $builtin_type_enum := ($I.Sem.Enum "builtin_type") -}}
 {{- $builtin_value_enum := ($I.Sem.Enum "builtin_value") -}}
+{{- $builtin_depth_mode_enum := ($I.Sem.Enum "builtin_depth_mode") -}}
 {{- $attribute_enum := ($I.Sem.Enum "attribute") -}}
 
 {{- Eval "OverrideEnumName" "Enum" $builtin_type_enum "Name" "BuiltinType" -}}
 
 #ifndef SRC_TINT_LANG_CORE_ENUMS_H_
 #define SRC_TINT_LANG_CORE_ENUMS_H_
+
+// clang-format off
 
 #include <cstdint>
 
@@ -67,6 +70,9 @@ inline bool IsHostShareable(AddressSpace address_space) {
 
 /// Builtin value defined with `@builtin(<name>)`.
 {{ Eval "DeclareEnum" $builtin_value_enum}}
+
+/// Builtin depth mode defined with `@builtin(<name>, <depth_mode>)`.
+{{ Eval "DeclareEnum" $builtin_depth_mode_enum }}
 
 /// Address space of a given pointer.
 {{ Eval "DeclareEnum" $attribute_enum}}
@@ -205,5 +211,7 @@ TINT_REFLECT_ENUM_RANGE(core::{{ Eval "EnumName" $access_enum }}, {{Eval "EnumFi
 TINT_REFLECT_ENUM_RANGE(core::{{ Eval "EnumName" $subgroup_matrix_kind_enum }}, {{Eval "EnumFirst" $subgroup_matrix_kind_enum }}, {{Eval "EnumLast" $subgroup_matrix_kind_enum}});
 
 }  // namespace tint
+
+// clang-format on
 
 #endif  // SRC_TINT_LANG_CORE_ENUMS_H_

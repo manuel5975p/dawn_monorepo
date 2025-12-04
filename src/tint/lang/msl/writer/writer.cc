@@ -27,12 +27,19 @@
 
 #include "src/tint/lang/msl/writer/writer.h"
 
+#include <vector>
+
+#include "src/tint/lang/core/ir/core_builtin_call.h"
 #include "src/tint/lang/core/ir/module.h"
+#include "src/tint/lang/core/ir/referenced_module_vars.h"
+#include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/ir/var.h"
+#include "src/tint/lang/core/type/binding_array.h"
 #include "src/tint/lang/core/type/f16.h"
 #include "src/tint/lang/core/type/f32.h"
 #include "src/tint/lang/core/type/input_attachment.h"
 #include "src/tint/lang/core/type/pointer.h"
+#include "src/tint/lang/core/type/texel_buffer.h"
 #include "src/tint/lang/msl/writer/common/option_helpers.h"
 #include "src/tint/lang/msl/writer/printer/printer.h"
 #include "src/tint/lang/msl/writer/raise/raise.h"
@@ -49,68 +56,78 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
             if (m->Columns() != 8 || m->Rows() != 8) {
                 return Failure("the MSL backend only supports 8x8 subgroup matrices");
             }
+        } else if (ty->Is<core::type::TexelBuffer>()) {
+            // TODO(crbug/382544164): Prototype texel buffer feature
+            return Failure("texel buffers are not supported by the MSL backend");
+        }
+        if (ty->Is<core::type::ResourceBinding>()) {
+            return Failure("resource_binding not supported by the MSL backend");
+        }
+        if (ty->Is<core::type::InputAttachment>()) {
+            return Failure("input_attachment not supported by the MSL backend");
         }
     }
 
-    // Check for unsupported module-scope variable address spaces and types.
-    // Also make sure there is at most one user-declared immediate data, and make a note of its
-    // size.
-    uint32_t user_immediate_data_size = 0;
-    for (auto* inst : *ir.root_block) {
-        auto* var = inst->As<core::ir::Var>();
+    for (auto* i : ir.Instructions()) {
+        auto* call = i->As<core::ir::CoreBuiltinCall>();
+        if (!call) {
+            continue;
+        }
+
+        if (call->Func() == core::BuiltinFn::kGetResource ||
+            call->Func() == core::BuiltinFn::kHasResource) {
+            return Failure("resource tables not supported by the MSL backend");
+        }
+    }
+
+    core::ir::Function* ep_func = nullptr;
+    for (auto* f : ir.functions) {
+        if (!f->IsEntryPoint()) {
+            continue;
+        }
+        if (ir.NameOf(f).NameView() == options.entry_point_name) {
+            ep_func = f;
+            break;
+        }
+    }
+
+    // No entrypoint, so no bindings needed
+    if (!ep_func) {
+        return Failure("entry point not found");
+    }
+
+    core::ir::ReferencedModuleVars<const core::ir::Module> referenced_module_vars{ir};
+    auto& refs = referenced_module_vars.TransitiveReferences(ep_func);
+
+    // Check for unsupported module-scope variable address spaces and types and ensure at most one
+    // user-declared immediate data.
+    for (auto* var : refs) {
         auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
         if (ptr->AddressSpace() == core::AddressSpace::kPixelLocal) {
             return Failure("pixel_local address space is not supported by the MSL backend");
         }
-        if (ptr->StoreType()->Is<core::type::InputAttachment>()) {
-            return Failure("input attachments are not supported by the MSL backend");
-        }
-        if (ptr->AddressSpace() == core::AddressSpace::kImmediate) {
-            if (user_immediate_data_size > 0) {
-                // We've already seen a user-declared immediate data.
-                return Failure("module contains multiple user-declared immediate data");
-            }
-            user_immediate_data_size = tint::RoundUp(4u, ptr->StoreType()->Size());
-        }
     }
 
-    // Metal suggested smaller than 4KB data uses SetBytes.
-    static constexpr uint32_t kMaxOffset = 0x1000;
-    Hashset<uint32_t, 4> immediate_data_word_offsets;
-    auto check_immediate_data_offset = [&](uint32_t offset) {
-        // Offset must be 4-byte aligned.
-        if (offset & 0x3) {
-            return false;
-        }
-        // Offset must not have already been used.
-        if (!immediate_data_word_offsets.Add(offset >> 2)) {
-            return false;
-        }
-        // Offset must be after the user-defined immediate data.
-        if (offset < user_immediate_data_size) {
-            return false;
-        }
-        return true;
-    };
+    auto user_immediate_res = core::ir::ValidateSingleUserImmediate(ir, ep_func);
+    if (user_immediate_res != Success) {
+        return user_immediate_res.Failure();
+    }
 
-    auto valid_buffer_sizes_offset = [](const auto& buffer_sizes_offset) -> bool {
-        if (!buffer_sizes_offset) {
-            return false;
+    uint32_t user_immediate_size = user_immediate_res.Get();
+
+    // Buffer sizes uses vec4 array which requires 16 bytes alignment. Validate general
+    // constraints with shared helper first (size 16 here to reflect vec4 requirement for
+    // alignment checking later) then enforce 16-byte requirement.
+    if (options.array_length_from_constants.buffer_sizes_offset) {
+        std::vector<core::ir::ImmediateInfo> immediates = {
+            {*options.array_length_from_constants.buffer_sizes_offset, 16u},
+        };
+        if (auto res =
+                core::ir::ValidateInternalImmediateOffset(0x1000, user_immediate_size, immediates);
+            res != Success) {
+            return res.Failure();
         }
-
-        // Excessive values can cause OOM / timeouts when padding structures in the printer.
-        if (buffer_sizes_offset.value() > kMaxOffset) {
-            return false;
-        }
-
-        return true;
-    };
-
-    // Buffer sizes uses vec4 array which requires 16 bytes alignment.
-    if (valid_buffer_sizes_offset(options.array_length_from_constants.buffer_sizes_offset)) {
-        if (!check_immediate_data_offset(
-                options.array_length_from_constants.buffer_sizes_offset.value()) ||
-            (options.array_length_from_constants.buffer_sizes_offset.value() & 0xF)) {
+        if ((*options.array_length_from_constants.buffer_sizes_offset) & 0xF) {
             return Failure("invalid offsets for buffer sizes offset in immediate block");
         }
     }
@@ -176,8 +193,6 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
 }
 
 Result<Output> Generate(core::ir::Module& ir, const Options& options) {
-    Output output;
-
     // Raise from core-dialect to MSL-dialect.
     auto raise_result = Raise(ir, options);
     if (raise_result != Success) {

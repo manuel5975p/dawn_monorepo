@@ -123,6 +123,7 @@ TEST_P(MaxLimitTests, MaxBufferBindingSize) {
     // TODO(crbug.com/dawn/1217): Remove this suppression.
     DAWN_SUPPRESS_TEST_IF(IsWindows() && IsVulkan() && IsNvidia());
     DAWN_SUPPRESS_TEST_IF(IsLinux() && IsVulkan() && IsNvidia());
+    DAWN_SUPPRESS_TEST_IF(IsWebGPUOn(wgpu::BackendType::Vulkan));
 
     // TODO(crbug.com/dawn/1705): Use a zero buffer to clear buffers. Otherwise, the test
     // OOMs.
@@ -548,9 +549,6 @@ TEST_P(MaxLimitTests, MaxStorageBuffersPerShaderStage) {
 // used correctly. The test loads a different value from each binding, and writes 1 to a storage
 // buffer if all values are correct.
 TEST_P(MaxLimitTests, ReallyLargeBindGroup) {
-    // TODO(crbug.com/dawn/590): Crashing on ANGLE/D3D11.
-    DAWN_SUPPRESS_TEST_IF(IsANGLED3D11());
-
     // TODO(crbug.com/dawn/590): Failing on Pixel4
     DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
 
@@ -863,7 +861,8 @@ DAWN_INSTANTIATE_TEST(MaxLimitTests,
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 
 // Verifies the limits maxInterStageShaderVariables work correctly
 class MaxInterStageShaderVariablesLimitTests : public MaxLimitTests {
@@ -1186,12 +1185,13 @@ TEST_P(MaxInterStageShaderVariablesLimitTests, MaxLocation_ClipDistances) {
 
 DAWN_INSTANTIATE_TEST(MaxInterStageShaderVariablesLimitTests,
                       D3D11Backend(),
+                      D3D12Backend(),
                       D3D12Backend({}, {"use_dxc"}),
-                      D3D12Backend({"use_dxc"}),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 
 // Verifies the limit maxVertexAttributes work correctly on the creation of render pipelines.
 class MaxVertexAttributesPipelineCreationTests : public MaxLimitTests {
@@ -1334,12 +1334,13 @@ TEST_P(MaxVertexAttributesPipelineCreationTests, VertexIndex_InstanceIndex) {
 
 DAWN_INSTANTIATE_TEST(MaxVertexAttributesPipelineCreationTests,
                       D3D11Backend(),
+                      D3D12Backend(),
                       D3D12Backend({}, {"use_dxc"}),
-                      D3D12Backend({"use_dxc"}),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 
 }  // anonymous namespace
 }  // namespace dawn

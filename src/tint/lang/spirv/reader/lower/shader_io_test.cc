@@ -39,7 +39,10 @@ using namespace tint::core::number_suffixes;  // NOLINT
 
 class SpirvReader_ShaderIOTest : public core::ir::transform::TransformTest {
   public:
-    void SetUp() override { capabilities.Add(core::ir::Capability::kAllowMultipleEntryPoints); }
+    void SetUp() override {
+        capabilities.Add(core::ir::Capability::kAllowMultipleEntryPoints);
+        capabilities.Add(core::ir::Capability::kAllowLocationForNumericElements);
+    }
 
   protected:
     core::IOAttributes BuiltinAttrs(core::BuiltinValue builtin) {
@@ -108,7 +111,7 @@ TEST_F(SpirvReader_ShaderIOTest, Inputs) {
             auto* position_value = b.Load(position);
             auto* color1_value = b.Load(color1);
             auto* color2_value = b.Load(color2);
-            b.Multiply(ty.vec4<f32>(), position_value, b.Add(ty.f32(), color1_value, color2_value));
+            b.Multiply(position_value, b.Add(color1_value, color2_value));
             b.ExitIf(ifelse);
         });
         b.Return(ep);
@@ -192,8 +195,8 @@ TEST_F(SpirvReader_ShaderIOTest, Inputs_UsedByHelper) {
             auto* position_value = b.Load(position);
             auto* color1_value = b.Load(color1);
             auto* color2_value = b.Load(color2);
-            auto* add = b.Add(ty.f32(), color1_value, color2_value);
-            auto* mul = b.Multiply(ty.vec4<f32>(), position_value, add);
+            auto* add = b.Add(color1_value, color2_value);
+            auto* mul = b.Multiply(position_value, add);
             b.Divide(ty.vec4<f32>(), mul, param);
             b.ExitIf(ifelse);
         });
@@ -399,7 +402,7 @@ TEST_F(SpirvReader_ShaderIOTest, Inputs_UsedEntryPointAndHelper) {
     b.Append(foo->Block(), [&] {
         auto* gid_value = b.Load(gid);
         auto* lid_value = b.Load(lid);
-        b.Add(ty.vec3<u32>(), gid_value, lid_value);
+        b.Add(gid_value, lid_value);
         b.Return(foo);
     });
 
@@ -408,7 +411,7 @@ TEST_F(SpirvReader_ShaderIOTest, Inputs_UsedEntryPointAndHelper) {
     b.Append(ep->Block(), [&] {
         auto* group_value = b.Load(group_id);
         auto* gid_value = b.Load(gid);
-        b.Add(ty.vec3<u32>(), group_value, gid_value);
+        b.Add(group_value, gid_value);
         b.Call(foo);
         b.Return(ep);
     });
@@ -482,7 +485,7 @@ TEST_F(SpirvReader_ShaderIOTest, Inputs_UsedEntryPointAndHelper_ForwardReference
     b.Append(ep->Block(), [&] {
         auto* group_value = b.Load(group_id);
         auto* gid_value = b.Load(gid);
-        b.Add(ty.vec3<u32>(), group_value, gid_value);
+        b.Add(group_value, gid_value);
         b.Call(foo);
         b.Return(ep);
     });
@@ -491,7 +494,7 @@ TEST_F(SpirvReader_ShaderIOTest, Inputs_UsedEntryPointAndHelper_ForwardReference
     b.Append(foo->Block(), [&] {
         auto* gid_value = b.Load(gid);
         auto* lid_value = b.Load(lid);
-        b.Add(ty.vec3<u32>(), gid_value, lid_value);
+        b.Add(gid_value, lid_value);
         b.Return(foo);
     });
 
@@ -562,7 +565,7 @@ TEST_F(SpirvReader_ShaderIOTest, Inputs_UsedByMultipleEntryPoints) {
     b.Append(foo->Block(), [&] {
         auto* gid_value = b.Load(gid);
         auto* lid_value = b.Load(lid);
-        b.Add(ty.vec3<u32>(), gid_value, lid_value);
+        b.Add(gid_value, lid_value);
         b.Return(foo);
     });
 
@@ -577,9 +580,9 @@ TEST_F(SpirvReader_ShaderIOTest, Inputs_UsedByMultipleEntryPoints) {
     auto* ep2 = b.ComputeFunction("main2");
     b.Append(ep2->Block(), [&] {
         auto* group_value = b.Load(group_id);
-        b.Add(ty.vec3<u32>(), group_value, group_value);
+        b.Add(group_value, group_value);
         b.Call(foo);
-        b.Return(ep1);
+        b.Return(ep2);
     });
 
     auto* src = R"(
@@ -705,7 +708,7 @@ TEST_F(SpirvReader_ShaderIOTest, Inputs_Struct_LocationOnEachMember) {
         auto* ptr = ty.ptr(core::AddressSpace::kIn, ty.vec4<f32>());
         auto* color1_value = b.Load(b.Access(ptr, colors, 0_u));
         auto* color2_z_value = b.LoadVectorElement(b.Access(ptr, colors, 1_u), 2_u);
-        b.Multiply(ty.vec4<f32>(), color1_value, color2_z_value);
+        b.Multiply(color1_value, color2_z_value);
         b.Return(foo);
     });
 
@@ -800,7 +803,7 @@ TEST_F(SpirvReader_ShaderIOTest, Inputs_Struct_LocationOnVariable) {
         auto* ptr = ty.ptr(core::AddressSpace::kIn, ty.vec4<f32>());
         auto* color1_value = b.Load(b.Access(ptr, colors, 0_u));
         auto* color2_z_value = b.LoadVectorElement(b.Access(ptr, colors, 1_u), 2_u);
-        b.Multiply(ty.vec4<f32>(), color1_value, color2_z_value);
+        b.Multiply(color1_value, color2_z_value);
         b.Return(foo);
     });
 
@@ -895,7 +898,7 @@ TEST_F(SpirvReader_ShaderIOTest, Inputs_Struct_InterpolateOnVariable) {
         auto* ptr = ty.ptr(core::AddressSpace::kIn, ty.vec4<f32>());
         auto* color1_value = b.Load(b.Access(ptr, colors, 0_u));
         auto* color2_z_value = b.LoadVectorElement(b.Access(ptr, colors, 1_u), 2_u);
-        b.Multiply(ty.vec4<f32>(), color1_value, color2_z_value);
+        b.Multiply(color1_value, color2_z_value);
         b.Return(foo);
     });
 
@@ -987,7 +990,7 @@ TEST_F(SpirvReader_ShaderIOTest, Inputs_Struct_LoadWholeStruct) {
         auto* load = b.Load(colors);
         auto* color1_value = b.Access<vec4<f32>>(load, 0_u);
         auto* color2_z_value = b.Access<f32>(load, 1_u, 2_u);
-        b.Multiply(ty.vec4<f32>(), color1_value, color2_z_value);
+        b.Multiply(color1_value, color2_z_value);
         b.Return(foo);
     });
 
@@ -1269,7 +1272,7 @@ TEST_F(SpirvReader_ShaderIOTest, MultipleOutputs) {
     color1->SetLocation(1u);
 
     auto* color2 = b.Var("color2", ty.ptr(core::AddressSpace::kOut, ty.vec4<f32>()));
-    color2->SetLocation(1u);
+    color2->SetLocation(2u);
     color2->SetInterpolation(core::Interpolation{core::InterpolationType::kPerspective,
                                                  core::InterpolationSampling::kCentroid});
 
@@ -1289,7 +1292,7 @@ TEST_F(SpirvReader_ShaderIOTest, MultipleOutputs) {
 $B1: {  # root
   %position:ptr<__out, vec4<f32>, read_write> = var undef @invariant @builtin(position)
   %color1:ptr<__out, vec4<f32>, read_write> = var undef @location(1)
-  %color2:ptr<__out, vec4<f32>, read_write> = var undef @location(1) @interpolate(perspective, centroid)
+  %color2:ptr<__out, vec4<f32>, read_write> = var undef @location(2) @interpolate(perspective, centroid)
 }
 
 %foo = @vertex func():void {
@@ -1307,7 +1310,7 @@ $B1: {  # root
 tint_symbol = struct @align(16) {
   position:vec4<f32> @offset(0), @invariant, @builtin(position)
   color1:vec4<f32> @offset(16), @location(1)
-  color2:vec4<f32> @offset(32), @location(1), @interpolate(perspective, centroid)
+  color2:vec4<f32> @offset(32), @location(2), @interpolate(perspective, centroid)
 }
 
 $B1: {  # root
@@ -1852,7 +1855,7 @@ TEST_F(SpirvReader_ShaderIOTest, Output_LoadAndStore) {
     b.Append(ep->Block(), [&] {  //
         b.Store(color, b.Splat<vec4<f32>>(1_f));
         auto* load = b.Load(color);
-        auto* mul = b.Multiply<vec4<f32>>(load, 2_f);
+        auto* mul = b.Multiply(load, 2_f);
         b.Store(color, mul);
         b.Return(ep);
     });
@@ -1912,7 +1915,7 @@ TEST_F(SpirvReader_ShaderIOTest, Output_LoadVectorElementAndStoreVectorElement) 
     b.Append(ep->Block(), [&] {  //
         b.Store(color, b.Splat<vec4<f32>>(1_f));
         auto* load = b.LoadVectorElement(color, 2_u);
-        auto* mul = b.Multiply<f32>(load, 2_f);
+        auto* mul = b.Multiply(load, 2_f);
         b.StoreVectorElement(color, 2_u, mul);
         b.Return(ep);
     });
@@ -2056,7 +2059,7 @@ TEST_F(SpirvReader_ShaderIOTest, InstanceIndex_i32) {
     auto* ep = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kVertex);
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        auto* doubled = b.Multiply(ty.i32(), idx_value, 2_i);
+        auto* doubled = b.Multiply(idx_value, 2_i);
         auto* conv = b.Convert(ty.f32(), doubled);
         b.Store(pos, b.Construct(ty.vec4<f32>(), conv));
         b.Return(ep);
@@ -2122,7 +2125,7 @@ TEST_F(SpirvReader_ShaderIOTest, InstanceIndex_u32) {
     auto* ep = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kVertex);
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        auto* doubled = b.Multiply(ty.u32(), idx_value, 2_u);
+        auto* doubled = b.Multiply(idx_value, 2_u);
         auto* conv = b.Convert(ty.f32(), doubled);
         b.Store(pos, b.Construct(ty.vec4<f32>(), conv));
         b.Return(ep);
@@ -2187,7 +2190,7 @@ TEST_F(SpirvReader_ShaderIOTest, VertexIndex_i32) {
     auto* ep = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kVertex);
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        auto* doubled = b.Multiply(ty.i32(), idx_value, 2_i);
+        auto* doubled = b.Multiply(idx_value, 2_i);
         auto* conv = b.Convert(ty.f32(), doubled);
         b.Store(pos, b.Construct(ty.vec4<f32>(), conv));
         b.Return(ep);
@@ -2253,7 +2256,7 @@ TEST_F(SpirvReader_ShaderIOTest, VertexIndex_u32) {
     auto* ep = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kVertex);
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        auto* doubled = b.Multiply(ty.u32(), idx_value, 2_u);
+        auto* doubled = b.Multiply(idx_value, 2_u);
         auto* conv = b.Convert(ty.f32(), doubled);
         b.Store(pos, b.Construct(ty.vec4<f32>(), conv));
         b.Return(ep);
@@ -2306,6 +2309,91 @@ $B1: {  # root
     EXPECT_EQ(expect, str());
 }
 
+TEST_F(SpirvReader_ShaderIOTest, PrimitiveIndex_i32) {
+    auto* idx = b.Var("prim_idx", ty.ptr(core::AddressSpace::kIn, ty.i32()));
+    idx->SetBuiltin(core::BuiltinValue::kPrimitiveIndex);
+    mod.root_block->Append(idx);
+
+    auto* ep = b.Function("foo", ty.i32(), core::ir::Function::PipelineStage::kFragment);
+    ep->SetReturnLocation(0);
+    b.Append(ep->Block(), [&] {
+        auto* idx_value = b.Load(idx);
+        auto* doubled = b.Multiply(idx_value, 2_i);
+        b.Return(ep, doubled);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %prim_idx:ptr<__in, i32, read> = var undef @builtin(primitive_index)
+}
+
+%foo = @fragment func():i32 [@location(0)] {
+  $B2: {
+    %3:i32 = load %prim_idx
+    %4:i32 = mul %3, 2i
+    ret %4
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = @fragment func(%prim_idx:u32 [@primitive_index]):i32 [@location(0)] {
+  $B1: {
+    %3:i32 = convert %prim_idx
+    %4:i32 = mul %3, 2i
+    ret %4
+  }
+}
+)";
+
+    Run(ShaderIO);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(SpirvReader_ShaderIOTest, PrimitiveIndex_u32) {
+    auto* idx = b.Var("prim_idx", ty.ptr(core::AddressSpace::kIn, ty.u32()));
+    idx->SetBuiltin(core::BuiltinValue::kPrimitiveIndex);
+    mod.root_block->Append(idx);
+
+    auto* ep = b.Function("foo", ty.u32(), core::ir::Function::PipelineStage::kFragment);
+    ep->SetReturnLocation(0);
+    b.Append(ep->Block(), [&] {
+        auto* idx_value = b.Load(idx);
+        auto* doubled = b.Multiply(idx_value, 2_u);
+        b.Return(ep, doubled);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %prim_idx:ptr<__in, u32, read> = var undef @builtin(primitive_index)
+}
+
+%foo = @fragment func():u32 [@location(0)] {
+  $B2: {
+    %3:u32 = load %prim_idx
+    %4:u32 = mul %3, 2u
+    ret %4
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = @fragment func(%prim_idx:u32 [@primitive_index]):u32 [@location(0)] {
+  $B1: {
+    %3:u32 = mul %prim_idx, 2u
+    ret %3
+  }
+}
+)";
+
+    Run(ShaderIO);
+
+    EXPECT_EQ(expect, str());
+}
+
 TEST_F(SpirvReader_ShaderIOTest, LocalInvocationIndex_i32) {
     auto* idx = b.Var("idx", ty.ptr(core::AddressSpace::kIn, ty.i32()));
     idx->SetBuiltin(core::BuiltinValue::kLocalInvocationIndex);
@@ -2315,7 +2403,7 @@ TEST_F(SpirvReader_ShaderIOTest, LocalInvocationIndex_i32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.i32(), idx_value, 2_i));
+        b.Let("a", b.Multiply(idx_value, 2_i));
         b.Return(ep);
     });
 
@@ -2360,7 +2448,7 @@ TEST_F(SpirvReader_ShaderIOTest, LocalInvocationIndex_u32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.u32(), idx_value, 2_u));
+        b.Let("a", b.Multiply(idx_value, 2_u));
 
         b.Return(ep);
     });
@@ -2405,7 +2493,7 @@ TEST_F(SpirvReader_ShaderIOTest, SubgroupInvocationId_i32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.i32(), idx_value, 2_i));
+        b.Let("a", b.Multiply(idx_value, 2_i));
         b.Return(ep);
     });
 
@@ -2450,7 +2538,7 @@ TEST_F(SpirvReader_ShaderIOTest, SubgroupInvocationId_u32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.u32(), idx_value, 2_u));
+        b.Let("a", b.Multiply(idx_value, 2_u));
 
         b.Return(ep);
     });
@@ -2495,7 +2583,7 @@ TEST_F(SpirvReader_ShaderIOTest, SubgroupSize_i32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.i32(), idx_value, 2_i));
+        b.Let("a", b.Multiply(idx_value, 2_i));
         b.Return(ep);
     });
 
@@ -2540,7 +2628,7 @@ TEST_F(SpirvReader_ShaderIOTest, SubgroupSize_u32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.u32(), idx_value, 2_u));
+        b.Let("a", b.Multiply(idx_value, 2_u));
 
         b.Return(ep);
     });
@@ -2585,7 +2673,7 @@ TEST_F(SpirvReader_ShaderIOTest, LocalInvocationId_i32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.vec3<i32>(), idx_value, b.Splat(ty.vec3<i32>(), 2_i)));
+        b.Let("a", b.Multiply(idx_value, b.Splat(ty.vec3<i32>(), 2_i)));
         b.Return(ep);
     });
 
@@ -2630,7 +2718,7 @@ TEST_F(SpirvReader_ShaderIOTest, LocalInvocationId_u32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.vec3<u32>(), idx_value, b.Splat(ty.vec3<u32>(), 2_u)));
+        b.Let("a", b.Multiply(idx_value, b.Splat(ty.vec3<u32>(), 2_u)));
 
         b.Return(ep);
     });
@@ -2675,7 +2763,7 @@ TEST_F(SpirvReader_ShaderIOTest, GlobalInvocationId_i32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.vec3<i32>(), idx_value, b.Splat(ty.vec3<i32>(), 2_i)));
+        b.Let("a", b.Multiply(idx_value, b.Splat(ty.vec3<i32>(), 2_i)));
         b.Return(ep);
     });
 
@@ -2720,7 +2808,7 @@ TEST_F(SpirvReader_ShaderIOTest, GlobalInvocationId_u32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.vec3<u32>(), idx_value, b.Splat(ty.vec3<u32>(), 2_u)));
+        b.Let("a", b.Multiply(idx_value, b.Splat(ty.vec3<u32>(), 2_u)));
 
         b.Return(ep);
     });
@@ -2765,7 +2853,7 @@ TEST_F(SpirvReader_ShaderIOTest, WorkgroupId_i32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.vec3<i32>(), idx_value, b.Splat(ty.vec3<i32>(), 2_i)));
+        b.Let("a", b.Multiply(idx_value, b.Splat(ty.vec3<i32>(), 2_i)));
         b.Return(ep);
     });
 
@@ -2810,7 +2898,7 @@ TEST_F(SpirvReader_ShaderIOTest, WorkgroupId_u32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.vec3<u32>(), idx_value, b.Splat(ty.vec3<u32>(), 2_u)));
+        b.Let("a", b.Multiply(idx_value, b.Splat(ty.vec3<u32>(), 2_u)));
 
         b.Return(ep);
     });
@@ -2855,7 +2943,7 @@ TEST_F(SpirvReader_ShaderIOTest, NumWorkgroups_i32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.vec3<i32>(), idx_value, b.Splat(ty.vec3<i32>(), 2_i)));
+        b.Let("a", b.Multiply(idx_value, b.Splat(ty.vec3<i32>(), 2_i)));
         b.Return(ep);
     });
 
@@ -2900,7 +2988,7 @@ TEST_F(SpirvReader_ShaderIOTest, NumWorkgroups_u32) {
     ep->SetWorkgroupSize(b.Constant(1_u), b.Constant(1_u), b.Constant(1_u));
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.vec3<u32>(), idx_value, b.Splat(ty.vec3<u32>(), 2_u)));
+        b.Let("a", b.Multiply(idx_value, b.Splat(ty.vec3<u32>(), 2_u)));
 
         b.Return(ep);
     });
@@ -2944,7 +3032,7 @@ TEST_F(SpirvReader_ShaderIOTest, SampleIndex_i32) {
     auto* ep = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.i32(), idx_value, 2_i));
+        b.Let("a", b.Multiply(idx_value, 2_i));
         b.Return(ep);
     });
 
@@ -2988,7 +3076,7 @@ TEST_F(SpirvReader_ShaderIOTest, SampleIndex_u32) {
     auto* ep = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(ep->Block(), [&] {
         auto* idx_value = b.Load(idx);
-        b.Let("a", b.Multiply(ty.u32(), idx_value, 2_u));
+        b.Let("a", b.Multiply(idx_value, 2_u));
 
         b.Return(ep);
     });
@@ -3039,7 +3127,7 @@ TEST_F(SpirvReader_ShaderIOTest, SampleMask) {
     auto* ep = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(ep->Block(), [&] {
         auto* mask_value = b.Load(mask_in);
-        auto* doubled = b.Multiply(ty.u32(), b.Access(ty.u32(), mask_value, 0_u), 2_u);
+        auto* doubled = b.Multiply(b.Access(ty.u32(), mask_value, 0_u), 2_u);
         b.Store(mask_out, b.Construct(arr, doubled));
         b.Return(ep);
     });
@@ -3107,7 +3195,7 @@ TEST_F(SpirvReader_ShaderIOTest, SampleMask_I32) {
     auto* ep = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(ep->Block(), [&] {
         auto* mask_value = b.Load(mask_in);
-        auto* doubled = b.Multiply(ty.i32(), b.Access(ty.i32(), mask_value, 0_u), 2_i);
+        auto* doubled = b.Multiply(b.Access(ty.i32(), mask_value, 0_u), 2_i);
         b.Store(mask_out, b.Construct(arr, doubled));
         b.Return(ep);
     });
@@ -3687,7 +3775,7 @@ TEST_F(SpirvReader_ShaderIOTest, Input_Array) {
     b.Append(ep->Block(), [&] {
         auto* ld = b.Load(ary);
         auto* access = b.Access(ty.f32(), ld, 1_u);
-        b.Add(ty.f32(), access, access);
+        b.Add(access, access);
         b.Return(ep);
     });
 
@@ -3735,7 +3823,7 @@ TEST_F(SpirvReader_ShaderIOTest, Input_Matrix) {
     b.Append(ep->Block(), [&] {
         auto* ld = b.Load(mat);
         auto* access = b.Access(ty.f32(), ld, 1_u, 1_u);
-        b.Add(ty.f32(), access, access);
+        b.Add(access, access);
         b.Return(ep);
     });
 
@@ -3793,7 +3881,7 @@ TEST_F(SpirvReader_ShaderIOTest, Input_Struct) {
     b.Append(ep->Block(), [&] {
         auto* ld = b.Load(s);
         auto* access = b.Access(ty.f32(), ld, 1_u, 1_u);
-        b.Add(ty.f32(), access, access);
+        b.Add(access, access);
         b.Return(ep);
     });
 
@@ -3861,7 +3949,7 @@ TEST_F(SpirvReader_ShaderIOTest, Input_ArrayOfStruct) {
     b.Append(ep->Block(), [&] {
         auto* ld = b.Load(s);
         auto* access = b.Access(ty.f32(), ld, 1_u, 1_u, 2_u);
-        b.Add(ty.f32(), access, access);
+        b.Add(access, access);
         b.Return(ep);
     });
 

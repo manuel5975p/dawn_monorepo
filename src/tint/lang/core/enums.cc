@@ -34,6 +34,8 @@
 //                       Do not modify this file directly
 ////////////////////////////////////////////////////////////////////////////////
 
+// clang-format off
+
 #include "src/tint/lang/core/enums.h"
 
 namespace tint::core {
@@ -124,8 +126,7 @@ std::string_view ToString(AddressSpace value) {
 
 /// ParseInterpolationSampling parses a InterpolationSampling from a string.
 /// @param str the string to parse
-/// @returns the parsed enum, or InterpolationSampling::kUndefined if the string could not be
-/// parsed.
+/// @returns the parsed enum, or InterpolationSampling::kUndefined if the string could not be parsed.
 InterpolationSampling ParseInterpolationSampling(std::string_view str) {
     if (str == "center") {
         return InterpolationSampling::kCenter;
@@ -627,6 +628,9 @@ BuiltinType ParseBuiltinType(std::string_view str) {
     if (str == "ptr") {
         return BuiltinType::kPtr;
     }
+    if (str == "resource_binding") {
+        return BuiltinType::kResourceBinding;
+    }
     if (str == "sampler") {
         return BuiltinType::kSampler;
     }
@@ -879,6 +883,8 @@ std::string_view ToString(BuiltinType value) {
             return "mat4x4h";
         case BuiltinType::kPtr:
             return "ptr";
+        case BuiltinType::kResourceBinding:
+            return "resource_binding";
         case BuiltinType::kSampler:
             return "sampler";
         case BuiltinType::kSamplerComparison:
@@ -991,14 +997,17 @@ BuiltinValue ParseBuiltinValue(std::string_view str) {
     if (str == "local_invocation_index") {
         return BuiltinValue::kLocalInvocationIndex;
     }
+    if (str == "num_subgroups") {
+        return BuiltinValue::kNumSubgroups;
+    }
     if (str == "num_workgroups") {
         return BuiltinValue::kNumWorkgroups;
     }
     if (str == "position") {
         return BuiltinValue::kPosition;
     }
-    if (str == "primitive_id") {
-        return BuiltinValue::kPrimitiveId;
+    if (str == "primitive_index") {
+        return BuiltinValue::kPrimitiveIndex;
     }
     if (str == "sample_index") {
         return BuiltinValue::kSampleIndex;
@@ -1047,12 +1056,14 @@ std::string_view ToString(BuiltinValue value) {
             return "local_invocation_id";
         case BuiltinValue::kLocalInvocationIndex:
             return "local_invocation_index";
+        case BuiltinValue::kNumSubgroups:
+            return "num_subgroups";
         case BuiltinValue::kNumWorkgroups:
             return "num_workgroups";
         case BuiltinValue::kPosition:
             return "position";
-        case BuiltinValue::kPrimitiveId:
-            return "primitive_id";
+        case BuiltinValue::kPrimitiveIndex:
+            return "primitive_index";
         case BuiltinValue::kSampleIndex:
             return "sample_index";
         case BuiltinValue::kSampleMask:
@@ -1067,6 +1078,35 @@ std::string_view ToString(BuiltinValue value) {
             return "vertex_index";
         case BuiltinValue::kWorkgroupId:
             return "workgroup_id";
+    }
+    return "<unknown>";
+}
+
+/// ParseBuiltinDepthMode parses a BuiltinDepthMode from a string.
+/// @param str the string to parse
+/// @returns the parsed enum, or BuiltinDepthMode::kUndefined if the string could not be parsed.
+BuiltinDepthMode ParseBuiltinDepthMode(std::string_view str) {
+    if (str == "any") {
+        return BuiltinDepthMode::kAny;
+    }
+    if (str == "greater") {
+        return BuiltinDepthMode::kGreater;
+    }
+    if (str == "less") {
+        return BuiltinDepthMode::kLess;
+    }
+    return BuiltinDepthMode::kUndefined;
+}
+std::string_view ToString(BuiltinDepthMode value) {
+    switch (value) {
+        case BuiltinDepthMode::kUndefined:
+            return "undefined";
+        case BuiltinDepthMode::kAny:
+            return "any";
+        case BuiltinDepthMode::kGreater:
+            return "greater";
+        case BuiltinDepthMode::kLess:
+            return "less";
     }
     return "<unknown>";
 }
@@ -1229,6 +1269,8 @@ std::string_view ToString(ParameterUsage usage) {
             return "image";
         case ParameterUsage::kImageOperands:
             return "image_operands";
+        case ParameterUsage::kIndex:
+            return "index";
         case ParameterUsage::kInputAttachment:
             return "input_attachment";
         case ParameterUsage::kInsert:
@@ -1239,6 +1281,8 @@ std::string_view ToString(ParameterUsage usage) {
             return "location";
         case ParameterUsage::kLod:
             return "lod";
+        case ParameterUsage::kM:
+            return "m";
         case ParameterUsage::kMask:
             return "mask";
         case ParameterUsage::kNumLevels:
@@ -1251,6 +1295,8 @@ std::string_view ToString(ParameterUsage usage) {
             return "refz";
         case ParameterUsage::kResult:
             return "result";
+        case ParameterUsage::kS:
+            return "s";
         case ParameterUsage::kSample:
             return "sample";
         case ParameterUsage::kSampleIndex:
@@ -1741,8 +1787,29 @@ BuiltinFn ParseBuiltinFn(std::string_view name) {
     if (name == "subgroupMatrixMultiplyAccumulate") {
         return BuiltinFn::kSubgroupMatrixMultiplyAccumulate;
     }
+    if (name == "subgroupMatrixScalarAdd") {
+        return BuiltinFn::kSubgroupMatrixScalarAdd;
+    }
+    if (name == "subgroupMatrixScalarSubtract") {
+        return BuiltinFn::kSubgroupMatrixScalarSubtract;
+    }
+    if (name == "subgroupMatrixScalarMultiply") {
+        return BuiltinFn::kSubgroupMatrixScalarMultiply;
+    }
     if (name == "print") {
         return BuiltinFn::kPrint;
+    }
+    if (name == "hasBinding") {
+        return BuiltinFn::kHasBinding;
+    }
+    if (name == "getBinding") {
+        return BuiltinFn::kGetBinding;
+    }
+    if (name == "hasResource") {
+        return BuiltinFn::kHasResource;
+    }
+    if (name == "getResource") {
+        return BuiltinFn::kGetResource;
     }
     return BuiltinFn::kNone;
 }
@@ -2049,24 +2116,24 @@ const char* str(BuiltinFn i) {
             return "subgroupMatrixMultiply";
         case BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
             return "subgroupMatrixMultiplyAccumulate";
+        case BuiltinFn::kSubgroupMatrixScalarAdd:
+            return "subgroupMatrixScalarAdd";
+        case BuiltinFn::kSubgroupMatrixScalarSubtract:
+            return "subgroupMatrixScalarSubtract";
+        case BuiltinFn::kSubgroupMatrixScalarMultiply:
+            return "subgroupMatrixScalarMultiply";
         case BuiltinFn::kPrint:
             return "print";
+        case BuiltinFn::kHasBinding:
+            return "hasBinding";
+        case BuiltinFn::kGetBinding:
+            return "getBinding";
+        case BuiltinFn::kHasResource:
+            return "hasResource";
+        case BuiltinFn::kGetResource:
+            return "getResource";
     }
     return "<unknown>";
-}
-
-bool IsCoarseDerivative(BuiltinFn f) {
-    return f == BuiltinFn::kDpdxCoarse || f == BuiltinFn::kDpdyCoarse ||
-           f == BuiltinFn::kFwidthCoarse;
-}
-
-bool IsFineDerivative(BuiltinFn f) {
-    return f == BuiltinFn::kDpdxFine || f == BuiltinFn::kDpdyFine || f == BuiltinFn::kFwidthFine;
-}
-
-bool IsDerivative(BuiltinFn f) {
-    return f == BuiltinFn::kDpdx || f == BuiltinFn::kDpdy || f == BuiltinFn::kFwidth ||
-           IsCoarseDerivative(f) || IsFineDerivative(f);
 }
 
 bool IsTexture(BuiltinFn f) {
@@ -2085,40 +2152,18 @@ bool IsTexture(BuiltinFn f) {
 }
 
 bool IsImageQuery(BuiltinFn f) {
-    return f == BuiltinFn::kTextureDimensions || f == BuiltinFn::kTextureNumLayers ||
-           f == BuiltinFn::kTextureNumLevels || f == BuiltinFn::kTextureNumSamples;
-}
-
-bool IsDataPacking(BuiltinFn f) {
-    return f == BuiltinFn::kPack4X8Snorm || f == BuiltinFn::kPack4X8Unorm ||
-           f == BuiltinFn::kPack2X16Snorm || f == BuiltinFn::kPack2X16Unorm ||
-           f == BuiltinFn::kPack2X16Float;
-}
-
-bool IsDataUnpacking(BuiltinFn f) {
-    return f == BuiltinFn::kUnpack4X8Snorm || f == BuiltinFn::kUnpack4X8Unorm ||
-           f == BuiltinFn::kUnpack2X16Snorm || f == BuiltinFn::kUnpack2X16Unorm ||
-           f == BuiltinFn::kUnpack2X16Float;
-}
-
-bool IsBarrier(BuiltinFn f) {
-    return f == BuiltinFn::kWorkgroupBarrier || f == BuiltinFn::kStorageBarrier ||
-           f == BuiltinFn::kTextureBarrier;
+    return f == BuiltinFn::kTextureDimensions ||
+           f == BuiltinFn::kTextureNumLayers || f == BuiltinFn::kTextureNumLevels ||
+           f == BuiltinFn::kTextureNumSamples;
 }
 
 bool IsAtomic(BuiltinFn f) {
     return f == BuiltinFn::kAtomicLoad || f == BuiltinFn::kAtomicStore ||
-           f == BuiltinFn::kAtomicAdd || f == BuiltinFn::kAtomicSub || f == BuiltinFn::kAtomicMax ||
-           f == BuiltinFn::kAtomicMin || f == BuiltinFn::kAtomicAnd || f == BuiltinFn::kAtomicOr ||
+           f == BuiltinFn::kAtomicAdd || f == BuiltinFn::kAtomicSub ||
+           f == BuiltinFn::kAtomicMax || f == BuiltinFn::kAtomicMin ||
+           f == BuiltinFn::kAtomicAnd || f == BuiltinFn::kAtomicOr ||
            f == BuiltinFn::kAtomicXor || f == BuiltinFn::kAtomicExchange ||
            f == BuiltinFn::kAtomicCompareExchangeWeak;
-}
-
-bool IsPacked4x8IntegerDotProductBuiltin(BuiltinFn f) {
-    return f == BuiltinFn::kDot4I8Packed || f == BuiltinFn::kDot4U8Packed ||
-           f == BuiltinFn::kPack4XI8 || f == BuiltinFn::kPack4XU8 ||
-           f == BuiltinFn::kPack4XI8Clamp || f == BuiltinFn::kPack4XU8Clamp ||
-           f == BuiltinFn::kUnpack4XI8 || f == BuiltinFn::kUnpack4XU8;
 }
 
 bool IsSubgroup(BuiltinFn f) {
@@ -2175,3 +2220,5 @@ bool HasSideEffects(BuiltinFn f) {
 }
 
 }  // namespace tint::core
+
+// clang-format on

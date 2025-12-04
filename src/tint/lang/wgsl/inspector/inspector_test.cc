@@ -25,6 +25,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <algorithm>
 #include <memory>
 #include <unordered_set>
 
@@ -82,6 +83,8 @@ using InspectorGetEntryPointTest = InspectorTest;
 using InspectorOverridesTest = InspectorTest;
 using InspectorGetConstantNameToIdMapTest = InspectorTest;
 using InspectorGetResourceBindingsTest = InspectorTest;
+using InspectorGetResourceBindingInfoTest = InspectorTest;
+using InspectorGetResourceTableInfoTest = InspectorTest;
 using InspectorGetUsedExtensionNamesTest = InspectorTest;
 using InspectorGetBlendSrcTest = InspectorTest;
 using InspectorSubgroupMatrixTest = InspectorTest;
@@ -165,23 +168,6 @@ fn foo() { func(); }
     EXPECT_EQ(PipelineStage::kFragment, result[1].stage);
 }
 
-TEST_F(InspectorGetEntryPointTest, DefaultWorkgroupSize) {
-    auto* src = R"(
-@compute @workgroup_size(8i, 2i, 1i)  fn foo() {}
-)";
-    Inspector& inspector = Initialize(src);
-
-    auto result = inspector.GetEntryPoints();
-    ASSERT_FALSE(inspector.has_error()) << inspector.error();
-
-    ASSERT_EQ(1u, result.size());
-    auto workgroup_size = result[0].workgroup_size;
-    ASSERT_TRUE(workgroup_size.has_value());
-    EXPECT_EQ(8u, workgroup_size->x);
-    EXPECT_EQ(2u, workgroup_size->y);
-    EXPECT_EQ(1u, workgroup_size->z);
-}
-
 // Test that immediate_data_size is zero if there are no immediate data.
 TEST_F(InspectorGetEntryPointTest, ImmediateDataSizeNone) {
     auto* src = R"(
@@ -199,8 +185,6 @@ TEST_F(InspectorGetEntryPointTest, ImmediateDataSizeNone) {
 // Test that immediate_data_size is 4 (bytes) if there is a single F32 immediate data.
 TEST_F(InspectorGetEntryPointTest, ImmediateDataSizeOneWord) {
     auto* src = R"(
-enable chromium_experimental_immediate;
-
 var<immediate> pc: f32;
 
 @fragment fn foo() { _ = pc; }
@@ -218,8 +202,6 @@ var<immediate> pc: f32;
 // each of i32, f32 and u32.
 TEST_F(InspectorGetEntryPointTest, ImmediateDataSizeThreeWords) {
     auto* src = R"(
-enable chromium_experimental_immediate;
-
 struct S {
   a: i32,
   b: f32,
@@ -243,8 +225,6 @@ var<immediate> pc : S;
 // point containing a struct of size 12 bytes.
 TEST_F(InspectorGetEntryPointTest, ImmediateDataSizeTwoConstants) {
     auto* src = R"(
-enable chromium_experimental_immediate;
-
 struct S {
   a: i32,
   b: f32,
@@ -264,134 +244,6 @@ var<immediate> pc: f32;
 
     // Check that the result only includes the single f32 immediate data.
     EXPECT_EQ(4u, result[0].immediate_data_size);
-}
-
-TEST_F(InspectorGetEntryPointTest, NonDefaultWorkgroupSize) {
-    auto* src = R"(
-@compute @workgroup_size(8i, 2i, 1i)
-fn foo() {}
-)";
-    Inspector& inspector = Initialize(src);
-
-    auto result = inspector.GetEntryPoints();
-    ASSERT_FALSE(inspector.has_error()) << inspector.error();
-
-    ASSERT_EQ(1u, result.size());
-    auto workgroup_size = result[0].workgroup_size;
-    ASSERT_TRUE(workgroup_size.has_value());
-    EXPECT_EQ(8u, workgroup_size->x);
-    EXPECT_EQ(2u, workgroup_size->y);
-    EXPECT_EQ(1u, workgroup_size->z);
-}
-
-TEST_F(InspectorGetEntryPointTest, WorkgroupStorageSizeEmpty) {
-    auto* src = R"(
-@compute @workgroup_size(1i)
-fn ep_func() {}
-)";
-    Inspector& inspector = Initialize(src);
-    auto result = inspector.GetEntryPoints();
-    ASSERT_FALSE(inspector.has_error()) << inspector.error();
-
-    ASSERT_EQ(1u, result.size());
-    EXPECT_EQ(0u, result[0].workgroup_storage_size);
-}
-
-TEST_F(InspectorGetEntryPointTest, WorkgroupStorageSizeSimple) {
-    auto* src = R"(
-var<workgroup> wg_f32: f32;
-var<workgroup> wg_i32: i32;
-
-fn f32_func() { _ = wg_f32; }
-fn i32_func() { _ = wg_i32; }
-
-@compute @workgroup_size(1i)
-fn ep_func() {
-  f32_func();
-  i32_func();
-}
-)";
-    Inspector& inspector = Initialize(src);
-    auto result = inspector.GetEntryPoints();
-    ASSERT_FALSE(inspector.has_error()) << inspector.error();
-
-    ASSERT_EQ(1u, result.size());
-    EXPECT_EQ(32u, result[0].workgroup_storage_size);
-}
-
-TEST_F(InspectorGetEntryPointTest, WorkgroupStorageSizeCompoundTypes) {
-    auto* src = R"(
-// This struct should occupy 68 bytes.
-struct WgStruct {
-  a: i32,
-  b: array<i32, 16>,
-}
-var<workgroup> wg_struct_var: WgStruct;
-
-fn wg_struct_func() { _ = wg_struct_var.a; }
-
-// Plus another 4 bytes from this other workgroup-class f32.
-var<workgroup> wg_f32: f32;
-fn f32_func() { _ = wg_f32; }
-
-@compute @workgroup_size(1i)
-fn ep_func() {
-  wg_struct_func();
-  f32_func();
-}
-)";
-    Inspector& inspector = Initialize(src);
-    auto result = inspector.GetEntryPoints();
-    ASSERT_FALSE(inspector.has_error()) << inspector.error();
-
-    ASSERT_EQ(1u, result.size());
-    EXPECT_EQ(96u, result[0].workgroup_storage_size);
-}
-
-TEST_F(InspectorGetEntryPointTest, WorkgroupStorageSizeAlignmentPadding) {
-    auto* src = R"(
-// vec3<f32> has an alignment of 16 but a size of 12. We leverage this to test
-// that our padded size calculation for workgroup storage is accurate.
-var<workgroup> wg_vec3: vec3f;
-
-fn wg_func() { _ = wg_vec3; }
-
-@compute @workgroup_size(1i)
-fn ep_func() {
-  wg_func();
-}
-)";
-    Inspector& inspector = Initialize(src);
-    auto result = inspector.GetEntryPoints();
-    ASSERT_FALSE(inspector.has_error()) << inspector.error();
-
-    ASSERT_EQ(1u, result.size());
-    EXPECT_EQ(16u, result[0].workgroup_storage_size);
-}
-
-TEST_F(InspectorGetEntryPointTest, WorkgroupStorageSizeStructAlignment) {
-    auto* src = R"(
-// Per WGSL spec, a struct's size is the offset its last member plus the size
-// of its last member, rounded up to the alignment of its largest member. So
-// here the struct is expected to occupy 1024 bytes of workgroup storage.
-struct WgStruct {
-  @align(1024i) a: f32,
-}
-var<workgroup> wg_struct_var: WgStruct;
-
-fn wg_struct_func() { _ = wg_struct_var.a; }
-
-@compute @workgroup_size(1i)
-fn ep_func() {
-  wg_struct_func();
-}
-)";
-    Inspector& inspector = Initialize(src);
-    auto result = inspector.GetEntryPoints();
-    ASSERT_FALSE(inspector.has_error()) << inspector.error();
-
-    ASSERT_EQ(1u, result.size());
-    EXPECT_EQ(1024u, result[0].workgroup_storage_size);
 }
 
 TEST_F(InspectorGetEntryPointTest, NoInOutVariables) {
@@ -1136,6 +988,7 @@ fn ep_func() {}
     EXPECT_FALSE(result[0].sample_index_used);
     EXPECT_FALSE(result[0].num_workgroups_used);
     EXPECT_FALSE(result[0].frag_depth_used);
+    EXPECT_FALSE(result[0].fine_derivative_builtin_used);
 }
 
 TEST_F(InspectorGetEntryPointTest, InputSampleMaskSimpleReferenced) {
@@ -1324,6 +1177,108 @@ fn ep_func() -> out_struct {
 
     ASSERT_EQ(1u, result.size());
     EXPECT_TRUE(result[0].frag_depth_used);
+}
+
+TEST_F(InspectorGetEntryPointTest, DpdxFineDirectlyUsed) {
+    auto* src = R"(
+@fragment
+fn ep_func(@location(0) i: f32) {
+  _ = dpdxFine(i);
+}
+)";
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    EXPECT_TRUE(result[0].fine_derivative_builtin_used);
+}
+
+TEST_F(InspectorGetEntryPointTest, DpdxFineTransientlyUsed) {
+    auto* src = R"(
+fn foo(i: f32) {
+  _ = dpdxFine(i);
+}
+
+@fragment
+fn ep_func(@location(0) i: f32) {
+    foo(i);
+}
+)";
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    EXPECT_TRUE(result[0].fine_derivative_builtin_used);
+}
+
+TEST_F(InspectorGetEntryPointTest, DpdyFineDirectlyUsed) {
+    auto* src = R"(
+@fragment
+fn ep_func(@location(0) i: f32) {
+  _ = dpdyFine(i);
+}
+)";
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    EXPECT_TRUE(result[0].fine_derivative_builtin_used);
+}
+
+TEST_F(InspectorGetEntryPointTest, DpdyFineTransientlyUsed) {
+    auto* src = R"(
+fn foo(i: f32) {
+  _ = dpdyFine(i);
+}
+
+@fragment
+fn ep_func(@location(0) i: f32) {
+    foo(i);
+}
+)";
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    EXPECT_TRUE(result[0].fine_derivative_builtin_used);
+}
+
+TEST_F(InspectorGetEntryPointTest, FwidthFineDirectlyUsed) {
+    auto* src = R"(
+@fragment
+fn ep_func(@location(0) i: f32) {
+  _ = fwidthFine(i);
+}
+)";
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    EXPECT_TRUE(result[0].fine_derivative_builtin_used);
+}
+
+TEST_F(InspectorGetEntryPointTest, FwidthFineTransientlyUsed) {
+    auto* src = R"(
+fn foo(i: f32) {
+  _ = fwidthFine(i);
+}
+
+@fragment
+fn ep_func(@location(0) i: f32) {
+    foo(i);
+}
+)";
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    EXPECT_TRUE(result[0].fine_derivative_builtin_used);
 }
 
 TEST_F(InspectorGetEntryPointTest, ClipDistancesReferenced) {
@@ -2767,6 +2722,24 @@ TEST_F(InspectorGetResourceBindingsTest, BindingArray_Simple) {
     EXPECT_EQ(5u, result[0].array_size.value());
 }
 
+TEST_F(InspectorGetResourceBindingsTest, BindingArray_ResourceBinding) {
+    auto* src = R"(
+enable chromium_experimental_dynamic_binding;
+
+@group(0) @binding(1) var toto: resource_binding;;
+@fragment fn ep() {
+  _ = textureDimensions(getBinding<texture_2d<f32>>(toto, 3));
+}
+)";
+
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetResourceBindings("ep");
+    ASSERT_FALSE(inspector.has_error()) << inspector.error();
+
+    EXPECT_EQ(0u, result.size());
+}
+
 TEST_F(InspectorGetResourceBindingsTest, BindingArray_InFunction) {
     auto* src = R"(
 @group(0) @binding(1) var toto: binding_array<texture_2d<f32>, 5>;
@@ -2790,6 +2763,195 @@ fn f() {
     EXPECT_EQ(1u, result[0].binding);
     EXPECT_TRUE(result[0].array_size.has_value());
     EXPECT_EQ(5u, result[0].array_size.value());
+}
+
+TEST_F(InspectorGetResourceBindingInfoTest, NoResourceBinding) {
+    auto* src = R"(
+@group(0) @binding(1) var toto: texture_2d<f32>;
+@fragment fn ep() {
+  _ = textureDimensions(toto);
+}
+)";
+
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetResourceBindingInfo("ep");
+    ASSERT_FALSE(inspector.has_error()) << inspector.error();
+
+    EXPECT_TRUE(result.empty());
+}
+
+TEST_F(InspectorGetResourceBindingInfoTest, ResourceBinding) {
+    auto* src = R"(
+enable chromium_experimental_dynamic_binding;
+
+@group(0) @binding(1) var toto: resource_binding;
+@fragment fn ep() {
+  _ = hasBinding<texture_2d<f32>>(toto, 0);
+  _ = getBinding<texture_3d<i32>>(toto, 1);
+}
+)";
+
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetResourceBindingInfo("ep");
+    ASSERT_FALSE(inspector.has_error()) << inspector.error();
+
+    ASSERT_EQ(1u, result.size());
+
+    EXPECT_EQ(0u, result[0].group);
+    EXPECT_EQ(1u, result[0].binding);
+    ASSERT_EQ(2u, result[0].type_info.size());
+
+    std::sort(result[0].type_info.begin(), result[0].type_info.end());
+    EXPECT_EQ(ResourceType::kTexture2d_f32, result[0].type_info[0]);
+    EXPECT_EQ(ResourceType::kTexture3d_i32, result[0].type_info[1]);
+}
+
+TEST_F(InspectorGetResourceBindingInfoTest, ResourceBinding_Multiple) {
+    auto* src = R"(
+enable chromium_experimental_dynamic_binding;
+
+@group(1) @binding(1) var toto: resource_binding;
+@group(2) @binding(0) var moto: resource_binding;
+@group(0) @binding(1) var zoto: resource_binding;
+@fragment fn ep() {
+  _ = textureDimensions(getBinding<texture_cube<f32>>(toto, 3));
+  _ = textureDimensions(getBinding<texture_1d<f32>>(moto, 3));
+
+  _ = hasBinding<texture_2d<f32>>(zoto, 0);
+  _ = getBinding<texture_3d<f32>>(zoto, 1);
+}
+)";
+
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetResourceBindingInfo("ep");
+    ASSERT_FALSE(inspector.has_error()) << inspector.error();
+
+    ASSERT_EQ(3u, result.size());
+
+    auto& arr = result[0];
+    EXPECT_EQ(1u, arr.group);
+    EXPECT_EQ(1u, arr.binding);
+    EXPECT_EQ(1u, arr.type_info.size());
+    EXPECT_EQ(ResourceType::kTextureCube_f32, arr.type_info[0]);
+
+    arr = result[1];
+    EXPECT_EQ(2u, arr.group);
+    EXPECT_EQ(0u, arr.binding);
+    EXPECT_EQ(1u, arr.type_info.size());
+    EXPECT_EQ(ResourceType::kTexture1d_f32, arr.type_info[0]);
+
+    arr = result[2];
+    EXPECT_EQ(0u, arr.group);
+    EXPECT_EQ(1u, arr.binding);
+    EXPECT_EQ(2u, arr.type_info.size());
+
+    std::sort(arr.type_info.begin(), arr.type_info.end());
+    EXPECT_EQ(ResourceType::kTexture2d_f32, arr.type_info[0]);
+    EXPECT_EQ(ResourceType::kTexture3d_f32, arr.type_info[1]);
+}
+
+TEST_F(InspectorGetResourceTableInfoTest, NoResourceBinding) {
+    auto* src = R"(
+@group(0) @binding(1) var toto: texture_2d<f32>;
+@fragment fn ep() {
+  _ = textureDimensions(toto);
+}
+)";
+
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetResourceTableInfo("ep");
+    ASSERT_FALSE(inspector.has_error()) << inspector.error();
+
+    EXPECT_TRUE(result.empty());
+}
+
+TEST_F(InspectorGetResourceTableInfoTest, ResourceTable) {
+    auto* src = R"(
+enable chromium_experimental_resource_table;
+
+@fragment fn ep() {
+  _ = hasResource<texture_2d<f32>>(0);
+  _ = getResource<texture_3d<i32>>(1);
+}
+)";
+
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetResourceTableInfo("ep");
+    ASSERT_FALSE(inspector.has_error()) << inspector.error();
+
+    ASSERT_EQ(2u, result.size());
+
+    std::vector<ResourceType> types(result.begin(), result.end());
+    std::sort(types.begin(), types.end());
+    EXPECT_EQ(ResourceType::kTexture2d_f32, types[0]);
+    EXPECT_EQ(ResourceType::kTexture3d_i32, types[1]);
+}
+
+TEST_F(InspectorGetResourceTableInfoTest, ResourceTable_Multiple) {
+    auto* src = R"(
+enable chromium_experimental_resource_table;
+
+@fragment fn ep() {
+  _ = textureDimensions(getResource<texture_cube<f32>>(3));
+  _ = textureDimensions(getResource<texture_1d<f32>>(3));
+
+  _ = hasResource<texture_2d<f32>>(0);
+  _ = getResource<texture_3d<f32>>(1);
+}
+)";
+
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetResourceTableInfo("ep");
+    ASSERT_FALSE(inspector.has_error()) << inspector.error();
+
+    ASSERT_EQ(4u, result.size());
+
+    std::vector<ResourceType> types(result.begin(), result.end());
+    std::sort(types.begin(), types.end());
+
+    EXPECT_EQ(ResourceType::kTexture1d_f32, types[0]);
+    EXPECT_EQ(ResourceType::kTexture2d_f32, types[1]);
+    EXPECT_EQ(ResourceType::kTexture3d_f32, types[2]);
+    EXPECT_EQ(ResourceType::kTextureCube_f32, types[3]);
+}
+
+TEST_F(InspectorGetResourceTableInfoTest, ResourceTable_Nested) {
+    auto* src = R"(
+enable chromium_experimental_resource_table;
+
+fn nested() {
+  _ = textureDimensions(getResource<texture_cube<f32>>(3));
+  _ = textureDimensions(getResource<texture_1d<f32>>(3));
+
+  _ = hasResource<texture_2d<f32>>(0);
+  _ = getResource<texture_3d<f32>>(1);
+}
+
+@fragment fn ep() {
+  nested();
+}
+)";
+
+    Inspector& inspector = Initialize(src);
+
+    auto result = inspector.GetResourceTableInfo("ep");
+    ASSERT_FALSE(inspector.has_error()) << inspector.error();
+
+    ASSERT_EQ(4u, result.size());
+
+    std::vector<ResourceType> types(result.begin(), result.end());
+    std::sort(types.begin(), types.end());
+
+    EXPECT_EQ(ResourceType::kTexture1d_f32, types[0]);
+    EXPECT_EQ(ResourceType::kTexture2d_f32, types[1]);
+    EXPECT_EQ(ResourceType::kTexture3d_f32, types[2]);
+    EXPECT_EQ(ResourceType::kTextureCube_f32, types[3]);
 }
 
 class InspectorGetSamplerTextureUsesTest : public TestHelper, public testing::Test {

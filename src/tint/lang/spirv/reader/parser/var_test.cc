@@ -296,6 +296,54 @@ $B1: {  # root
 )");
 }
 
+TEST_F(SpirvParserTest, StorageVar_Restrict) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpExtension "SPV_KHR_storage_buffer_storage_class"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %1 "main"
+               OpExecutionMode %1 LocalSize 1 1 1
+               OpDecorate %str Block
+               OpMemberDecorate %str 0 Offset 0
+               OpDecorate %6 DescriptorSet 1
+               OpDecorate %6 Binding 2
+               OpDecorate %6 Restrict
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+     %uint_0 = OpConstant %uint 0
+%_ptr_StorageBuffer_uint = OpTypePointer StorageBuffer %uint
+        %str = OpTypeStruct %uint
+%_ptr_StorageBuffer_str = OpTypePointer StorageBuffer %str
+          %5 = OpTypeFunction %void
+          %6 = OpVariable %_ptr_StorageBuffer_str StorageBuffer
+          %1 = OpFunction %void None %5
+          %7 = OpLabel
+          %8 = OpAccessChain %_ptr_StorageBuffer_uint %6 %uint_0
+          %9 = OpLoad %uint %8
+               OpStore %8 %9
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+tint_symbol_1 = struct @align(4) {
+  tint_symbol:u32 @offset(0)
+}
+
+$B1: {  # root
+  %1:ptr<storage, tint_symbol_1, read_write> = var undef @binding_point(1, 2)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %3:ptr<storage, u32, read_write> = access %1, 0u
+    %4:u32 = load %3
+    store %3, %4
+    ret
+  }
+}
+)");
+}
+
 TEST_F(SpirvParserTest, StorageVar_ReadOnly_And_ReadWrite) {
     EXPECT_IR(R"(
                OpCapability Shader
@@ -445,7 +493,7 @@ tint_symbol_1 = struct @align(4) {
 }
 
 $B1: {  # root
-  %1:ptr<storage, tint_symbol_1, write> = var undef @binding_point(1, 2)
+  %1:ptr<storage, tint_symbol_1, read_write> = var undef @binding_point(1, 2)
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -463,7 +511,6 @@ TEST_F(SpirvParserTest, UniformVar_BufferBlock_Propagate) {
                OpEntryPoint GLCompute %1 "main"
                OpExecutionMode %1 LocalSize 1 1 1
                OpMemberDecorate %str 0 Offset 0
-               OpDecorate %6 NonReadable
                OpDecorate %6 DescriptorSet 1
                OpDecorate %6 Binding 2
                OpDecorate %str BufferBlock
@@ -490,14 +537,14 @@ tint_symbol_1 = struct @align(4) {
 }
 
 $B1: {  # root
-  %1:ptr<storage, tint_symbol_1, write> = var undef @binding_point(1, 2)
+  %1:ptr<storage, tint_symbol_1, read_write> = var undef @binding_point(1, 2)
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
-    %3:ptr<storage, tint_symbol_1, write> = let %1
-    %4:ptr<storage, u32, write> = access %3, 0u
-    %5:ptr<storage, u32, write> = let %4
+    %3:ptr<storage, tint_symbol_1, read_write> = let %1
+    %4:ptr<storage, u32, read_write> = access %3, 0u
+    %5:ptr<storage, u32, read_write> = let %4
     store %5, 0u
     ret
   }
@@ -565,6 +612,44 @@ TEST_F(SpirvParserTest, UniformConstantVar) {
               R"(
 $B1: {  # root
   %1:ptr<handle, sampler, read> = var undef @binding_point(1, 2)
+}
+
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    ret
+  }
+}
+)");
+}
+
+TEST_F(SpirvParserTest, PushConstantVar) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %1 "main"
+               OpExecutionMode %1 LocalSize 1 1 1
+               OpDecorate %pc_struct Block
+               OpMemberDecorate %pc_struct 0 Offset 0
+               OpMemberDecorate %pc_struct 1 Offset 4
+       %void = OpTypeVoid
+      %float = OpTypeFloat 32
+  %pc_struct = OpTypeStruct %float %float
+%ptr_pc_struct = OpTypePointer PushConstant %pc_struct
+         %pc = OpVariable %ptr_pc_struct PushConstant
+          %5 = OpTypeFunction %void
+          %1 = OpFunction %void None %5
+          %7 = OpLabel
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+tint_symbol_2 = struct @align(4) {
+  tint_symbol:f32 @offset(0)
+  tint_symbol_1:f32 @offset(4)
+}
+
+$B1: {  # root
+  %1:ptr<immediate, tint_symbol_2, read> = var undef
 }
 
 %main = @compute @workgroup_size(1u, 1u, 1u) func():void {
@@ -682,6 +767,11 @@ INSTANTIATE_TEST_SUITE_P(
             "u32",
             "SubgroupLocalInvocationId",
             "%1:ptr<__in, u32, read> = var undef @builtin(subgroup_invocation_id)",
+        },
+        BuiltinCase{
+            "u32",
+            "NumSubgroups",
+            "%1:ptr<__in, u32, read> = var undef @builtin(num_subgroups)",
         },
         BuiltinCase{
             "u32",
@@ -3362,7 +3452,7 @@ $B1: {  # root
 )");
 }
 
-TEST_F(SpirvParserTest, PrimitiveId) {
+TEST_F(SpirvParserTest, PrimitiveIndex) {
     EXPECT_IR(R"(
                OpCapability Shader
                OpCapability Geometry
@@ -3404,7 +3494,7 @@ TEST_F(SpirvParserTest, PrimitiveId) {
 )",
               R"(
 $B1: {  # root
-  %main_primitive_id_Input:ptr<__in, u32, read> = var undef @builtin(primitive_id)
+  %main_primitive_id_Input:ptr<__in, u32, read> = var undef @builtin(primitive_index)
   %main_loc0_Output:ptr<__out, vec4<f32>, read_write> = var undef @location(0)
 }
 

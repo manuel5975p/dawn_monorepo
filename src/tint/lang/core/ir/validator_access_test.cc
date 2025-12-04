@@ -629,9 +629,78 @@ TEST_F(IR_ValidatorTest, Load_RuntimeSizedArray) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
-                                          R"(:7:21 error: load: cannot load a runtime-sized array
+                                          R"(:7:26 error: load: type 'array<u32>' cannot be loaded
     %3:array<u32> = load %a
-                    ^^^^
+                         ^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Load_RuntimeSizedArray_InStruct) {
+    auto* s = ty.Struct(mod.symbols.New("MyStruct"), {
+                                                         {mod.symbols.New("a"), ty.array<u32>()},
+                                                     });
+    auto* a = b.Var("a", ty.ptr<storage>(s));
+    a->SetBindingPoint(0, 0);
+    mod.root_block->Append(a);
+
+    auto* f = b.Function("my_func", ty.void_());
+
+    b.Append(f->Block(), [&] {
+        b.Load(a);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
+                                          R"(:11:24 error: load: type 'MyStruct' cannot be loaded
+    %3:MyStruct = load %a
+                       ^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Load_Atomic) {
+    auto* a = b.Var("a", ty.ptr<storage, atomic<u32>, read_write>());
+    a->SetBindingPoint(0, 0);
+    mod.root_block->Append(a);
+
+    auto* f = b.Function("my_func", ty.void_());
+
+    b.Append(f->Block(), [&] {
+        b.Load(a);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
+                                          R"(:7:27 error: load: type 'atomic<u32>' cannot be loaded
+    %3:atomic<u32> = load %a
+                          ^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Load_Atomic_InStruct) {
+    auto* s = ty.Struct(mod.symbols.New("MyStruct"), {
+                                                         {mod.symbols.New("a"), ty.atomic<u32>()},
+                                                     });
+    auto* a = b.Var("a", ty.ptr<storage>(s));
+    a->SetBindingPoint(0, 0);
+    mod.root_block->Append(a);
+
+    auto* f = b.Function("my_func", ty.void_());
+
+    b.Append(f->Block(), [&] {
+        b.Load(a);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
+                                          R"(:11:24 error: load: type 'MyStruct' cannot be loaded
+    %3:MyStruct = load %a
+                       ^^
 )")) << res.Failure();
 }
 
@@ -906,6 +975,69 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_MissingOperands) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, LoadVectorElement_InvalidIndexType) {
+    auto* f = b.Function("my_func", ty.void_());
+
+    b.Append(f->Block(), [&] {
+        auto* var = b.Var(ty.ptr<function, vec3<f32>>());
+        b.LoadVectorElement(var->Result(), 1_f);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:4:38 error: load_vector_element: load vector element index must be an integer scalar
+    %3:f32 = load_vector_element %2, 1.0f
+                                     ^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, LoadVectorElement_InvalidFromType) {
+    auto* f = b.Function("my_func", ty.void_());
+    auto* p = b.FunctionParam(ty.mat2x3<f32>());
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] {
+        auto* res = b.InstructionResult(ty.f32());
+        auto* lve = mod.CreateInstruction<ir::LoadVectorElement>(res, p, b.Constant(1_u));
+        b.Append(lve);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:3:34 error: load_vector_element: operand 'mat2x3<f32>' must be a pointer to a vector
+    %3:f32 = load_vector_element %2, 1u
+                                 ^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, LoadVectorElement_ConstantIndexOutOfRange) {
+    auto* f = b.Function("my_func", ty.void_());
+
+    b.Append(f->Block(), [&] {
+        auto* var = b.Var(ty.ptr<function, vec4<f32>>());
+        b.LoadVectorElement(var->Result(), 7_u);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:4:38 error: load_vector_element: load vector element index must be in range [0, 3]
+    %3:f32 = load_vector_element %2, 7u
+                                     ^^
+)")) << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, StoreVectorElement_NullTo) {
     auto* f = b.Function("my_func", ty.void_());
 
@@ -999,6 +1131,69 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_UnexpectedResult) {
         testing::HasSubstr(R"(:4:5 error: store_vector_element: expected exactly 0 results, got 1
     store_vector_element %2, 1i, 2.0f
     ^^^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, StoreVectorElement_InvalidIndexType) {
+    auto* f = b.Function("my_func", ty.void_());
+
+    b.Append(f->Block(), [&] {
+        auto* var = b.Var(ty.ptr<function, vec3<f32>>());
+        b.StoreVectorElement(var->Result(), 1_f, 1_f);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:4:30 error: store_vector_element: store vector element index must be an integer scalar
+    store_vector_element %2, 1.0f, 1.0f
+                             ^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, StoreVectorElement_InvalidFromType) {
+    auto* f = b.Function("my_func", ty.void_());
+    auto* p = b.FunctionParam(ty.mat2x3<f32>());
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] {
+        auto* sve =
+            mod.CreateInstruction<ir::StoreVectorElement>(p, b.Constant(1_u), b.Constant(2_u));
+        b.Append(sve);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:3:26 error: store_vector_element: operand 'mat2x3<f32>' must be a pointer to a vector
+    store_vector_element %2, 1u, 2u
+                         ^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, StoreVectorElement_ConstantIndexOutOfRange) {
+    auto* f = b.Function("my_func", ty.void_());
+
+    b.Append(f->Block(), [&] {
+        auto* var = b.Var(ty.ptr<function, vec2<f32>>());
+        b.StoreVectorElement(var->Result(), 7_u, 1_f);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:4:30 error: store_vector_element: store vector element index must be in range [0, 1]
+    store_vector_element %2, 7u, 1.0f
+                             ^^
 )")) << res.Failure();
 }
 

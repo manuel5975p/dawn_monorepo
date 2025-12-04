@@ -40,7 +40,7 @@ std::string get_settings_location_log_message([[maybe_unused]] FrameworkEnvironm
     return s + (env.get_folder(settings_location).location() / "vk_loader_settings.json").string();
 #elif TESTING_COMMON_UNIX_PLATFORMS
     return s + (use_secure ? env.secure_manifest_base_location : env.unsecure_manifest_base_location) +
-           "/vulkan/loader_settings.d/vk_loader_settings.json";
+           "/" TESTING_VULKAN_DIR "/loader_settings.d/vk_loader_settings.json";
 #endif
 }
 std::string get_unsecure_settings_location_log_message(FrameworkEnvironment const& env) {
@@ -54,7 +54,7 @@ std::string get_settings_not_in_use_log_message([[maybe_unused]] FrameworkEnviro
     return s + (env.get_folder(settings_location).location() / "vk_loader_settings.json").string();
 #elif TESTING_COMMON_UNIX_PLATFORMS
     return s + (use_secure ? env.secure_manifest_base_location : env.unsecure_manifest_base_location) +
-           "/vulkan/loader_settings.d/vk_loader_settings.json\" but did not contain any valid settings.";
+           "/" TESTING_VULKAN_DIR "/loader_settings.d/vk_loader_settings.json\" but did not contain any valid settings.";
 #endif
 }
 enum class LayerType {
@@ -999,6 +999,55 @@ TEST(SettingsFile, MetaLayerAlsoActivates) {
         ASSERT_TRUE(string_eq(layers.at(3).layerName, meta_layer_name1));
         ASSERT_TRUE(string_eq(layers.at(4).layerName, meta_layer_name2));
     }
+}
+
+TEST(SettingsFile, DuplicateMetaLayers) {
+    FrameworkEnvironment env{};
+    env.add_icd(TestICDDetails(TEST_ICD_PATH_VERSION_2)).add_physical_device({});
+
+    const char* explicit_layer_name = "VK_LAYER_Regular_TestLayer";
+    env.add_explicit_layer(
+        ManifestLayer{}.add_layer(
+            ManifestLayer::LayerDescription{}.set_name(explicit_layer_name).set_lib_path(TEST_LAYER_PATH_EXPORT_VERSION_2)),
+        "explicit_test_layer.json");
+    // Add an implicit layer and a meta layer that share a name
+    const char* meta_layer_name = "VK_LAYER_meta_layer";
+    env.add_implicit_layer(ManifestLayer{}.add_layer(ManifestLayer::LayerDescription{}
+                                                         .set_name(meta_layer_name)
+                                                         .set_lib_path(TEST_LAYER_PATH_EXPORT_VERSION_2)
+                                                         .set_disable_environment("NotGonnaWork")),
+                           "implicit_layer.json");
+    env.add_implicit_layer(
+        ManifestLayer{}.set_file_format_version({1, 1, 2}).add_layer(ManifestLayer::LayerDescription{}
+                                                                         .set_name(meta_layer_name)
+                                                                         .add_component_layer(explicit_layer_name)
+                                                                         .set_disable_environment("NotGonnaWork")),
+        "meta_test_layer.json");
+
+    env.update_loader_settings(env.loader_settings.set_file_format_version({1, 0, 0}).add_app_specific_setting(
+        AppSpecificSettings{}
+            .add_stderr_log_filter("all")
+            .add_layer_configuration(LoaderSettingsLayerConfiguration{}
+                                         .set_name(explicit_layer_name)
+                                         .set_path(env.get_shimmed_layer_manifest_path(0))
+                                         .set_control("auto")
+                                         .set_treat_as_implicit_manifest(false))
+            .add_layer_configuration(LoaderSettingsLayerConfiguration{}.set_control("unordered_layer_location"))
+            .add_layer_configuration(
+                LoaderSettingsLayerConfiguration{}
+                    .set_name(meta_layer_name)
+                    .set_path(env.get_folder(ManifestLocation::implicit_layer).location() / "meta_test_layer.json")
+                    .set_control("auto")
+                    .set_treat_as_implicit_manifest(true))
+            .add_layer_configuration(LoaderSettingsLayerConfiguration{}
+                                         .set_name(meta_layer_name)
+                                         .set_path(env.get_shimmed_layer_manifest_path(1))
+                                         .set_control("auto")
+                                         .set_treat_as_implicit_manifest(true))
+
+            ));
+    InstWrapper inst{env.vulkan_functions};
+    inst.CheckCreate();
 }
 
 // Layers are correctly ordered by settings file.
@@ -3303,6 +3352,57 @@ TEST(SettingsFile, MissingDriverConfiguration) {
     InstWrapper inst{env.vulkan_functions};
     inst.CheckCreate();
     inst.GetPhysDev(VK_ERROR_INITIALIZATION_FAILED);
+}
+
+TEST(SettingsFile, DeviceConfigurationWithSameDriver) {
+    FrameworkEnvironment env{};
+    VulkanUUID device_uuid = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    VulkanUUID driver_uuid = {10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25};
+
+    auto& icd0 = env.add_icd(TestICDDetails(TEST_ICD_PATH_VERSION_2)).set_icd_api_version(VK_API_VERSION_1_1);
+    auto& phys_dev_0 = icd0.add_and_get_physical_device(PhysicalDevice()
+                                                            .set_api_version(VK_API_VERSION_1_2)
+                                                            .set_deviceUUID(device_uuid)
+                                                            .set_driverUUID(driver_uuid)
+                                                            .set_deviceName("foobar")
+                                                            .finish());
+    phys_dev_0.properties.driverVersion = 1000;
+    std::string("Fake Driver XYZ").copy(phys_dev_0.driver_properties.driverName, VK_MAX_EXTENSION_NAME_SIZE);
+
+    auto& icd1 = env.add_icd(TestICDDetails(TEST_ICD_PATH_VERSION_2)).set_icd_api_version(VK_API_VERSION_1_1);
+    auto& phys_dev_1 = icd1.add_and_get_physical_device(PhysicalDevice()
+                                                            .set_api_version(VK_API_VERSION_1_2)
+                                                            .set_deviceUUID(device_uuid)
+                                                            .set_driverUUID(driver_uuid)
+                                                            .set_deviceName("foobar")
+                                                            .finish());
+    phys_dev_1.properties.driverVersion = 30;
+    std::string("Fake Driver XYZ, but differently named").copy(phys_dev_1.driver_properties.driverName, VK_MAX_EXTENSION_NAME_SIZE);
+
+    env.loader_settings.set_file_format_version({1, 0, 0}).add_app_specific_setting(AppSpecificSettings{});
+
+    env.loader_settings.app_specific_settings.at(0).device_configurations.clear();
+    env.loader_settings.app_specific_settings.at(0).add_device_configuration(
+        LoaderSettingsDeviceConfiguration{}
+            .set_deviceUUID(device_uuid)
+            .set_driverUUID(driver_uuid)
+            .set_driverVersion(phys_dev_1.properties.driverVersion));
+    env.loader_settings.app_specific_settings.at(0).add_device_configuration(
+        LoaderSettingsDeviceConfiguration{}
+            .set_deviceUUID(device_uuid)
+            .set_driverUUID(driver_uuid)
+            .set_driverVersion(phys_dev_0.properties.driverVersion));
+    env.update_loader_settings(env.loader_settings);
+
+    InstWrapper inst{env.vulkan_functions};
+    inst.CheckCreate();
+    auto phys_devs = inst.GetPhysDevs(2);
+    VkPhysicalDeviceProperties props1{};
+    VkPhysicalDeviceProperties props2{};
+    inst->vkGetPhysicalDeviceProperties(phys_devs.at(0), &props1);
+    inst->vkGetPhysicalDeviceProperties(phys_devs.at(1), &props2);
+    ASSERT_EQ(props1.driverVersion, phys_dev_1.properties.driverVersion);
+    ASSERT_EQ(props2.driverVersion, phys_dev_0.properties.driverVersion);
 }
 
 // Three drivers, second on has the matching UUID in the settings file.

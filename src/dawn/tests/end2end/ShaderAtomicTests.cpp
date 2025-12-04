@@ -102,7 +102,7 @@ class ShaderAtomicTests : public DawnTestWithParams<SubgroupsShaderTestsParams> 
 
 TEST_P(ShaderAtomicTests, WorkgroupAtomicArray) {
     // Suppression for Mali gpus.
-    DAWN_SUPPRESS_TEST_IF(gpu_info::IsARM(GetParam().adapterProperties.vendorID));
+    DAWN_SUPPRESS_TEST_IF(IsARM());
     DAWN_SUPPRESS_TEST_IF(IsWARP());
 
     // Test code only supports up to 256 workgroup size.
@@ -189,7 +189,7 @@ fn main(@builtin(local_invocation_index) local_invocation_index: u32,
 
 DAWN_INSTANTIATE_TEST_P(ShaderAtomicTests,
                         /*Supporting only modern graphics backends for now.*/
-                        {D3D12Backend(), MetalBackend(), VulkanBackend()},
+                        {D3D12Backend(), MetalBackend(), VulkanBackend(), WebGPUBackend()},
                         {true, false}, /*use shader array*/
                         {1,  2,  3,  4,  5,  6,   7,   8,   9,   13, 15,
                          16, 31, 32, 53, 64, 111, 128, 137, 173, 256}, /* workgroup size*/

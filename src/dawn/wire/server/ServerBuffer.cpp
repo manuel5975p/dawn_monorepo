@@ -25,6 +25,11 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
+
 #include <limits>
 #include <memory>
 
@@ -49,7 +54,7 @@ WireResult Server::PreHandleDeviceCreateErrorBuffer(const DeviceCreateErrorBuffe
 
 WireResult Server::PreHandleBufferUnmap(const BufferUnmapCmd& cmd) {
     Known<WGPUBuffer> buffer;
-    WIRE_TRY(Objects<WGPUBuffer>().Get(cmd.selfId, &buffer));
+    WIRE_TRY(Get(cmd.selfId, &buffer));
 
     if (buffer->mappedAtCreation && !(buffer->usage & WGPUBufferUsage_MapWrite)) {
         // This indicates the writeHandle is for mappedAtCreation only. Destroy on unmap
@@ -66,7 +71,7 @@ WireResult Server::PreHandleBufferUnmap(const BufferUnmapCmd& cmd) {
 WireResult Server::PreHandleBufferDestroy(const BufferDestroyCmd& cmd) {
     // Destroying a buffer does an implicit unmapping.
     Known<WGPUBuffer> buffer;
-    WIRE_TRY(Objects<WGPUBuffer>().Get(cmd.selfId, &buffer));
+    WIRE_TRY(Get(cmd.selfId, &buffer));
 
     // The buffer was destroyed. Clear the Read/WriteHandle.
     buffer->readHandle = nullptr;
@@ -115,8 +120,8 @@ WireResult Server::DoBufferMapAsync(Known<WGPUBuffer> buffer,
 
     mProcs.bufferMapAsync(
         buffer->handle, mode, offset, size,
-        {nullptr, WGPUCallbackMode_AllowProcessEvents,
-         ForwardToServer<&Server::OnBufferMapAsyncCallback>, userdata.release(), nullptr});
+        MakeCallbackInfo<WGPUBufferMapCallbackInfo, &Server::OnBufferMapAsyncCallback>(
+            userdata.release()));
 
     return WireResult::Success;
 }
@@ -130,7 +135,7 @@ WireResult Server::DoDeviceCreateBuffer(Known<WGPUDevice> device,
                                         const uint8_t* writeHandleCreateInfo) {
     // Create and register the buffer object.
     Reserved<WGPUBuffer> buffer;
-    WIRE_TRY(Objects<WGPUBuffer>().Allocate(&buffer, bufferHandle));
+    WIRE_TRY(Allocate(&buffer, bufferHandle));
     buffer->handle = mProcs.deviceCreateBuffer(device->handle, descriptor);
     buffer->usage = descriptor->usage;
     buffer->mappedAtCreation = (descriptor->mappedAtCreation != 0u);
@@ -245,7 +250,7 @@ void Server::OnBufferMapAsyncCallback(MapUserdata* data,
                                       WGPUStringView message) {
     // Skip sending the callback if the buffer has already been destroyed.
     Known<WGPUBuffer> buffer;
-    if (Objects<WGPUBuffer>().Get(data->buffer.id, &buffer) != WireResult::Success ||
+    if (Get(data->buffer.id, &buffer) != WireResult::Success ||
         buffer->generation != data->buffer.generation) {
         return;
     }
@@ -258,8 +263,10 @@ void Server::OnBufferMapAsyncCallback(MapUserdata* data,
     cmd.future = data->future;
     cmd.status = status;
     cmd.message = message;
+    // Set the pointer length, but the pointed-to data itself won't be serialized as usual (due
+    // to skip_serialize). Instead, the custom CommandExtension below fills that memory.
     cmd.readDataUpdateInfoLength = 0;
-    cmd.readDataUpdateInfo = nullptr;
+    cmd.readDataUpdateInfo = nullptr;  // Skipped by skip_serialize.
 
     const void* readData = nullptr;
     size_t readDataUpdateInfoLength = 0;
@@ -286,15 +293,17 @@ void Server::OnBufferMapAsyncCallback(MapUserdata* data,
         }
     }
 
-    SerializeCommand(cmd, CommandExtension{readDataUpdateInfoLength, [&](char* readHandleBuffer) {
-                                               if (isSuccess && isRead) {
-                                                   // The in-flight map request returned
-                                                   // successfully.
-                                                   buffer->readHandle->SerializeDataUpdate(
-                                                       readData, data->offset, data->size,
-                                                       readHandleBuffer);
-                                               }
-                                           }});
+    SerializeCommand(cmd,
+                     // Extensions to replace fields skipped by skip_serialize.
+                     CommandExtension{readDataUpdateInfoLength, [&](char* readHandleBuffer) {
+                                          if (isSuccess && isRead) {
+                                              // The in-flight map request returned
+                                              // successfully.
+                                              buffer->readHandle->SerializeDataUpdate(
+                                                  readData, data->offset, data->size,
+                                                  readHandleBuffer);
+                                          }
+                                      }});
 }
 
 }  // namespace dawn::wire::server

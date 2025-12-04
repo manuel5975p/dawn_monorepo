@@ -79,9 +79,16 @@ D3D12_DESCRIPTOR_RANGE_TYPE WGPUBindingInfoToDescriptorRangeType(const BindingIn
                     DAWN_UNREACHABLE();
             }
         },
+        [](const TexelBufferBindingInfo&) -> D3D12_DESCRIPTOR_RANGE_TYPE {
+            // D3D12 does not support texel buffers.
+            // TODO(crbug/382544164): Prototype texel buffer feature
+            DAWN_UNREACHABLE();
+        },
         [](const InputAttachmentBindingInfo&) -> D3D12_DESCRIPTOR_RANGE_TYPE {
             DAWN_UNREACHABLE();
-            return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        },
+        [](const ExternalTextureBindingInfo&) -> D3D12_DESCRIPTOR_RANGE_TYPE {
+            DAWN_UNREACHABLE();
         });
 }
 }  // anonymous namespace
@@ -107,7 +114,7 @@ BindGroupLayout::BindGroupLayout(Device* device,
 
         D3D12_DESCRIPTOR_RANGE_TYPE descriptorRangeType =
             WGPUBindingInfoToDescriptorRangeType(bindingInfo);
-        mShaderRegisters[bindingIndex] = uint32_t(bindingInfo.binding);
+        mShaderRegisters[bindingIndex] = uint32_t(bindingIndex);
 
         // Static samplers aren't stored in the descriptor heap. Handle them separately.
         if (std::holds_alternative<StaticSamplerBindingInfo>(bindingInfo.bindingLayout)) {
@@ -136,13 +143,11 @@ BindGroupLayout::BindGroupLayout(Device* device,
             continue;
         }
 
-        // For dynamic resources, Dawn uses root descriptor in D3D12 backend. So there is no
-        // need to allocate the descriptor from descriptor heap or create descriptor ranges.
-        if (bindingIndex < GetDynamicBufferCount()) {
+        // For dynamic uniform buffers, Dawn uses root descriptors in the D3D12 backend. So there is
+        // no need to allocate the descriptor from the descriptor heap or create descriptor ranges.
+        if (bindingIndex < GetDynamicBufferCount() && !IsStorageBufferBinding(bindingIndex)) {
             continue;
         }
-        DAWN_ASSERT(!std::holds_alternative<BufferBindingInfo>(bindingInfo.bindingLayout) ||
-                    !std::get<BufferBindingInfo>(bindingInfo.bindingLayout).hasDynamicOffset);
 
         mDescriptorHeapOffsets[bindingIndex] =
             descriptorRangeType == D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER
@@ -193,9 +198,16 @@ BindGroupLayout::BindGroupLayout(Device* device,
             [](const StorageTextureBindingInfo&) -> D3D12_DESCRIPTOR_RANGE_FLAGS {
                 return D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
             },
+            [](const TexelBufferBindingInfo&) -> D3D12_DESCRIPTOR_RANGE_FLAGS {
+                // D3D12 does not support texel buffers.
+                // TODO(crbug/382544164): Prototype texel buffer feature
+                DAWN_UNREACHABLE();
+            },
             [](const InputAttachmentBindingInfo&) -> D3D12_DESCRIPTOR_RANGE_FLAGS {
                 DAWN_UNREACHABLE();
-                return D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
+            },
+            [](const ExternalTextureBindingInfo&) -> D3D12_DESCRIPTOR_RANGE_FLAGS {
+                DAWN_UNREACHABLE();
             });
 
         std::vector<D3D12_DESCRIPTOR_RANGE1>& descriptorRanges =

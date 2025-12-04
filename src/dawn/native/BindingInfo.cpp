@@ -46,11 +46,17 @@ BindingInfoType GetBindingInfoType(const BindingInfo& info) {
         [](const StorageTextureBindingInfo&) -> BindingInfoType {
             return BindingInfoType::StorageTexture;
         },
+        [](const TexelBufferBindingInfo&) -> BindingInfoType {
+            return BindingInfoType::TexelBuffer;
+        },
         [](const StaticSamplerBindingInfo&) -> BindingInfoType {
             return BindingInfoType::StaticSampler;
         },
         [](const InputAttachmentBindingInfo&) -> BindingInfoType {
             return BindingInfoType::InputAttachment;
+        },
+        [](const ExternalTextureBindingInfo&) -> BindingInfoType {
+            return BindingInfoType::ExternalTexture;
         });
 }
 
@@ -105,6 +111,8 @@ void IncrementBindingCounts(BindingCounts* bindingCounts,
         }
     } else if (entry->storageTexture.access != wgpu::StorageTextureAccess::BindingNotUsed) {
         perStageBindingCountMember = &PerStageBindingCounts::storageTextureCount;
+    } else if (entry.Get<TexelBufferBindingLayout>()) {
+        perStageBindingCountMember = &PerStageBindingCounts::texelBufferCount;
     } else if (entry.Get<ExternalTextureBindingLayout>()) {
         perStageBindingCountMember = &PerStageBindingCounts::externalTextureCount;
     } else if (entry.Get<StaticSamplerBindingLayout>()) {
@@ -132,6 +140,7 @@ void AccumulateBindingCounts(BindingCounts* bindingCounts, const BindingCounts& 
         bindingCounts->perStage[stage].storageBufferCount += rhs.perStage[stage].storageBufferCount;
         bindingCounts->perStage[stage].storageTextureCount +=
             rhs.perStage[stage].storageTextureCount;
+        bindingCounts->perStage[stage].texelBufferCount += rhs.perStage[stage].texelBufferCount;
         bindingCounts->perStage[stage].uniformBufferCount += rhs.perStage[stage].uniformBufferCount;
         bindingCounts->perStage[stage].externalTextureCount +=
             rhs.perStage[stage].externalTextureCount;
@@ -320,6 +329,17 @@ TextureBindingInfo TextureBindingInfo::From(const TextureBindingLayout& layout) 
     }};
 }
 
+// TexelBufferBindingInfo
+
+// static
+TexelBufferBindingInfo TexelBufferBindingInfo::From(const TexelBufferBindingLayout& layout) {
+    TexelBufferBindingLayout defaultedLayout = layout.WithTrivialFrontendDefaults();
+    return {{
+        .format = defaultedLayout.format,
+        .access = defaultedLayout.access,
+    }};
+}
+
 // StorageTextureBindingInfo
 
 // static
@@ -349,8 +369,7 @@ SamplerBindingInfo SamplerBindingInfo::From(const SamplerBindingLayout& layout) 
 StaticSamplerBindingInfo StaticSamplerBindingInfo::From(const StaticSamplerBindingLayout& layout) {
     return {
         .sampler = layout.sampler,
-        .sampledTextureBinding = BindingNumber{layout.sampledTextureBinding},
-        .isUsedForSingleTextureBinding = layout.sampledTextureBinding < WGPU_LIMIT_U32_UNDEFINED,
+        .isUsedForSingleTexture = layout.sampledTextureBinding < WGPU_LIMIT_U32_UNDEFINED,
     };
 }
 

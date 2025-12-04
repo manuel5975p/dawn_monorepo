@@ -52,6 +52,7 @@ interop::Interface<interop::GPUTextureView> GPUTexture::createView(
     }
 
     wgpu::TextureViewDescriptor desc{};
+    wgpu::TextureComponentSwizzle swizzle;
     Converter conv(env, device_);
     if (!conv(desc.baseMipLevel, descriptor.baseMipLevel) ||        //
         !conv(desc.mipLevelCount, descriptor.mipLevelCount) ||      //
@@ -61,13 +62,16 @@ interop::Interface<interop::GPUTextureView> GPUTexture::createView(
         !conv(desc.dimension, descriptor.dimension) ||              //
         !conv(desc.aspect, descriptor.aspect) ||                    //
         !conv(desc.label, descriptor.label) ||                      //
-        !conv(desc.usage, descriptor.usage)) {
+        !conv(desc.usage, descriptor.usage) ||                      //
+        !conv(swizzle, descriptor.swizzle)) {
         return {};
     }
 
     wgpu::TextureComponentSwizzleDescriptor swizzle_desc{};
-    wgpu::TextureComponentSwizzle swizzle;
-    if (conv(swizzle, descriptor.swizzle)) {
+    // Only pass the swizzle descriptor to Dawn if swizzle is non-default because
+    // the C API will produce validation errors if a chained struct is passed
+    // without its feature being enabled.
+    if (descriptor.swizzle != "rgba") {
         swizzle_desc.swizzle = swizzle;
         desc.nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&swizzle_desc);
     }
@@ -136,6 +140,12 @@ interop::GPUFlagsConstant GPUTexture::getUsage(Napi::Env env) {
     }
 
     return result;
+}
+
+std::variant<interop::GPUTextureViewDimension, interop::UndefinedType>
+GPUTexture::getTextureBindingViewDimension(Napi::Env) {
+    // TODO(https://issues.chromium.org/458616688): Implement once the getter is added to dawn.json
+    return interop::UndefinedType{};
 }
 
 std::string GPUTexture::getLabel(Napi::Env) {

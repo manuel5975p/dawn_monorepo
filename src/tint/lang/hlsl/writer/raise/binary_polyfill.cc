@@ -96,7 +96,7 @@ struct State {
                     Mul(binary);
                     break;
                 default:
-                    TINT_UNIMPLEMENTED();
+                    TINT_IR_UNIMPLEMENTED(ir);
             }
         }
     }
@@ -125,8 +125,8 @@ struct State {
             d->SetValue(div->Result());
 
             auto* trunc = b.Call(type, core::BuiltinFn::kTrunc, d);
-            auto* mul = b.Multiply(type, trunc, binary->RHS());
-            auto* sub = b.Subtract(type, binary->LHS(), mul);
+            auto* mul = b.Multiply(trunc, binary->RHS());
+            auto* sub = b.Subtract(binary->LHS(), mul);
 
             binary->Result()->ReplaceAllUsesWith(sub->Result());
         });
@@ -137,12 +137,13 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BinaryPolyfill(core::ir::Module& ir) {
-    auto result = ValidateAndDumpIfNeeded(ir, "hlsl.BinaryPolyfill",
-                                          core::ir::Capabilities{
-                                              core::ir::Capability::kAllowClipDistancesOnF32,
-                                              core::ir::Capability::kAllowDuplicateBindings,
-                                              core::ir::Capability::kAllowNonCoreTypes,
-                                          });
+    auto result =
+        ValidateAndDumpIfNeeded(ir, "hlsl.BinaryPolyfill",
+                                core::ir::Capabilities{
+                                    core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
+                                    core::ir::Capability::kAllowDuplicateBindings,
+                                    core::ir::Capability::kAllowNonCoreTypes,
+                                });
     if (result != Success) {
         return result.Failure();
     }

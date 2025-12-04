@@ -41,7 +41,7 @@ WireResult Server::DoInstanceRequestAdapter(Known<WGPUInstance> instance,
                                             ObjectHandle adapterHandle,
                                             const WGPURequestAdapterOptions* options) {
     Reserved<WGPUAdapter> adapter;
-    WIRE_TRY(Objects<WGPUAdapter>().Allocate(&adapter, adapterHandle, AllocationState::Reserved));
+    WIRE_TRY(Allocate(&adapter, adapterHandle, AllocationState::Reserved));
 
     auto userdata = MakeUserdata<RequestAdapterUserdata>();
     userdata->eventManager = eventManager;
@@ -50,8 +50,8 @@ WireResult Server::DoInstanceRequestAdapter(Known<WGPUInstance> instance,
 
     mProcs.instanceRequestAdapter(
         instance->handle, options,
-        {nullptr, WGPUCallbackMode_AllowSpontaneous,
-         ForwardToServer<&Server::OnRequestAdapterCallback>, userdata.release(), nullptr});
+        MakeCallbackInfo<WGPURequestAdapterCallbackInfo, &Server::OnRequestAdapterCallback,
+                         WGPUCallbackMode_AllowSpontaneous>(userdata.release()));
     return WireResult::Success;
 }
 

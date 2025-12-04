@@ -88,7 +88,8 @@
 #include "absl/types/variant.h"
 #include "absl/utility/utility.h"
 
-#if defined(__cpp_lib_filesystem) && __cpp_lib_filesystem >= 201703L
+#if defined(__cpp_lib_filesystem) && __cpp_lib_filesystem >= 201703L && \
+    !defined(__XTENSA__)
 #include <filesystem>  // NOLINT
 #endif
 
@@ -492,8 +493,9 @@ std::enable_if_t<std::is_pointer<T>::value, H> AbslHashValue(H hash_state,
   auto v = reinterpret_cast<uintptr_t>(ptr);
   // Due to alignment, pointers tend to have low bits as zero, and the next few
   // bits follow a pattern since they are also multiples of some base value.
-  // Mix pointers twice to ensure we have good entropy in low bits.
-  return H::combine(std::move(hash_state), v, v);
+  // The PointerAlignment test verifies that our mixing is good enough to handle
+  // these cases.
+  return H::combine(std::move(hash_state), v);
 }
 
 // AbslHashValue() for hashing nullptr_t
@@ -632,7 +634,8 @@ H AbslHashValue(H hash_state, std::basic_string_view<Char> str) {
     (!defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__) ||        \
      __ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__ >= 130000) &&       \
     (!defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) ||         \
-     __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 101500)
+     __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 101500) &&        \
+    (!defined(__XTENSA__))
 
 #define ABSL_INTERNAL_STD_FILESYSTEM_PATH_HASH_AVAILABLE 1
 

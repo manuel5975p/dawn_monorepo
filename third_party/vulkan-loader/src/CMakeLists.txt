@@ -18,7 +18,7 @@
 # ~~~
 cmake_minimum_required(VERSION 3.22.1)
 
-project(VULKAN_LOADER VERSION 1.4.325 LANGUAGES C)
+project(VULKAN_LOADER VERSION 1.4.335 LANGUAGES C)
 
 option(CODE_COVERAGE "Enable Code Coverage" OFF)
 if (CODE_COVERAGE)
@@ -52,7 +52,7 @@ if(WIN32)
     set(BUILD_DLL_VERSIONINFO "" CACHE STRING "Set the version to be used in the loader.rc file. Default value is the currently generated header version")
 endif()
 
-find_package(VulkanHeaders CONFIG QUIET)
+find_package(VulkanHeaders ${PROJECT_VERSION} CONFIG QUIET)
 
 include(GNUInstallDirs)
 
@@ -227,10 +227,21 @@ if(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR (CMAKE_C_COMPILER_ID STREQUAL "Clang" A
     # Enable control flow guard
     target_link_options(loader_common_options INTERFACE "LINKER:/guard:cf")
 
+    # Enable CET for 32-bit and 64-bit x86 architectures
+    if (CMAKE_GENERATOR_PLATFORM MATCHES "Win32|x64")
+        target_link_options(loader_common_options INTERFACE "LINKER:/cetcompat")
+    endif()
+
+    # Enable EH Continuation Metadata for 64-bit architectures
+    if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+        target_compile_options(loader_common_options INTERFACE $<$<COMPILE_LANGUAGE::CXX,C>:/guard:ehcont>)
+        target_link_options(loader_common_options INTERFACE "LINKER:/guard:ehcont")
+    endif()
+
     # Prevent <windows.h> from polluting the code. guards against things like MIN and MAX
     target_compile_definitions(loader_common_options INTERFACE WIN32_LEAN_AND_MEAN)
 
-    # For some reason Advapi32.lib needs to be explicitely linked to when building for Arm (32 bit) on Windows, but isn't required on any other architecture
+    # For some reason Advapi32.lib needs to be explicitly linked to when building for Arm (32 bit) on Windows, but isn't required on any other architecture
     if (SYSTEM_PROCESSOR MATCHES "arm" AND CMAKE_SIZEOF_VOID_P EQUAL 4)
         target_link_libraries(loader_common_options INTERFACE Advapi32)
     endif()
@@ -241,7 +252,7 @@ endif()
 target_compile_definitions(loader_common_options INTERFACE $<$<CONFIG:DEBUG>:DEBUG;GIT_BRANCH_NAME="${GIT_BRANCH_NAME}";GIT_TAG_INFO="${GIT_TAG_INFO}">)
 
 if (NOT (WIN32 OR APPLE))
-    # Check for the existance of the secure_getenv or __secure_getenv commands
+    # Check for the existence of the secure_getenv or __secure_getenv commands
     include(CheckFunctionExists)
 
     check_function_exists(secure_getenv HAVE_SECURE_GETENV)
@@ -254,12 +265,12 @@ if (NOT (WIN32 OR APPLE))
         target_compile_definitions(loader_common_options INTERFACE HAVE___SECURE_GETENV)
     endif()
     if (NOT (HAVE_SECURE_GETENV OR HAVE___SECURE_GETENV))
-        message(WARNING "Using non-secure environmental lookups. This loader will not properly disable environent variables when run with elevated permissions.")
+        message(WARNING "Using non-secure environmental lookups. This loader will not properly disable environment variables when run with elevated permissions.")
     endif()
 endif()
 
 if (NOT (WIN32))
-    # Check for the existance of the realpath() command
+    # Check for the existence of the realpath() command
     include(CheckFunctionExists)
 
     check_function_exists(realpath HAVE_REALPATH)

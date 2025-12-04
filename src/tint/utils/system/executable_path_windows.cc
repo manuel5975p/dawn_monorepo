@@ -29,7 +29,7 @@
 
 #include "src/tint/utils/system/executable_path.h"
 
-#include <Windows.h>
+#include <windows.h>
 #include <filesystem>
 
 #include "src/tint/utils/containers/vector.h"

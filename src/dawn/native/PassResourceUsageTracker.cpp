@@ -36,6 +36,7 @@
 #include "dawn/native/ExternalTexture.h"
 #include "dawn/native/Format.h"
 #include "dawn/native/QuerySet.h"
+#include "dawn/native/TexelBufferView.h"
 #include "dawn/native/Texture.h"
 
 namespace dawn::native {
@@ -84,24 +85,42 @@ void SyncScopeUsageTracker::TextureRangeUsedAs(TextureBase* texture,
         });
 }
 
-void SyncScopeUsageTracker::AddRenderBundleTextureUsage(
-    TextureBase* texture,
-    const TextureSubresourceSyncInfo& textureSyncInfo) {
+void SyncScopeUsageTracker::MergeTextureUsage(TextureBase* texture,
+                                              const TextureSubresourceSyncInfo& textureSyncInfo) {
     // Get or create a new TextureSubresourceSyncInfo for that texture (initially filled with
     // wgpu::TextureUsage::None and WGPUShaderStage_None)
     auto it = mTextureSyncInfos.try_emplace(
         texture, texture->GetFormat().aspects, texture->GetArrayLayers(),
         texture->GetNumMipLevels(),
         TextureSyncInfo{wgpu::TextureUsage::None, wgpu::ShaderStage::None});
-    TextureSubresourceSyncInfo* passTextureSyncInfo = &it.first->second;
+    TextureSubresourceSyncInfo& passTextureSyncInfo = it.first->second;
 
-    passTextureSyncInfo->Merge(
+    passTextureSyncInfo.Merge(
         textureSyncInfo, [](const SubresourceRange&, TextureSyncInfo* storedSyncInfo,
                             const TextureSyncInfo& addedSyncInfo) {
             DAWN_ASSERT((addedSyncInfo.usage & wgpu::TextureUsage::RenderAttachment) == 0);
             storedSyncInfo->usage |= addedSyncInfo.usage;
             storedSyncInfo->shaderStages |= addedSyncInfo.shaderStages;
         });
+}
+
+void SyncScopeUsageTracker::MergeResourceUsages(const SyncScopeResourceUsage& usages) {
+    for (uint32_t i = 0; i < usages.buffers.size(); ++i) {
+        BufferUsedAs(usages.buffers[i], usages.bufferSyncInfos[i].usage,
+                     usages.bufferSyncInfos[i].shaderStages);
+    }
+
+    for (uint32_t i = 0; i < usages.textures.size(); ++i) {
+        MergeTextureUsage(usages.textures[i], usages.textureSyncInfos[i]);
+    }
+
+    for (ExternalTextureBase* t : usages.externalTextures) {
+        mExternalTextureUsages.insert(t);
+    }
+
+    for (BindGroupBase* b : usages.dynamicBindingArrays) {
+        mDynamicBindingArrayUsages.insert(b);
+    }
 }
 
 void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
@@ -180,8 +199,33 @@ void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
         TextureViewUsedAs(view, usage, bindingInfo.visibility);
     }
 
+    for (BindingIndex i : layout->GetTexelBufferIndices()) {
+        const BindingInfo& bindingInfo = group->GetLayout()->GetBindingInfo(i);
+        const TexelBufferBindingInfo& texelInfo =
+            std::get<TexelBufferBindingInfo>(bindingInfo.bindingLayout);
+
+        wgpu::BufferUsage usage = wgpu::BufferUsage::None;
+        switch (texelInfo.access) {
+            case wgpu::TexelBufferAccess::ReadOnly:
+                usage = kReadOnlyTexelBuffer;
+                break;
+            case wgpu::TexelBufferAccess::ReadWrite:
+                usage = wgpu::BufferUsage::Storage;
+                break;
+            case wgpu::TexelBufferAccess::Undefined:
+                DAWN_UNREACHABLE();
+        }
+
+        BufferBase* buffer = group->GetBindingAsTexelBufferView(i)->GetBuffer();
+        BufferUsedAs(buffer, usage, bindingInfo.visibility);
+    }
+
     for (const Ref<ExternalTextureBase>& externalTexture : group->GetBoundExternalTextures()) {
         mExternalTextureUsages.insert(externalTexture.Get());
+    }
+
+    if (group->HasDynamicArray()) {
+        mDynamicBindingArrayUsages.insert(group);
     }
 }
 
@@ -191,24 +235,29 @@ SyncScopeResourceUsage SyncScopeUsageTracker::AcquireSyncScopeUsage() {
     result.bufferSyncInfos.reserve(mBufferSyncInfos.size());
     result.textures.reserve(mTextureSyncInfos.size());
     result.textureSyncInfos.reserve(mTextureSyncInfos.size());
+    result.dynamicBindingArrays.reserve(mDynamicBindingArrayUsages.size());
 
     for (auto& [buffer, syncInfo] : mBufferSyncInfos) {
         result.buffers.push_back(buffer);
         result.bufferSyncInfos.push_back(std::move(syncInfo));
     }
+    mBufferSyncInfos.clear();
 
     for (auto& [texture, syncInfo] : mTextureSyncInfos) {
         result.textures.push_back(texture);
         result.textureSyncInfos.push_back(std::move(syncInfo));
     }
+    mTextureSyncInfos.clear();
 
     for (auto* const it : mExternalTextureUsages) {
         result.externalTextures.push_back(it);
     }
-
-    mBufferSyncInfos.clear();
-    mTextureSyncInfos.clear();
     mExternalTextureUsages.clear();
+
+    for (auto* const it : mDynamicBindingArrayUsages) {
+        result.dynamicBindingArrays.push_back(it);
+    }
+    mDynamicBindingArrayUsages.clear();
 
     return result;
 }
@@ -236,8 +285,16 @@ void ComputePassResourceUsageTracker::AddResourcesReferencedByBindGroup(BindGrou
         mUsage.referencedTextures.insert(group->GetBindingAsTextureView(i)->GetTexture());
     }
 
+    for (BindingIndex i : layout->GetTexelBufferIndices()) {
+        mUsage.referencedBuffers.insert(group->GetBindingAsTexelBufferView(i)->GetBuffer());
+    }
+
     for (const Ref<ExternalTextureBase>& externalTexture : group->GetBoundExternalTextures()) {
         mUsage.referencedExternalTextures.insert(externalTexture.Get());
+    }
+
+    if (group->HasDynamicArray()) {
+        mUsage.referencedDynamicBindingArrays.insert(group);
     }
 }
 

@@ -160,6 +160,7 @@ OpReturn
 OpFunctionEnd
 )";
 
+  getValidatorOptions()->relax_logical_pointer = true;
   CompileSuccessfully(text, SPV_ENV_UNIVERSAL_1_3);
   ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_UNIVERSAL_1_3));
   EXPECT_THAT(
@@ -215,9 +216,9 @@ OpFunctionEnd
 
   CompileSuccessfully(text, SPV_ENV_UNIVERSAL_1_4);
   EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_UNIVERSAL_1_4));
-  EXPECT_THAT(
-      getDiagnosticString(),
-      HasSubstr("Non-unique OpEntryPoint interface '2[%var]' is disallowed"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("In SPIR-V 1.4 or later, non-unique OpEntryPoint "
+                        "interface '2[%var]' is disallowed"));
 }
 
 TEST_F(ValidateInterfacesTest, MissingGlobalVarSPV1p3) {

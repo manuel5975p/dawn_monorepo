@@ -25,6 +25,11 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "src/tint/lang/wgsl/reader/parser/lexer.h"
 
 #include <algorithm>
@@ -320,13 +325,23 @@ std::optional<Token> Lexer::skip_blankspace_and_comments() {
 }
 
 std::optional<Token> Lexer::skip_comment() {
+    auto unicode_length = [](std::string_view str, size_t i) {
+        auto* utf8 = reinterpret_cast<const uint8_t*>(&str[i]);
+        auto [_, n] = tint::utf8::Decode(utf8, str.size() - i);
+        return uint32_t(n);
+    };
+
     if (matches(pos(), "//")) {
         // Line comment: ignore everything until the end of line.
         while (!is_eol()) {
             if (is_null()) {
                 return Token{Token::Type::kError, begin_source(), "null character found"};
             }
-            advance();
+            auto n = unicode_length(line(), pos());
+            if (n == 0) {
+                return Token{Token::Type::kError, begin_source(), "invalid UTF-8"};
+            }
+            advance(n);
         }
         return {};
     }
@@ -356,8 +371,12 @@ std::optional<Token> Lexer::skip_comment() {
             } else if (is_null()) {
                 return Token{Token::Type::kError, begin_source(), "null character found"};
             } else {
+                auto n = unicode_length(line(), pos());
+                if (n == 0) {
+                    return Token{Token::Type::kError, begin_source(), "invalid UTF-8"};
+                }
                 // Anything else: skip and update source location.
-                advance();
+                advance(n);
             }
         }
         if (depth > 0) {

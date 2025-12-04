@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "dawn/common/Constants.h"
+#include "dawn/common/GPUInfo.h"
 #include "dawn/common/Platform.h"
 #include "dawn/common/WindowsUtils.h"
 #include "dawn/native/ChainUtils.h"
@@ -105,6 +106,9 @@ MaybeError PhysicalDevice::InitializeImpl() {
         return DAWN_INTERNAL_ERROR("D3D12CreateDevice failed");
     }
 
+    // Check if we should block the use of D3D12 on the current device.
+    DAWN_TRY(ValidateUseOfD3D12());
+
     DAWN_TRY(InitializeDebugLayerFilters());
 
     DAWN_TRY_ASSIGN(mDeviceInfo, GatherDeviceInfo(*this));
@@ -161,8 +165,6 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::Float32Blendable);
     EnableFeature(Feature::DualSourceBlending);
     EnableFeature(Feature::Unorm16TextureFormats);
-    EnableFeature(Feature::Snorm16TextureFormats);
-    EnableFeature(Feature::Norm16TextureFormats);
     EnableFeature(Feature::AdapterPropertiesMemoryHeaps);
     EnableFeature(Feature::AdapterPropertiesD3D);
     EnableFeature(Feature::MultiPlanarRenderTargets);
@@ -175,7 +177,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::FlexibleTextureViews);
     EnableFeature(Feature::TextureFormatsTier1);
     EnableFeature(Feature::TextureComponentSwizzle);
-    EnableFeature(Feature::ChromiumExperimentalPrimitiveId);
+    EnableFeature(Feature::PrimitiveIndex);
     EnableFeature(Feature::DawnLoadResolveTexture);
     EnableFeature(Feature::DawnPartialLoadResolveTexture);
 
@@ -211,10 +213,19 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     }
 
     EnableFeature(Feature::SharedTextureMemoryDXGISharedHandle);
+    EnableFeature(Feature::SharedTextureMemoryD3D12Resource);
     EnableFeature(Feature::SharedFenceDXGISharedHandle);
 
     if (SupportsBufferMapExtendedUsages()) {
         EnableFeature(Feature::BufferMapExtendedUsages);
+    }
+
+    // Temporarily only enable SharedBufferMemoryD3D12SharedMemoryFileMappingHandle on cache
+    // coherent UMA.
+    // TODO(386255678): enable SharedBufferMemoryD3D12SharedMemoryFileMappingHandle on other
+    // architectures.
+    if (GetDeviceInfo().supportsExistingHeap && SupportsBufferMapExtendedUsages()) {
+        EnableFeature(Feature::SharedBufferMemoryD3D12SharedMemoryFileMappingHandle);
     }
 
     // Only check one format here because of D3D12 "Supported as a Set" mechanism: if any format
@@ -327,65 +338,11 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // This is maxColorAttachments times 16, the color format with the largest cost.
     limits->v1.maxColorAttachmentBytesPerSample = D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT * 16;
 
-    // https://docs.microsoft.com/en-us/windows/win32/direct3d12/root-signature-limits
-    // In DWORDS. Descriptor tables cost 1, Root constants cost 1, Root descriptors cost 2.
-    static constexpr uint32_t kMaxRootSignatureSize = 64u;
-    // Dawn maps WebGPU's binding model by:
-    //  - (maxBindGroups)
-    //    CBVs/UAVs/SRVs for bind group are a root descriptor table
-    //  - (maxBindGroups)
-    //    Samplers for each bind group are a root descriptor table
-    //  - dynamic uniform buffers - root descriptor
-    //  - dynamic storage buffers - root descriptor plus a root constant for the size
-    //  RESERVED:
-    //  - 3 = max of:
-    //    - 2 root constants for the baseVertex/baseInstance constants.
-    //    - 3 root constants for num workgroups X, Y, Z
-    static constexpr uint32_t kReservedSlots = 3;
+    // We want to support a minimum of 10 and 8 for these limits (see https://crbug.com/440381283).
+    limits->v1.maxDynamicUniformBuffersPerPipelineLayout = 10;
+    limits->v1.maxDynamicStorageBuffersPerPipelineLayout = 8;
 
-    // Costs:
-    //  - bind group: 2 = 1 cbv/uav/srv table + 1 sampler table
-    //  - dynamic uniform buffer: 2 slots for a root descriptor
-    //  - dynamic storage buffer: 3 slots for a root descriptor + root constant
-
-    // Available slots after base limits considered.
-    uint32_t availableRootSignatureSlots =
-        kMaxRootSignatureSize - kReservedSlots - 2 * limits->v1.maxBindGroups -
-        2 * limits->v1.maxDynamicUniformBuffersPerPipelineLayout -
-        3 * limits->v1.maxDynamicStorageBuffersPerPipelineLayout;
-
-    // Report kMaxSupportedImmediateDataBytes if availableRootSignatureSlots is enough.
-    // Otherwise, reserve all available slots for immediates.
-    constexpr uint32_t kMaxSupportedImmediateDataSlots =
-        kMaxSupportedImmediateDataBytes / kImmediateConstantElementByteSize;
-    uint32_t maxImmediateDataSlots =
-        std::min(availableRootSignatureSlots, kMaxSupportedImmediateDataSlots);
-    availableRootSignatureSlots -= maxImmediateDataSlots;
-    limits->v1.maxImmediateSize = maxImmediateDataSlots * kImmediateConstantElementByteSize;
-
-    while (availableRootSignatureSlots >= 2) {
-        // Start by incrementing maxDynamicStorageBuffersPerPipelineLayout since the
-        // default is just 4 and developers likely want more. This scheme currently
-        // gets us to 8.
-        if (availableRootSignatureSlots >= 3) {
-            limits->v1.maxDynamicStorageBuffersPerPipelineLayout += 1;
-            availableRootSignatureSlots -= 3;
-        }
-        if (availableRootSignatureSlots >= 2) {
-            limits->v1.maxBindGroups += 1;
-            availableRootSignatureSlots -= 2;
-        }
-        if (availableRootSignatureSlots >= 2) {
-            limits->v1.maxDynamicUniformBuffersPerPipelineLayout += 1;
-            availableRootSignatureSlots -= 2;
-        }
-    }
-
-    DAWN_ASSERT(
-        2 * limits->v1.maxBindGroups + 2 * limits->v1.maxDynamicUniformBuffersPerPipelineLayout +
-            3 * limits->v1.maxDynamicStorageBuffersPerPipelineLayout +
-            limits->v1.maxImmediateSize / kImmediateConstantElementByteSize + kReservedSlots ==
-        kMaxRootSignatureSize);
+    limits->v1.maxImmediateSize = kMaxImmediateDataBytes;
 
     // https://docs.microsoft.com/en-us/windows/win32/direct3dhlsl/sm5-attributes-numthreads
     limits->v1.maxComputeWorkgroupSizeX = D3D12_CS_THREAD_GROUP_MAX_X;
@@ -406,7 +363,6 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
 
     // D3D12 has no documented limit on the buffer size.
     limits->v1.maxBufferSize = kAssumedMaxBufferSize;
-    limits->v1.maxStorageBufferBindingSize = kAssumedMaxBufferSize;
 
     // 1 for SV_Position and 1 for (SV_IsFrontFace OR SV_SampleIndex).
     // See the discussions in https://github.com/gpuweb/gpuweb/issues/1962 for more details.
@@ -422,13 +378,43 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // Using base limits for:
     // TODO(crbug.com/dawn/685):
     // - maxVertexBufferArrayStride
+    if (gpu_info::IsQualcommACPI(GetVendorId()) &&
+        gpu_info::GetQualcommACPIGen(GetVendorId(), GetDeviceId()) <=
+            gpu_info::QualcommACPIGen::Adreno7xx) {
+        // Due to hardware limitation, Raw Buffers can only address 2^28 bytes instead of the
+        // guaranteed 2^31 bytes.
+        limits->v1.maxStorageBufferBindingSize = 1 << 28;
+    } else {
+        limits->v1.maxStorageBufferBindingSize = kAssumedMaxBufferSize;
+    }
 
-    if (gpu_info::IsQualcomm_ACPI(GetVendorId())) {
-        // Due to a driver and hardware limitation, Raw Buffers can only address 2^27 WORDS instead
-        // of the guaranteeed 2^31 bytes. Probably because it uses some form of texel buffer of
-        // 32bit values to implement [RW]ByteAddressBuffer.
-        limits->v1.maxStorageBufferBindingSize = sizeof(uint32_t)
-                                                 << D3D12_REQ_BUFFER_RESOURCE_TEXEL_COUNT_2_TO_EXP;
+    // Final check that the limits we computed don't exceed the root signature size. The inputs
+    // to this check should be the same on all devices, so this is basically a static_assert.
+    {
+        // https://docs.microsoft.com/en-us/windows/win32/direct3d12/root-signature-limits
+        // In DWORDS. Descriptor tables cost 1, Root constants cost 1, Root descriptors cost 2.
+        static constexpr uint32_t kMaxRootSignatureSize = 64u;
+
+        // Max of:
+        // - 2 root constants for the baseVertex/baseInstance constants.
+        // - 3 root constants for num workgroups X, Y, Z
+        static constexpr uint32_t kShaderBuiltinSlots = 3;
+
+        // Slots not used at all. (This is just for the assert. We could use these slots later.)
+        static constexpr uint32_t kUnusedSlots = 1;
+
+        DAWN_ASSERT(
+            // bind groups: 1 for CBV+UAV+SRV table + 1 for sampler table
+            2 * limits->v1.maxBindGroups +
+                // dynamic uniform buffers: 2 for root descriptor
+                2 * limits->v1.maxDynamicUniformBuffersPerPipelineLayout +
+                // dynamic storage buffers: 1 for the size constant, 1 for the offset constant
+                2 * limits->v1.maxDynamicStorageBuffersPerPipelineLayout +
+                // immediates: 1 slot per 4 bytes
+                limits->v1.maxImmediateSize / kImmediateConstantElementByteSize +
+                // builtins and unused slots
+                kShaderBuiltinSlots + kUnusedSlots ==
+            kMaxRootSignatureSize);
     }
 
     return {};
@@ -594,6 +580,10 @@ void PhysicalDevice::CleanUpDebugLayerFilters() {
 
 void PhysicalDevice::SetupBackendAdapterToggles(dawn::platform::Platform* platform,
                                                 TogglesState* adapterToggles) const {
+    // We don't check if the compiler libraries is available here. Compiler libraries are checked
+    // and loaded according to device's UseDXC toggle during device creation, and the creation would
+    // just fail if required compiler is not available. This is to avoid expensive loading of DLLs
+    // that we will not use immediately (or at all).
 #ifdef DAWN_USE_BUILT_DXC
     if (GetDeviceInfo().highestSupportedShaderModel < 60) {
         // If shader model < 6.0, though, we must use FXC.
@@ -878,7 +868,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     // loading/sampling issues for depth24plus-stencil8 texture. Note that Qualcomm D3D12 drivers
     // only report ACPI ids.
     // See https://crbug.com/411268750 for more information.
-    if (gpu_info::IsQualcomm_ACPI(vendorId)) {
+    if (gpu_info::IsQualcommACPI(vendorId)) {
         deviceToggles->Default(Toggle::UsePackedDepth24UnormStencil8Format, true);
     }
 
@@ -887,6 +877,19 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     deviceToggles->Default(
         Toggle::EnableIntegerRangeAnalysisInRobustness,
         platform->IsFeatureEnabled(platform::Features::kWebGPUEnableRangeAnalysisForRobustness));
+}
+
+MaybeError PhysicalDevice::ValidateUseOfD3D12() const {
+    uint32_t deviceId = GetDeviceId();
+    uint32_t vendorId = GetVendorId();
+
+    // D3D12 is no longer allowed on 4th Generation Intel Processor Graphics.
+    // https://www.intel.com/content/www/us/en/support/articles/000057520/graphics.html
+    if (gpu_info::IsIntelGen7(vendorId, deviceId)) {
+        return DAWN_VALIDATION_ERROR("D3D12 backend is not allowed on Intel gen-7 GPUs.");
+    }
+
+    return {};
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
@@ -909,7 +912,8 @@ MaybeError PhysicalDevice::ResetInternalDeviceForTestingImpl() {
     return {};
 }
 
-void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const {
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
+                                               const TogglesState&) const {
     if (auto* memoryHeapProperties = info.Get<AdapterPropertiesMemoryHeaps>()) {
         // https://microsoft.github.io/DirectX-Specs/d3d/D3D12GPUUploadHeaps.html describes
         // the properties of D3D12 Default/Upload/Readback heaps.

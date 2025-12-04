@@ -39,6 +39,7 @@
 #include "absl/strings/str_format.h"
 #include "dawn/common/Log.h"
 #include "dawn/common/Ref.h"
+#include "dawn/common/Sha3.h"
 #include "dawn/common/StringViewUtils.h"
 #include "dawn/common/SystemUtils.h"
 #include "dawn/common/Version_autogen.h"
@@ -57,6 +58,7 @@
 #include "dawn/native/CompilationMessages.h"
 #include "dawn/native/CreatePipelineAsyncEvent.h"
 #include "dawn/native/DawnNative.h"
+#include "dawn/native/DynamicArrayState.h"
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/ErrorData.h"
@@ -72,6 +74,7 @@
 #include "dawn/native/Queue.h"
 #include "dawn/native/RenderBundleEncoder.h"
 #include "dawn/native/RenderPipeline.h"
+#include "dawn/native/ResourceTable.h"
 #include "dawn/native/Sampler.h"
 #include "dawn/native/ShaderModuleParseRequest.h"
 #include "dawn/native/SharedBufferMemory.h"
@@ -79,6 +82,7 @@
 #include "dawn/native/SharedTextureMemory.h"
 #include "dawn/native/Surface.h"
 #include "dawn/native/SwapChain.h"
+#include "dawn/native/TexelBufferView.h"
 #include "dawn/native/Texture.h"
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/native/WaitListEvent.h"
@@ -204,12 +208,6 @@ void DeviceBase::DeviceLostEvent::SetLost(EventManager* eventManager,
     mReason = reason;
     mMessage = message;
     eventManager->SetFutureReady(this);
-    if (mDevice) {
-        // If the device was already set, then the device must be associated with this event. Since
-        // the event should only be set and triggered once, unset the event in the device now.
-        mDevice->mLostFuture = GetFuture();
-        mDevice->mLostEvent = nullptr;
-    }
 }
 
 void DeviceBase::DeviceLostEvent::Complete(EventCompletionType completionType) {
@@ -242,7 +240,13 @@ void DeviceBase::DeviceLostEvent::Complete(EventCompletionType completionType) {
     }
 
     // Break the ref cycle between DeviceBase and DeviceLostEvent.
-    mDevice = nullptr;
+    if (mDevice) {
+        // If the device was already set, then the device must be associated with this event. Since
+        // the event should only be set and triggered once, unset the event in the device now.
+        mDevice->mLostFuture = GetFuture();
+        mDevice->mLostEvent = nullptr;
+        mDevice = nullptr;
+    }
 }
 
 ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetComputePipelineDescriptorWithDefaults(
@@ -375,6 +379,12 @@ DeviceBase::DeviceBase(AdapterBase* adapter,
         GetDefaultLimits(&mLimits, effectiveFeatureLevel);
     }
 
+    // If immediates are not enabled, report a maxImmediateSize of 0
+    // TODO(crbug.com/366291600): Remove when immediates are implemented on all backends
+    if (!GetInstance()->HasFeature(wgpu::WGSLLanguageFeatureName::ImmediateAddressSpace)) {
+        mLimits.v1.maxImmediateSize = 0;
+    }
+
     // Get texelCopyBufferRowAlignmentLimits from physical device
     mLimits.texelCopyBufferRowAlignmentLimits =
         GetPhysicalDevice()->GetLimits().texelCopyBufferRowAlignmentLimits;
@@ -417,8 +427,13 @@ DeviceBase::DeviceBase(AdapterBase* adapter,
     // Record the cache key from the adapter info. Note that currently, if a new extension
     // descriptor is added (and probably handled here), the cache key recording needs to be
     // updated.
-    StreamIn(&mDeviceCacheKey, kDawnVersion, adapterInfo, mEnabledFeatures.featuresBitSet, mToggles,
-             cacheDesc);
+    CacheKey cacheKey;
+    StreamIn(&cacheKey, adapterInfo, mEnabledFeatures.featuresBitSet, mToggles, cacheDesc);
+
+    // Hash the key to make it smaller.
+    Sha3_224::Output hash = Sha3_224::Hash(cacheKey.data(), cacheKey.size());
+    // Dawn Version needs to be in plain because it's used for ValidateCacheKey()
+    StreamIn(&mDeviceCacheKey, kDawnVersion, hash);
 }
 
 DeviceBase::DeviceBase() : mState(State::Alive), mToggles(ToggleStage::Device) {
@@ -449,6 +464,9 @@ MaybeError DeviceBase::Initialize(const UnpackedPtr<DeviceDescriptor>& descripto
     mDynamicUploader = std::make_unique<DynamicUploader>(this);
     mCallbackTaskManager = AcquireRef(new CallbackTaskManager());
     mInternalPipelineStore = std::make_unique<InternalPipelineStore>(this);
+    if (HasFeature(Feature::ChromiumExperimentalBindless)) {
+        mDynamicArrayDefaultBindings = std::make_unique<DynamicArrayDefaultBindings>();
+    }
 
     DAWN_ASSERT(GetPlatform() != nullptr);
     mWorkerTaskPool = GetPlatform()->CreateWorkerTaskPool();
@@ -663,7 +681,7 @@ void DeviceBase::Destroy() {
     if (mState != State::BeingCreated) {
         // The GPU timeline is finished.
         mQueue->AssumeCommandsComplete();
-        DAWN_ASSERT(mQueue->GetCompletedCommandSerial() == mQueue->GetLastSubmittedCommandSerial());
+        DAWN_ASSERT(mQueue->GetCompletedCommandSerial() >= mQueue->GetLastSubmittedCommandSerial());
         mQueue->Tick(mQueue->GetCompletedCommandSerial());
     }
 
@@ -672,6 +690,7 @@ void DeviceBase::Destroy() {
     // implementations of DestroyImpl checks that we are disconnected before doing work.
     mState = State::Disconnected;
 
+    mDynamicArrayDefaultBindings = nullptr;
     mDynamicUploader = nullptr;
     mEmptyBindGroupLayout = nullptr;
     mEmptyPipelineLayout = nullptr;
@@ -696,6 +715,10 @@ void DeviceBase::APIDestroy() {
     Destroy();
 }
 
+void DeviceBase::HandleEncoderError(std::unique_ptr<ErrorData> error) {
+    HandleError(std::move(error));
+}
+
 void DeviceBase::HandleDeviceLost(wgpu::DeviceLostReason reason, std::string_view message) {
     if (mLostEvent != nullptr) {
         mLostEvent->SetLost(GetInstance()->GetEventManager(), reason, message);
@@ -704,8 +727,9 @@ void DeviceBase::HandleDeviceLost(wgpu::DeviceLostReason reason, std::string_vie
 
 void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
                              InternalErrorType additionalAllowedErrors,
-                             wgpu::DeviceLostReason lostReason) {
-    auto deviceGuard(GetGuard());
+                             wgpu::DeviceLostReason lostReason,
+                             ForwardToErrorScope forwardToErrorScope) {
+    auto deviceGuard = GetGuard();
     AppendDebugLayerMessages(error.get());
 
     InternalErrorType type = error->GetType();
@@ -768,25 +792,52 @@ void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
         // TODO(crbug.com/dawn/826): Cancel the tasks that are in flight if possible.
         mAsyncTaskManager->WaitAllPendingTasks();
         mCallbackTaskManager->HandleDeviceLoss();
-
-        // Still forward device loss errors to the error scopes so they all reject.
-        GetErrorScopeStack()->HandleError(ToWGPUErrorType(type), messageStr);
-    } else {
-        // Pass the error to the error scope stack and call the uncaptured error callback
-        // if it isn't handled. DeviceLost is not handled here because it should be
-        // handled by the lost callback.
-        bool captured = GetErrorScopeStack()->HandleError(ToWGPUErrorType(type), messageStr);
-        if (!captured) {
-            // Only call the uncaptured error callback if the device is alive. After the
-            // device is lost, the uncaptured error callback should cease firing.
-            if (mUncapturedErrorCallbackInfo.callback != nullptr && mState == State::Alive) {
-                auto device = ToAPI(this);
-                mUncapturedErrorCallbackInfo.callback(
-                    &device, ToAPI(ToWGPUErrorType(type)), ToOutputStringView(messageStr),
-                    mUncapturedErrorCallbackInfo.userdata1, mUncapturedErrorCallbackInfo.userdata2);
-            }
-        }
     }
+
+    // Pass the error to the error scope stack and call the uncaptured error callback
+    // if it isn't handled.
+    bool captured = false;
+    if (forwardToErrorScope == ForwardToErrorScope::Yes) {
+        captured = GetErrorScopeStack()->HandleError(ToWGPUErrorType(type), messageStr);
+    }
+
+    // Only call the uncaptured error callback if the device is alive. After the
+    // device is lost, the uncaptured error callback should cease firing.
+    if (!captured && mUncapturedErrorCallbackInfo.callback != nullptr && mState == State::Alive) {
+        auto device = ToAPI(this);
+        mUncapturedErrorCallbackInfo.callback(
+            &device, ToAPI(ToWGPUErrorType(type)), ToOutputStringView(messageStr),
+            mUncapturedErrorCallbackInfo.userdata1, mUncapturedErrorCallbackInfo.userdata2);
+    }
+}
+
+void DeviceBase::HandleErrorGeneratingAsyncTask(Ref<ErrorGeneratingAsyncTask> task,
+                                                InternalErrorType additionalAllowedErrors) {
+    auto deviceGuard(GetGuard());
+
+    // Set up handlers for wgpu error types.
+    auto handledErrorTypes = GetErrorScopeStack()->HandleErrorGeneratingAsyncTask(task);
+
+    // Set up handlers for internal, device lost and extra allowed error types.
+    task->AddCompletionCallback([this, task, errorTypes = std::move(handledErrorTypes)] {
+        if (!task->IsError()) {
+            return;
+        }
+
+        wgpu::ErrorType taskErrorType = ToWGPUErrorType(task->GetErrorType());
+
+        // Skip this error if it is a already handled by an error scope
+        if (errorTypes.contains(taskErrorType)) {
+            return;
+        }
+
+        // There is no error scope to capture this error or it is a InternalErrorType not
+        // representable as wgpu::ErrorType. Forward it to HandleError but disable error scope
+        // capturing. This will handle device loss and call the uncaptured error callback if one is
+        // set.
+        HandleError(task->AcquireError(), InternalErrorType::None, wgpu::DeviceLostReason::Unknown,
+                    ForwardToErrorScope::No);
+    });
 }
 
 void DeviceBase::ConsumeError(std::unique_ptr<ErrorData> error,
@@ -829,15 +880,32 @@ Future DeviceBase::APIPopErrorScope(const WGPUPopErrorScopeCallbackInfo& callbac
         raw_ptr<void> mUserdata1;
         raw_ptr<void> mUserdata2;
         std::optional<ErrorScope> mScope;
+        std::vector<ErrorScopePendingAsyncTask> mPendingAsyncTasks;
+
+        static Ref<WaitListEvent> CreateWaitListEventForErrorScopeCompletion(
+            const std::optional<ErrorScope>& scope) {
+            uint64_t taskCount = 0;
+            if (scope) {
+                taskCount = scope->GetPendingAsyncTaskCount();
+            }
+            return AcquireRef(new WaitListEvent(taskCount));
+        }
 
         PopErrorScopeEvent(const WGPUPopErrorScopeCallbackInfo& callbackInfo,
                            std::optional<ErrorScope>&& scope)
             : TrackedEvent(static_cast<wgpu::CallbackMode>(callbackInfo.mode),
-                           TrackedEvent::Completed{}),
+                           CreateWaitListEventForErrorScopeCompletion(scope)),
               mCallback(callbackInfo.callback),
               mUserdata1(callbackInfo.userdata1),
               mUserdata2(callbackInfo.userdata2),
-              mScope(std::move(scope)) {}
+              mScope(std::move(scope)) {
+            if (mScope) {
+                mPendingAsyncTasks = mScope->AcquirePendingAsyncTasks();
+                for (auto task : mPendingAsyncTasks) {
+                    task.task->AddCompletionCallback([this]() { GetIfWaitListEvent()->Signal(); });
+                }
+            }
+        }
 
         ~PopErrorScopeEvent() override { EnsureComplete(EventCompletionType::Shutdown); }
 
@@ -848,6 +916,20 @@ Future DeviceBase::APIPopErrorScope(const WGPUPopErrorScopeCallbackInfo& callbac
             WGPUErrorType type;
             WGPUStringView message = kEmptyOutputStringView;
             if (mScope) {
+                // Resolve errors from async tasks
+                for (auto task : mPendingAsyncTasks) {
+                    // All the tasks should have completed unless this event was canceled.
+                    DAWN_ASSERT(task.task->GetState() == AsyncTaskState::Completed ||
+                                completionType != EventCompletionType::Ready);
+                    if (task.task->GetState() == AsyncTaskState::Completed &&
+                        task.task->IsError() &&
+                        task.captureErrorType == ToWGPUErrorType(task.task->GetErrorType())) {
+                        std::unique_ptr<ErrorData> error = task.task->AcquireError();
+                        mScope->CaptureError(ToWGPUErrorType(error->GetType()),
+                                             error->GetMessage());
+                    }
+                }
+
                 type = static_cast<WGPUErrorType>(mScope->GetErrorType());
                 message = mScope->GetErrorMessage();
             } else {
@@ -971,6 +1053,12 @@ dawn::platform::Platform* DeviceBase::GetPlatform() const {
 
 InternalPipelineStore* DeviceBase::GetInternalPipelineStore() {
     return mInternalPipelineStore.get();
+}
+
+DynamicArrayDefaultBindings* DeviceBase::GetDynamicArrayDefaultBindings() {
+    DAWN_ASSERT(HasFeature(Feature::ChromiumExperimentalBindless));
+    DAWN_ASSERT(mDynamicArrayDefaultBindings != nullptr);
+    return mDynamicArrayDefaultBindings.get();
 }
 
 bool DeviceBase::HasPendingTasks() {
@@ -1186,8 +1274,7 @@ BindGroupBase* DeviceBase::APICreateBindGroup(const BindGroupDescriptor* descrip
     Ref<BindGroupBase> result;
     if (ConsumedError(CreateBindGroup(descriptor), &result, "calling %s.CreateBindGroup(%s).", this,
                       descriptor)) {
-        return ReturnToAPI(
-            BindGroupBase::MakeError(this, descriptor ? descriptor->label : nullptr));
+        return ReturnToAPI(BindGroupBase::MakeError(this, descriptor));
     }
     return ReturnToAPI(std::move(result));
 }
@@ -1442,31 +1529,40 @@ ShaderModuleBase* DeviceBase::APICreateShaderModule(const ShaderModuleDescriptor
     utils::TraceLabel label = utils::GetLabelForTrace(descriptor->label);
     TRACE_EVENT1(GetPlatform(), General, "DeviceBase::APICreateShaderModule", "label", label.label);
 
-    // parseResult is modified by CreateShaderModule via pointer to provide compilation messages in
-    // error cases.
-    ShaderModuleParseResult parseResult;
-    auto creationResult = CreateShaderModule(descriptor, /*internalExtensions=*/{}, &parseResult);
-
+    Ref<ShaderModuleBase> shaderModule;
+    std::unique_ptr<ErrorData> errorData;
+    auto creationResult = CreateShaderModule(descriptor, /*internalExtensions=*/{});
     if (creationResult.IsSuccess()) {
-        Ref<ShaderModuleBase> validShaderModule = creationResult.AcquireSuccess();
-        DAWN_ASSERT(validShaderModule != nullptr && !validShaderModule->IsError());
-        EmitCompilationLog(validShaderModule.Get());
-        return ReturnToAPI(std::move(validShaderModule));
+        // CreateShaderModule can succeed but still return a shader module which failed compilation.
+        // TODO(crbug.com/406522796): Remove this once ShaderModuleBase writes directly to the error
+        // scope.
+        shaderModule = creationResult.AcquireSuccess();
+        if (shaderModule->IsError()) {
+            errorData = shaderModule->GetInitializationError();
+        }
+    } else {
+        // If CreateShaderModule failed, it was due to internal errors that should not surface as
+        // compilation errors.
+        shaderModule = ShaderModuleBase::MakeError(this, descriptor ? descriptor->label : nullptr,
+                                                   ParsedCompilationMessages());
+        DAWN_ASSERT(shaderModule->IsError());
+        errorData = creationResult.AcquireError();
     }
 
-    // If shader creation failed, create an error shader module with compilation messages so the
-    // application can later retrieve it with GetCompilationInfo.
-    Ref<ShaderModuleBase> errorShaderModule = ShaderModuleBase::MakeError(
-        this, descriptor ? descriptor->label : nullptr, std::move(parseResult.compilationMessages));
-    DAWN_ASSERT(errorShaderModule != nullptr && errorShaderModule->IsError());
+    DAWN_ASSERT(shaderModule != nullptr);
 
-    // Acquire the device lock for error handling, and return the error shader module.
-    auto deviceGuard = GetGuard();
-    // Emit error, including Tint errors and warnings for the error shader module.
-    auto consumedError = ConsumedError(creationResult.AcquireError(), InternalErrorType::Internal,
-                                       "calling %s.CreateShaderModule(%s).", this, descriptor);
-    DAWN_ASSERT(consumedError);
-    return ReturnToAPI(std::move(errorShaderModule));
+    if (errorData != nullptr) {
+        // Acquire the device lock for error handling.
+        auto deviceGuard = GetGuard();
+        // Emit error, including Tint errors and warnings.
+        auto consumedError = ConsumedError(std::move(errorData), InternalErrorType::Internal,
+                                           "calling %s.CreateShaderModule(%s).", this, descriptor);
+        DAWN_ASSERT(consumedError);
+    }
+
+    DAWN_ASSERT(errorData == nullptr);
+
+    return ReturnToAPI(std::move(shaderModule));
 }
 
 ShaderModuleBase* DeviceBase::APICreateErrorShaderModule(const ShaderModuleDescriptor* descriptor,
@@ -1574,7 +1670,7 @@ MaybeError DeviceBase::Tick() {
     // To avoid overly ticking, we only want to tick when:
     // 1. the last submitted serial has moved beyond the completed serial
     // 2. or the backend still has pending commands to submit.
-    DAWN_TRY(mQueue->CheckPassedSerials());
+    DAWN_TRY(mQueue->UpdateCompletedSerial());
     DAWN_TRY(TickImpl());
 
     // TODO(crbug.com/dawn/833): decouple TickImpl from updating the serial so that we can
@@ -1606,6 +1702,15 @@ ExternalTextureBase* DeviceBase::APICreateExternalTexture(
         result = ExternalTextureBase::MakeError(this);
     }
 
+    return ReturnToAPI(std::move(result));
+}
+
+ResourceTableBase* DeviceBase::APICreateResourceTable(const ResourceTableDescriptor* descriptor) {
+    Ref<ResourceTableBase> result;
+    if (ConsumedError(CreateResourceTableImpl(descriptor), &result,
+                      "calling %s.CreateResourceTable(%s).", this, descriptor)) {
+        result = ResourceTableBase::MakeError(this);
+    }
     return ReturnToAPI(std::move(result));
 }
 
@@ -1710,8 +1815,6 @@ void DeviceBase::SetWGSLExtensionAllowList() {
         mWGSLAllowedFeatures.extensions.insert(
             tint::wgsl::Extension::kChromiumDisableUniformityAnalysis);
         mWGSLAllowedFeatures.extensions.insert(tint::wgsl::Extension::kChromiumInternalGraphite);
-        mWGSLAllowedFeatures.extensions.insert(
-            tint::wgsl::Extension::kChromiumExperimentalImmediate);
     }
     if (mEnabledFeatures.IsEnabled(Feature::DualSourceBlending)) {
         mWGSLAllowedFeatures.extensions.insert(tint::wgsl::Extension::kDualSourceBlending);
@@ -1732,9 +1835,16 @@ void DeviceBase::SetWGSLExtensionAllowList() {
         mWGSLAllowedFeatures.extensions.insert(
             tint::wgsl::Extension::kChromiumExperimentalSubgroupMatrix);
     }
-    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalPrimitiveId)) {
+    if (mEnabledFeatures.IsEnabled(Feature::PrimitiveIndex)) {
+        mWGSLAllowedFeatures.extensions.insert(tint::wgsl::Extension::kPrimitiveIndex);
+    }
+    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalBindless)) {
         mWGSLAllowedFeatures.extensions.insert(
-            tint::wgsl::Extension::kChromiumExperimentalPrimitiveId);
+            tint::wgsl::Extension::kChromiumExperimentalDynamicBinding);
+    }
+    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalSamplingResourceTable)) {
+        mWGSLAllowedFeatures.extensions.insert(
+            tint::wgsl::Extension::kChromiumExperimentalResourceTable);
     }
 
     // Language features are enabled instance-wide.
@@ -2084,6 +2194,17 @@ ResultOrError<Ref<ExternalTextureBase>> DeviceBase::CreateExternalTextureImpl(
     return ExternalTextureBase::Create(this, descriptor);
 }
 
+ResultOrError<Ref<ResourceTableBase>> DeviceBase::CreateResourceTableImpl(
+    const ResourceTableDescriptor* descriptor) {
+    DAWN_TRY(ValidateIsAlive());
+    if (IsValidationEnabled()) {
+        DAWN_TRY_CONTEXT(ValidateResourceTableDescriptor(this, descriptor), "validating %s",
+                         descriptor);
+    }
+
+    return ResourceTableBase::Create(this, descriptor);
+}
+
 ResultOrError<Ref<QuerySetBase>> DeviceBase::CreateQuerySet(const QuerySetDescriptor* descriptor) {
     DAWN_TRY(ValidateIsAlive());
     if (IsValidationEnabled()) {
@@ -2100,6 +2221,17 @@ ResultOrError<Ref<RenderBundleEncoder>> DeviceBase::CreateRenderBundleEncoder(
                          "validating render bundle encoder descriptor.");
     }
     return RenderBundleEncoder::Create(this, descriptor);
+}
+
+ResultOrError<Ref<RenderBundleBase>> DeviceBase::CreateRenderBundle(
+    RenderBundleEncoder* encoder,
+    const RenderBundleDescriptor* descriptor) {
+    // This is the default behavior for all backends other than WebGPU backend.
+    // This is called by RenderBundleEncoder::Finish.
+    return AcquireRef(new RenderBundleBase(encoder, descriptor, encoder->AcquireAttachmentState(),
+                                           encoder->IsDepthReadOnly(), encoder->IsStencilReadOnly(),
+                                           encoder->AcquireRenderPassUsages(),
+                                           encoder->AcquireIndirectDrawMetadata()));
 }
 
 ResultOrError<Ref<RenderPipelineBase>> DeviceBase::CreateRenderPipeline(
@@ -2172,8 +2304,7 @@ ResultOrError<Ref<SamplerBase>> DeviceBase::CreateSampler(const SamplerDescripto
 
 ResultOrError<Ref<ShaderModuleBase>> DeviceBase::CreateShaderModule(
     const ShaderModuleDescriptor* descriptor,
-    const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* outputParseResult) {
+    const std::vector<tint::wgsl::Extension>& internalExtensions) {
     DAWN_TRY(ValidateIsAlive());
 
     // Unpack and validate the descriptor chain before doing further validation or cache
@@ -2223,50 +2354,14 @@ ResultOrError<Ref<ShaderModuleBase>> DeviceBase::CreateShaderModule(
     const size_t blueprintHash = blueprint.ComputeContentHash();
     blueprint.SetContentHash(blueprintHash);
 
-    // Check in-memory shader module cache first, and if missed check the blob cache, and if missed
-    // again call ParseShaderModule.
+    // Check in-memory shader module cache first, and if missed create a new ShaderModule which may
+    // use the BlobCache.
     return GetOrCreate(
         mCaches->shaderModules, &blueprint, [&]() -> ResultOrError<Ref<ShaderModuleBase>> {
-            SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(GetPlatform(), "CreateShaderModuleUS");
-
-            auto resultOrError = [&]() -> ResultOrError<Ref<ShaderModuleBase>> {
-                ShaderModuleParseRequest req = BuildShaderModuleParseRequest(
-                    this, blueprint.GetHash(), unpacked, internalExtensions,
-                    /* needReflection */ true);
-
-                // Check blob cache first before calling ParseShaderModule. ShaderModuleParseResult
-                // returned from blob cache or ParseShaderModule will hold compilation messages and
-                // validation errors if any. ShaderModuleParseResult from ParseShaderModule also
-                // holds tint program.
-                CacheResult<ShaderModuleParseResult> result;
-                DAWN_TRY_LOAD_OR_RUN(result, this, std::move(req),
-                                     ShaderModuleParseResult::FromBlob, ParseShaderModule,
-                                     "ShaderModuleParsing");
-                GetBlobCache()->EnsureStored(result);
-                ShaderModuleParseResult parseResult = result.Acquire();
-
-                // If ShaderModuleParseResult has validation error, move the compilation messages to
-                // *outputParseResult so that we can create an error shader module from it, and then
-                // return the validation error.
-                if (parseResult.HasError()) {
-                    auto error = parseResult.cachedValidationError->ToErrorData();
-                    if (outputParseResult) {
-                        *outputParseResult = std::move(parseResult);
-                    }
-                    return error;
-                }
-                // Otherwise with no error, create a shader module from parse result and return it.
-                Ref<ShaderModuleBase> shaderModule;
-                DAWN_TRY_ASSIGN(shaderModule,
-                                CreateShaderModuleImpl(unpacked, internalExtensions, &parseResult));
-                shaderModule->SetContentHash(blueprintHash);
-                return shaderModule;
-            }();
-
-            DAWN_HISTOGRAM_BOOLEAN(GetPlatform(), "CreateShaderModuleSuccess",
-                                   resultOrError.IsSuccess());
-
-            return resultOrError;
+            Ref<ShaderModuleBase> shaderModule;
+            DAWN_TRY_ASSIGN(shaderModule, CreateShaderModuleImpl(unpacked, internalExtensions));
+            shaderModule->SetContentHash(blueprintHash);
+            return shaderModule;
         });
 }
 
@@ -2328,6 +2423,29 @@ ResultOrError<Ref<TextureViewBase>> DeviceBase::CreateTextureView(
         descriptor, [&](const TextureViewQuery&) -> ResultOrError<Ref<TextureViewBase>> {
             return CreateTextureViewImpl(texture, descriptor);
         });
+}
+
+ResultOrError<Ref<TexelBufferViewBase>> DeviceBase::CreateTexelBufferView(
+    BufferBase* buffer,
+    const TexelBufferViewDescriptor* descriptor) {
+    DAWN_TRY(ValidateIsAlive());
+    DAWN_TRY(ValidateObject(buffer));
+
+    UnpackedPtr<TexelBufferViewDescriptor> unpacked;
+    if (IsValidationEnabled()) {
+        DAWN_TRY_ASSIGN_CONTEXT(unpacked, ValidateTexelBufferViewDescriptor(buffer, descriptor),
+                                "validating %s", descriptor);
+    } else {
+        unpacked = Unpack(descriptor);
+    }
+
+    return CreateTexelBufferViewImpl(buffer, unpacked);
+}
+
+ResultOrError<Ref<TexelBufferViewBase>> DeviceBase::CreateTexelBufferViewImpl(
+    BufferBase* buffer,
+    const UnpackedPtr<TexelBufferViewDescriptor>& descriptor) {
+    return AcquireRef(new TexelBufferViewBase(buffer, descriptor));
 }
 
 // Other implementation details
@@ -2453,6 +2571,10 @@ bool DeviceBase::CanResolveSubRect() const {
 bool DeviceBase::CanAddStorageUsageToBufferWithoutSideEffects(wgpu::BufferUsage storageUsage,
                                                               wgpu::BufferUsage originalUsage,
                                                               size_t bufferSize) const {
+    return true;
+}
+
+bool DeviceBase::NeedsIndirectDrawGPUValidation() const {
     return true;
 }
 
@@ -2609,6 +2731,10 @@ bool DeviceBase::HasFlexibleTextureViews() const {
 
 std::string_view DeviceBase::GetIsolatedEntryPointName() const {
     return mIsolatedEntryPointName;
+}
+
+void DeviceBase::ResetLostEvent() {
+    mLostEvent.Reset();
 }
 
 IgnoreLazyClearCountScope::IgnoreLazyClearCountScope(DeviceBase* device)

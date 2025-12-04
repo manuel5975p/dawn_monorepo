@@ -117,7 +117,9 @@ TEST_P(SubgroupsAdapterInfoTests, DeviceAndAdapterAgree) {
 }
 
 DAWN_INSTANTIATE_TEST_P(SubgroupsAdapterInfoTests,
-                        {D3D12Backend(), D3D12Backend({}, {"use_dxc"}), MetalBackend(),
+                        {D3D12Backend(),                 //
+                         D3D12Backend({}, {"use_dxc"}),  //
+                         MetalBackend(),                 //
                          VulkanBackend()},
                         {RequestSubgroups::WhenAvailable, RequestSubgroups::Never});
 
@@ -282,7 +284,8 @@ DAWN_INSTANTIATE_TEST(SubgroupsShaderTests,
                       D3D12Backend(),
                       D3D12Backend({}, {"use_dxc"}),
                       MetalBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 
 class SubgroupsShaderTestsFragment : public SubgroupsTestsBase<AdapterTestParam> {
   protected:
@@ -394,7 +397,8 @@ DAWN_INSTANTIATE_TEST(SubgroupsShaderTestsFragment,
                       D3D12Backend(),
                       D3D12Backend({}, {"use_dxc"}),
                       MetalBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 
 enum class BroadcastType {
     I32,
@@ -710,7 +714,9 @@ TEST_P(SubgroupsBroadcastTests, SubgroupBroadcast) {
 
 // DawnTestBase::CreateDeviceImpl always enables allow_unsafe_apis toggle.
 DAWN_INSTANTIATE_TEST_P(SubgroupsBroadcastTests,
-                        {D3D12Backend(), D3D12Backend({}, {"use_dxc"}), MetalBackend(),
+                        {D3D12Backend(),                 //
+                         D3D12Backend({}, {"use_dxc"}),  //
+                         MetalBackend(),                 //
                          VulkanBackend()},
                         {
                             BroadcastType::I32,
@@ -912,7 +918,9 @@ TEST_P(SubgroupsShaderInclusiveTest, InclusiveExecution) {
 }
 
 DAWN_INSTANTIATE_TEST_P(SubgroupsShaderInclusiveTest,
-                        {D3D12Backend(), D3D12Backend({}, {"use_dxc"}), MetalBackend(),
+                        {D3D12Backend(),                 //
+                         D3D12Backend({}, {"use_dxc"}),  //
+                         MetalBackend(),                 //
                          VulkanBackend()},
                         {SubgroupIntrinsicOp::Add, SubgroupIntrinsicOp::Mul},
                         {

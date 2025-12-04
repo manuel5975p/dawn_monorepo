@@ -427,20 +427,20 @@ Handler_OpImageSparseRead_StorageImageReadWithoutFormat(
 // Opcode of interest to determine capabilities requirements.
 constexpr std::array<std::pair<spv::Op, OpcodeHandler>, 14> kOpcodeHandlers{{
     // clang-format off
-    {spv::Op::OpImageRead,         Handler_OpImageRead_StorageImageReadWithoutFormat},
-    {spv::Op::OpImageWrite,        Handler_OpImageWrite_StorageImageWriteWithoutFormat},
-    {spv::Op::OpImageSparseRead,   Handler_OpImageSparseRead_StorageImageReadWithoutFormat},
-    {spv::Op::OpTypeFloat,         Handler_OpTypeFloat_Float16 },
-    {spv::Op::OpTypeFloat,         Handler_OpTypeFloat_Float64 },
-    {spv::Op::OpTypeImage,         Handler_OpTypeImage_ImageMSArray},
-    {spv::Op::OpTypeInt,           Handler_OpTypeInt_Int16 },
-    {spv::Op::OpTypeInt,           Handler_OpTypeInt_Int64 },
-    {spv::Op::OpTypePointer,       Handler_OpTypePointer_StorageInputOutput16},
-    {spv::Op::OpTypePointer,       Handler_OpTypePointer_StoragePushConstant16},
-    {spv::Op::OpTypePointer,       Handler_OpTypePointer_StorageUniform16},
-    {spv::Op::OpTypePointer,       Handler_OpTypePointer_StorageUniform16},
-    {spv::Op::OpTypePointer,       Handler_OpTypePointer_StorageUniformBufferBlock16},
-    {spv::Op::OpTypePointer,       Handler_OpTypePointer_StorageBuffer16BitAccess},
+    {spv::Op::OpImageRead,                   Handler_OpImageRead_StorageImageReadWithoutFormat},
+    {spv::Op::OpImageWrite,                  Handler_OpImageWrite_StorageImageWriteWithoutFormat},
+    {spv::Op::OpImageSparseRead,             Handler_OpImageSparseRead_StorageImageReadWithoutFormat},
+    {spv::Op::OpTypeFloat,                   Handler_OpTypeFloat_Float16 },
+    {spv::Op::OpTypeFloat,                   Handler_OpTypeFloat_Float64 },
+    {spv::Op::OpTypeImage,                   Handler_OpTypeImage_ImageMSArray},
+    {spv::Op::OpTypeInt,                     Handler_OpTypeInt_Int16 },
+    {spv::Op::OpTypeInt,                     Handler_OpTypeInt_Int64 },
+    {spv::Op::OpTypePointer,                 Handler_OpTypePointer_StorageInputOutput16},
+    {spv::Op::OpTypePointer,                 Handler_OpTypePointer_StoragePushConstant16},
+    {spv::Op::OpTypePointer,                 Handler_OpTypePointer_StorageUniform16},
+    {spv::Op::OpTypePointer,                 Handler_OpTypePointer_StorageUniform16},
+    {spv::Op::OpTypePointer,                 Handler_OpTypePointer_StorageUniformBufferBlock16},
+    {spv::Op::OpTypePointer,                 Handler_OpTypePointer_StorageBuffer16BitAccess},
     // clang-format on
 }};
 

@@ -300,7 +300,7 @@ TEST_F(MslWriter_PackedVec3Test, StorageVar_Vec3_LoadElement) {
     b.Append(func->Block(), [&] {  //
         auto* el_0 = b.LoadVectorElement(var, 0_u);
         auto* el_1 = b.LoadVectorElement(var, 1_u);
-        b.Return(func, b.Add<u32>(el_0, el_1));
+        b.Return(func, b.Add(el_0, el_1));
     });
 
     auto* src = R"(
@@ -502,8 +502,7 @@ TEST_F(MslWriter_PackedVec3Test, StorageVar_Mat4x3_LoadColumn) {
         auto* col_1 = b.Load(b.Access(ty.ptr<storage, vec3<f32>>(), var, 1_u));
         auto* col_2 = b.Load(b.Access(ty.ptr<storage, vec3<f32>>(), var, 2_u));
         auto* col_3 = b.Load(b.Access(ty.ptr<storage, vec3<f32>>(), var, 3_u));
-        b.Return(func,
-                 b.Add<vec3<f32>>(b.Add<vec3<f32>>(b.Add<vec3<f32>>(col_0, col_1), col_2), col_3));
+        b.Return(func, b.Add(b.Add(b.Add(col_0, col_1), col_2), col_3));
     });
 
     auto* src = R"(
@@ -577,7 +576,7 @@ TEST_F(MslWriter_PackedVec3Test, StorageVar_Mat4x3_LoadElement) {
         auto* el_1 = b.LoadVectorElement(b.Access(ty.ptr<storage, vec3<f32>>(), var, 1_u), 1_u);
         auto* el_2 = b.LoadVectorElement(b.Access(ty.ptr<storage, vec3<f32>>(), var, 2_u), 2_u);
         auto* el_3 = b.LoadVectorElement(b.Access(ty.ptr<storage, vec3<f32>>(), var, 3_u), 2_u);
-        b.Return(func, b.Add<f32>(b.Add<f32>(b.Add<f32>(el_0, el_1), el_2), el_3));
+        b.Return(func, b.Add(b.Add(b.Add(el_0, el_1), el_2), el_3));
     });
 
     auto* src = R"(
@@ -1030,7 +1029,7 @@ TEST_F(MslWriter_PackedVec3Test, StorageVar_Array_LoadVector) {
     b.Append(func->Block(), [&] {  //
         auto* el_0 = b.Load(b.Access(ty.ptr<storage, vec3<f32>>(), var, 0_u));
         auto* el_1 = b.Load(b.Access(ty.ptr<storage, vec3<f32>>(), var, 1_u));
-        b.Return(func, b.Add<vec3<f32>>(el_0, el_1));
+        b.Return(func, b.Add(el_0, el_1));
     });
 
     auto* src = R"(
@@ -1088,7 +1087,7 @@ TEST_F(MslWriter_PackedVec3Test, StorageVar_Array_LoadElement) {
     b.Append(func->Block(), [&] {  //
         auto* el_0 = b.LoadVectorElement(b.Access(ty.ptr<storage, vec3<f32>>(), var, 0_u), 2_u);
         auto* el_1 = b.LoadVectorElement(b.Access(ty.ptr<storage, vec3<f32>>(), var, 1_u), 2_u);
-        b.Return(func, b.Add<f32>(el_0, el_1));
+        b.Return(func, b.Add(el_0, el_1));
     });
 
     auto* src = R"(
@@ -1835,7 +1834,7 @@ TEST_F(MslWriter_PackedVec3Test, StorageVar_RuntimeArray_LoadVector) {
     b.Append(func->Block(), [&] {  //
         auto* el_0 = b.Load(b.Access(ty.ptr<storage, vec3<f32>>(), var, 0_u));
         auto* el_1 = b.Load(b.Access(ty.ptr<storage, vec3<f32>>(), var, 1_u));
-        b.Return(func, b.Add<vec3<f32>>(el_0, el_1));
+        b.Return(func, b.Add(el_0, el_1));
     });
 
     auto* src = R"(
@@ -2726,10 +2725,10 @@ TEST_F(MslWriter_PackedVec3Test, StorageVar_Struct_NonDefaultOffset) {
                                              core::IOAttributes{}),
             ty.Get<core::type::StructMember>(
                 mod.symbols.Register("vec3"), ty.vec3<u32>(), /* index */ 1u,
-                /* offset */ 16u, /* align */ 4u, /* size */ 12u, core::IOAttributes{}),
+                /* offset */ 16u, /* align */ 16u, /* size */ 12u, core::IOAttributes{}),
             ty.Get<core::type::StructMember>(
                 mod.symbols.Register("vec4"), ty.vec4<u32>(), /* index */ 2u,
-                /* offset */ 64u, /* align */ 4u, /* size */ 16u, core::IOAttributes{}),
+                /* offset */ 64u, /* align */ 16u, /* size */ 16u, core::IOAttributes{}),
             ty.Get<core::type::StructMember>(
                 mod.symbols.Register("mat3"), ty.mat4x3<f32>(), /* index */ 3u,
                 /* offset */ 128u, /* align */ 16u, /* size */ 64u, core::IOAttributes{}),
@@ -3177,6 +3176,119 @@ $B1: {  # root
     %11:ptr<storage, __packed_vec3<f32>, read_write> = access %v, 1u, 0u
     %col_1:ptr<storage, __packed_vec3<f32>, read_write> = let %11  # %col_1: 'col'
     %13:void = call %bar, %mat_1, %col_1
+    ret
+  }
+}
+)";
+
+    Run(PackedVec3);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_PackedVec3Test, StorageVar_PointerInFunctionParameter_LoadStoreHelpers) {
+    auto* var = b.Var<storage, array<vec3<u32>, 4>>("v");
+    var->SetBindingPoint(0, 0);
+    mod.root_block->Append(var);
+
+    auto* bar = b.Function("bar", ty.void_());
+    {
+        auto* arr_ptr = b.FunctionParam("arr", ty.ptr<storage, array<vec3<u32>, 4>>());
+        bar->SetParams({arr_ptr});
+        b.Append(bar->Block(), [&] {  //
+            auto* load = b.Load(arr_ptr);
+            b.Store(arr_ptr, load);
+            b.Return(bar);
+        });
+    }
+
+    auto* foo = b.Function("foo", ty.void_());
+    {
+        b.Append(foo->Block(), [&] {  //
+            b.Call(bar, var);
+            b.Return(foo);
+        });
+    }
+
+    auto* src = R"(
+$B1: {  # root
+  %v:ptr<storage, array<vec3<u32>, 4>, read_write> = var undef @binding_point(0, 0)
+}
+
+%bar = func(%arr:ptr<storage, array<vec3<u32>, 4>, read_write>):void {
+  $B2: {
+    %4:array<vec3<u32>, 4> = load %arr
+    store %arr, %4
+    ret
+  }
+}
+%foo = func():void {
+  $B3: {
+    %6:void = call %bar, %v
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+tint_packed_vec3_u32_array_element = struct @align(16) {
+  packed:__packed_vec3<u32> @offset(0)
+}
+
+$B1: {  # root
+  %v:ptr<storage, array<tint_packed_vec3_u32_array_element, 4>, read_write> = var undef @binding_point(0, 0)
+}
+
+%bar = func(%arr:ptr<storage, array<tint_packed_vec3_u32_array_element, 4>, read_write>):void {
+  $B2: {
+    %4:array<vec3<u32>, 4> = call %tint_load_array_packed_vec3, %arr
+    %6:void = call %tint_store_array_packed_vec3, %arr, %4
+    ret
+  }
+}
+%foo = func():void {
+  $B3: {
+    %9:void = call %bar, %v
+    ret
+  }
+}
+%tint_load_array_packed_vec3 = func(%from:ptr<storage, array<tint_packed_vec3_u32_array_element, 4>, read_write>):array<vec3<u32>, 4> {
+  $B4: {
+    %11:ptr<storage, __packed_vec3<u32>, read_write> = access %from, 0u, 0u
+    %12:__packed_vec3<u32> = load %11
+    %13:vec3<u32> = msl.convert %12
+    %14:ptr<storage, __packed_vec3<u32>, read_write> = access %from, 1u, 0u
+    %15:__packed_vec3<u32> = load %14
+    %16:vec3<u32> = msl.convert %15
+    %17:ptr<storage, __packed_vec3<u32>, read_write> = access %from, 2u, 0u
+    %18:__packed_vec3<u32> = load %17
+    %19:vec3<u32> = msl.convert %18
+    %20:ptr<storage, __packed_vec3<u32>, read_write> = access %from, 3u, 0u
+    %21:__packed_vec3<u32> = load %20
+    %22:vec3<u32> = msl.convert %21
+    %23:array<vec3<u32>, 4> = construct %13, %16, %19, %22
+    ret %23
+  }
+}
+%tint_store_array_packed_vec3 = func(%to:ptr<storage, array<tint_packed_vec3_u32_array_element, 4>, read_write>, %value:array<vec3<u32>, 4>):void {
+  $B5: {
+    %26:vec3<u32> = access %value, 0u
+    %27:ptr<storage, __packed_vec3<u32>, read_write> = access %to, 0u, 0u
+    %28:__packed_vec3<u32> = msl.convert %26
+    store %27, %28
+    %29:vec3<u32> = access %value, 1u
+    %30:ptr<storage, __packed_vec3<u32>, read_write> = access %to, 1u, 0u
+    %31:__packed_vec3<u32> = msl.convert %29
+    store %30, %31
+    %32:vec3<u32> = access %value, 2u
+    %33:ptr<storage, __packed_vec3<u32>, read_write> = access %to, 2u, 0u
+    %34:__packed_vec3<u32> = msl.convert %32
+    store %33, %34
+    %35:vec3<u32> = access %value, 3u
+    %36:ptr<storage, __packed_vec3<u32>, read_write> = access %to, 3u, 0u
+    %37:__packed_vec3<u32> = msl.convert %35
+    store %36, %37
     ret
   }
 }

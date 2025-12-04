@@ -364,6 +364,7 @@ typedef enum spv_ext_inst_type_t {
   SPV_EXT_INST_TYPE_NONSEMANTIC_SHADER_DEBUGINFO_100,
   SPV_EXT_INST_TYPE_NONSEMANTIC_VKSPREFLECTION,
   SPV_EXT_INST_TYPE_TOSA_001000_1,
+  SPV_EXT_INST_TYPE_ARM_MOTION_ENGINE_100,
 
   // Multiple distinct extended instruction set types could return this
   // value, if they are prefixed with NonSemantic. and are otherwise
@@ -432,7 +433,7 @@ typedef enum spv_binary_to_text_options_t {
 
 // The default id bound is to the minimum value for the id limit
 // in the spir-v specification under the section "Universal Limits".
-const uint32_t kDefaultMaxIdBound = 0x3FFFFF;
+const static uint32_t kDefaultMaxIdBound = 0x3FFFFF;
 
 // Structures
 

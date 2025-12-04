@@ -63,6 +63,7 @@ enum class BindingInfoType {
     Sampler,
     Texture,
     StorageTexture,
+    TexelBuffer,
     ExternalTexture,
     StaticSampler,
     // Internal to vulkan only.
@@ -102,6 +103,15 @@ DAWN_SERIALIZABLE(struct, StorageTextureBindingInfo, STORAGE_TEXTURE_BINDING_INF
 };
 #undef STORAGE_TEXTURE_BINDING_INFO_MEMBER
 
+// A mirror of wgpu::TexelBufferBindingLayout for use inside dawn::native.
+#define TEXEL_BUFFER_BINDING_INFO_MEMBER(X) \
+    X(wgpu::TextureFormat, format)          \
+    X(wgpu::TexelBufferAccess, access)
+DAWN_SERIALIZABLE(struct, TexelBufferBindingInfo, TEXEL_BUFFER_BINDING_INFO_MEMBER) {
+    static TexelBufferBindingInfo From(const TexelBufferBindingLayout& layout);
+};
+#undef TEXEL_BUFFER_BINDING_INFO_MEMBER
+
 // A mirror of wgpu::SamplerBindingLayout for use inside dawn::native.
 #define SAMPLER_BINDING_INFO_MEMBER(X)                                               \
     /* For shader reflection NonFiltering is never used and Filtering is used for */ \
@@ -112,8 +122,11 @@ DAWN_SERIALIZABLE(struct, SamplerBindingInfo, SAMPLER_BINDING_INFO_MEMBER) {
 };
 #undef SAMPLER_BINDING_INFO_MEMBER
 
-// A mirror of wgpu::ExternalTextureBindingLayout for use inside dawn::native.
-#define EXTERNAL_TEXTURE_BINDING_INFO_MEMBER(X)  // ExternalTextureBindingInfo has no member
+// The binding layout for ExternalTexture contains the indices of the expanded entries for it.
+#define EXTERNAL_TEXTURE_BINDING_INFO_MEMBER(X) \
+    X(BindingIndex, metadata)                   \
+    X(BindingIndex, plane0)                     \
+    X(BindingIndex, plane1)
 DAWN_SERIALIZABLE(struct, ExternalTextureBindingInfo, EXTERNAL_TEXTURE_BINDING_INFO_MEMBER){};
 #undef EXTERNAL_TEXTURE_BINDING_INFO_MEMBER
 
@@ -124,15 +137,17 @@ DAWN_SERIALIZABLE(struct, InputAttachmentBindingInfo, INPUT_ATTACHMENT_BINDING_I
 
 // A mirror of wgpu::StaticSamplerBindingLayout for use inside dawn::native.
 struct StaticSamplerBindingInfo {
+    // Note that this doesn't initialize the BindingIndex member as it is computed after sorting the
+    // entries in the BindGroupLayout.
     static StaticSamplerBindingInfo From(const StaticSamplerBindingLayout& layout);
 
-    // Holds a ref instead of an unowned pointer.
+    // Hold a ref as the sampler to keep it alive even if it is freed after BGL creation.
     Ref<SamplerBase> sampler;
-    // Holds the BindingNumber of the single texture with which this sampler is
-    // statically paired, if any.
-    BindingNumber sampledTextureBinding;
+    // Holds the BindingIndex of the single texture with which this sampler is statically paired, if
+    // any.
+    BindingIndex sampledTextureIndex = BindingIndex(0);
     // Whether this instance is statically paired with a single texture.
-    bool isUsedForSingleTextureBinding = false;
+    bool isUsedForSingleTexture = false;
 
     bool operator==(const StaticSamplerBindingInfo& other) const = default;
 };
@@ -149,7 +164,9 @@ struct BindingInfo {
     std::variant<BufferBindingInfo,
                  SamplerBindingInfo,
                  TextureBindingInfo,
+                 TexelBufferBindingInfo,
                  StorageTextureBindingInfo,
+                 ExternalTextureBindingInfo,
                  StaticSamplerBindingInfo,
                  InputAttachmentBindingInfo>
         bindingLayout;
@@ -163,7 +180,27 @@ BindingInfoType GetBindingInfoType(const BindingInfo& bindingInfo);
 #define BINDING_SLOT_MEMBER(X) \
     X(BindGroupIndex, group)   \
     X(BindingNumber, binding)
-DAWN_SERIALIZABLE(struct, BindingSlot, BINDING_SLOT_MEMBER){};
+// clang-format off
+DAWN_SERIALIZABLE(struct, BindingSlot, BINDING_SLOT_MEMBER){
+    constexpr bool operator==(const BindingSlot& rhs) const {
+        return group == rhs.group && binding == rhs.binding;
+    }
+
+    constexpr bool operator!=(const BindingSlot& rhs) const {
+        return !(*this == rhs);
+    }
+
+    constexpr bool operator<(const BindingSlot& rhs) const {
+        if (group < rhs.group) {
+            return true;
+        }
+        if (group > rhs.group) {
+            return false;
+        }
+        return binding < rhs.binding;
+    }
+};
+// clang-format on
 #undef BINDING_SLOT_MEMBER
 
 struct PerStageBindingCounts {
@@ -171,6 +208,7 @@ struct PerStageBindingCounts {
     uint32_t samplerCount;
     uint32_t storageBufferCount;
     uint32_t storageTextureCount;
+    uint32_t texelBufferCount;
     uint32_t uniformBufferCount;
     uint32_t externalTextureCount;
     uint32_t staticSamplerCount;

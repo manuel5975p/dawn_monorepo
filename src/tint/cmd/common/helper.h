@@ -25,6 +25,11 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef SRC_TINT_CMD_COMMON_HELPER_H_
 #define SRC_TINT_CMD_COMMON_HELPER_H_
 
@@ -76,7 +81,6 @@ struct LoadProgramOptions {
     std::string filename;
 #if TINT_BUILD_SPV_READER
     /// Spirv-reader options
-    bool use_ir_reader = false;
     tint::spirv::reader::Options spirv_reader_options;
 #endif
     /// The text printer to use for output
@@ -241,6 +245,12 @@ bool ReadFile(const std::string& input_file, std::vector<T>* buffer) {
     }
 
     return true;
+}
+
+/// @param str the string to quote
+/// @returns @p str quoted with <code>'</code>
+inline std::string Quote(std::string_view str) {
+    return "'" + std::string(str) + "'";
 }
 
 }  // namespace tint::cmd

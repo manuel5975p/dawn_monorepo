@@ -29,10 +29,12 @@
 #define SRC_DAWN_NATIVE_BINDGROUP_H_
 
 #include <array>
+#include <optional>
 #include <vector>
 
 #include "dawn/common/Constants.h"
 #include "dawn/common/Math.h"
+#include "dawn/common/ityp_span.h"
 #include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/Error.h"
@@ -45,6 +47,7 @@
 namespace dawn::native {
 
 class DeviceBase;
+class DynamicArrayState;
 
 ResultOrError<UnpackedPtr<BindGroupDescriptor>> ValidateBindGroupDescriptor(
     DeviceBase* device,
@@ -59,26 +62,40 @@ struct BufferBinding {
 
 class BindGroupBase : public ApiObjectBase {
   public:
-    static Ref<BindGroupBase> MakeError(DeviceBase* device, StringView label);
+    static Ref<BindGroupBase> MakeError(DeviceBase* device, const BindGroupDescriptor* descriptor);
 
     MaybeError Initialize(const UnpackedPtr<BindGroupDescriptor>& descriptor);
 
     ObjectType GetType() const override;
+
+    // Dawn API
+    void APIDestroy();
+    wgpu::Status APIUpdate(const BindGroupEntry* entry);
+    uint32_t APIInsertBinding(const BindGroupEntryContents* contents);
+    wgpu::Status APIRemoveBinding(uint32_t binding);
 
     BindGroupLayoutBase* GetFrontendLayout();
     const BindGroupLayoutBase* GetFrontendLayout() const;
     BindGroupLayoutInternalBase* GetLayout();
     const BindGroupLayoutInternalBase* GetLayout() const;
 
-    // Getters for static bindings.
+    // Getters for static bindings part.
     BufferBase* GetBindingAsBuffer(BindingIndex bindingIndex);
     SamplerBase* GetBindingAsSampler(BindingIndex bindingIndex) const;
     TextureViewBase* GetBindingAsTextureView(BindingIndex bindingIndex);
     BufferBinding GetBindingAsBufferBinding(BindingIndex bindingIndex);
+    TexelBufferViewBase* GetBindingAsTexelBufferView(BindingIndex bindingIndex);
     const ityp::span<uint32_t, uint64_t>& GetUnverifiedBufferSizes() const;
     const std::vector<Ref<ExternalTextureBase>>& GetBoundExternalTextures() const;
 
     void ForEachUnverifiedBufferBindingIndex(std::function<void(BindingIndex, uint32_t)> fn) const;
+
+    // Getters and operations on the dynamic array part for code that doesn't need to directly
+    // modify the state.
+    bool HasDynamicArray() const;
+    ityp::span<BindingIndex, const Ref<TextureViewBase>> GetDynamicArrayBindings() const;
+    MaybeError ValidateCanUseOnQueueNow() const;
+    DynamicArrayState* GetDynamicArray() const;
 
   protected:
     // To save memory, the size of a bind group is dynamically determined and the bind group is
@@ -113,12 +130,17 @@ class BindGroupBase : public ApiObjectBase {
   private:
     BindGroupBase(DeviceBase* device, ObjectBase::ErrorTag tag, StringView label);
 
+    MaybeError ValidateDestroy() const;
+    std::optional<BindingIndex> GetValidDynamicArraySlotFor(BindingNumber binding) const;
+
     Ref<BindGroupLayoutBase> mLayout;
     BindGroupLayoutInternalBase::BindingDataPointers mBindingData;
-
-    // TODO(dawn:1293): Store external textures in
-    // BindGroupLayoutBase::BindingDataPointers::bindings
     std::vector<Ref<ExternalTextureBase>> mBoundExternalTextures;
+
+    // The dynamic array is separate so as to not bloat the size and destructor of bind groups
+    // without them. Note that this is the only persistent owning Ref. DynamicArray is a RefCounted
+    // only so WeakRef to it can be created.
+    Ref<DynamicArrayState> mDynamicArray;
 };
 
 }  // namespace dawn::native

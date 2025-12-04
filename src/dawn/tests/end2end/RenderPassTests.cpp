@@ -191,7 +191,8 @@ DAWN_INSTANTIATE_TEST(RenderPassTest,
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 
 // Test that clearing the lower mips of an R8Unorm texture works. This is a regression test for
 // dawn:1071 where Intel Metal devices fail to do that correctly, requiring a workaround.
@@ -251,14 +252,15 @@ DAWN_INSTANTIATE_TEST(RenderPassTest_RegressionDawn1071,
                       MetalBackend({"metal_render_r8_rg8_unorm_small_mip_to_temp_texture"}),
                       OpenGLBackend(),
                       OpenGLESBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 
 // Test that clearing a depth16unorm texture with multiple subresources works. This is a regression
 // test for dawn:1389 where Intel Metal devices fail to do that correctly, requiring a workaround.
 class RenderPassTest_RegressionDawn1389 : public RenderPassTest {};
 TEST_P(RenderPassTest_RegressionDawn1389, ClearMultisubresourceAfterWriteDepth16Unorm) {
     // TODO(dawn:1705): fix this test for Intel D3D11.
-    DAWN_SUPPRESS_TEST_IF((IsD3D11() || IsANGLED3D11()) && IsIntel());
+    DAWN_SUPPRESS_TEST_IF(IsD3D11());
 
     // TODO(crbug.com/dawn/1989): Failed on Intel Gen12 GPUs because of Windows Vulkan driver issue,
     // when copying to a D16_UNORM depth texture and clearing one subresource, other subresources
@@ -391,7 +393,8 @@ DAWN_INSTANTIATE_TEST(RenderPassTest_RegressionDawn1389,
                       MetalBackend({"use_blit_for_buffer_to_depth_texture_copy"}),
                       OpenGLBackend(),
                       OpenGLESBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 
 }  // anonymous namespace
 }  // namespace dawn

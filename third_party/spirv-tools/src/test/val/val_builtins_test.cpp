@@ -434,7 +434,7 @@ CodeGenerator GetVariableCodeGenerator(const char* const built_in,
   }
   // Any kind of reference would do.
   entry_point.body = R"(
-%val = OpBitcast %u32 %built_in_var
+%val = OpCopyObject %built_in_ptr %built_in_var
 )";
 
   std::ostringstream execution_modes;
@@ -856,6 +856,45 @@ INSTANTIATE_TEST_SUITE_P(
             Values(TestResult(SPV_ERROR_INVALID_DATA,
                               "needs to be a 3-component 32-bit int vector",
                               "has components with bit width 64"))));
+
+INSTANTIATE_TEST_SUITE_P(
+    LocalInvocationIndexSuccess,
+    ValidateVulkanCombineBuiltInExecutionModelDataTypeResult,
+    Combine(Values("LocalInvocationIndex"), Values("GLCompute"),
+            Values("Input"), Values("%u32"), Values(nullptr),
+            Values(TestResult())));
+
+INSTANTIATE_TEST_SUITE_P(
+    LocalInvocationIndexNotGLCompute,
+    ValidateVulkanCombineBuiltInExecutionModelDataTypeResult,
+    Combine(Values("LocalInvocationIndex"),
+            Values("Vertex", "Fragment", "Geometry", "TessellationControl",
+                   "TessellationEvaluation"),
+            Values("Input"), Values("%u32"),
+            Values("VUID-LocalInvocationIndex-LocalInvocationIndex-04284"),
+            Values(TestResult(SPV_ERROR_INVALID_DATA,
+                              "to be used only with GLCompute, MeshNV, "
+                              "TaskNV, MeshEXT or TaskEXT execution model"))));
+
+INSTANTIATE_TEST_SUITE_P(
+    LocalInvocationIndexNotInput,
+    ValidateVulkanCombineBuiltInExecutionModelDataTypeResult,
+    Combine(Values("LocalInvocationIndex"), Values("GLCompute"),
+            Values("Output"), Values("%u32"),
+            Values("VUID-LocalInvocationIndex-LocalInvocationIndex-04285"),
+            Values(TestResult(
+                SPV_ERROR_INVALID_DATA,
+                "to be only used for variables with Input storage class",
+                "uses storage class Output"))));
+
+INSTANTIATE_TEST_SUITE_P(
+    LocalInvocationIndexNot32Int,
+    ValidateVulkanCombineBuiltInExecutionModelDataTypeResult,
+    Combine(Values("LocalInvocationIndex"), Values("GLCompute"),
+            Values("Input"), Values("%u32vec3", "%f32"),
+            Values("VUID-LocalInvocationIndex-LocalInvocationIndex-04286"),
+            Values(TestResult(SPV_ERROR_INVALID_DATA,
+                              "needs to be a 32-bit int scalar"))));
 
 INSTANTIATE_TEST_SUITE_P(
     InvocationIdSuccess,
@@ -2646,7 +2685,7 @@ CodeGenerator GetArrayedVariableCodeGenerator(const char* const built_in,
   entry_point.interfaces = "%built_in_var";
   // Any kind of reference would do.
   entry_point.body = R"(
-%val = OpBitcast %u32 %built_in_var
+%val = OpCopyObject %built_in_ptr %built_in_var
 )";
 
   std::ostringstream execution_modes;
@@ -4995,6 +5034,59 @@ TEST_F(ValidateBuiltIns, BadVulkanBuiltinPrimitiveTriangleIndicesEXT) {
   EXPECT_THAT(getDiagnosticString(),
               AnyVUID("VUID-PrimitiveTriangleIndicesEXT-"
                       "PrimitiveTriangleIndicesEXT-07054"));
+}
+
+// https://github.com/KhronosGroup/SPIRV-Tools/issues/6307
+TEST_F(ValidateBuiltIns, VulkanBuiltinPrimitiveTriangleIndicesMultiEntrypoint) {
+  const std::string text = R"(
+               OpCapability Shader
+               OpCapability MeshShadingEXT
+               OpCapability VulkanMemoryModel
+               OpExtension "SPV_EXT_mesh_shader"
+               OpMemoryModel Logical Vulkan
+               OpEntryPoint MeshEXT %1 "mesh" %positions %indices
+               OpEntryPoint Fragment %4 "frag" %color
+               OpExecutionMode %1 LocalSize 1 1 1
+               OpExecutionMode %1 OutputVertices 3
+               OpExecutionMode %1 OutputPrimitivesEXT 1
+               OpExecutionMode %1 OutputTrianglesEXT
+               OpExecutionMode %4 OriginUpperLeft
+               OpDecorate %_arr_v4float_uint_3 ArrayStride 16
+               OpDecorate %_arr_v3uint_uint_1 ArrayStride 16
+               OpDecorate %positions BuiltIn Position
+               OpDecorate %indices BuiltIn PrimitiveTriangleIndicesEXT
+               OpDecorate %color Location 0
+      %float = OpTypeFloat 32
+    %v4float = OpTypeVector %float 4
+       %uint = OpTypeInt 32 0
+     %uint_3 = OpConstant %uint 3
+%_arr_v4float_uint_3 = OpTypeArray %v4float %uint_3
+%_ptr_Output__arr_v4float_uint_3 = OpTypePointer Output %_arr_v4float_uint_3
+     %v3uint = OpTypeVector %uint 3
+     %uint_1 = OpConstant %uint 1
+%_arr_v3uint_uint_1 = OpTypeArray %v3uint %uint_1
+%_ptr_Output__arr_v3uint_uint_1 = OpTypePointer Output %_arr_v3uint_uint_1
+       %void = OpTypeVoid
+         %18 = OpTypeFunction %void
+     %uint_0 = OpConstant %uint 0
+%_ptr_Output_v4float = OpTypePointer Output %v4float
+  %positions = OpVariable %_ptr_Output__arr_v4float_uint_3 Output
+    %indices = OpVariable %_ptr_Output__arr_v3uint_uint_1 Output
+      %color = OpVariable %_ptr_Output_v4float Output
+          %1 = OpFunction %void None %18
+         %21 = OpLabel
+               OpSetMeshOutputsEXT %uint_0 %uint_0
+               OpNoLine
+               OpReturn
+               OpFunctionEnd
+          %4 = OpFunction %void None %18
+         %22 = OpLabel
+               OpReturn
+               OpFunctionEnd
+)";
+
+  CompileSuccessfully(text, SPV_ENV_VULKAN_1_3);
+  EXPECT_EQ(SPV_SUCCESS, ValidateInstructions(SPV_ENV_VULKAN_1_3));
 }
 
 TEST_F(ValidateBuiltIns, BadVulkanPrimitivePointIndicesArraySizeMeshEXT) {

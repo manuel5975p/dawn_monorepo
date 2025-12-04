@@ -220,6 +220,7 @@ case $BUILD_SYSTEM in
     fi
     if [[ -n "$SISO" ]]; then
         GN_ARGS+=" use_siso=true"
+        GN_ARGS+=" use_remoteexec=true"
     else
         GN_ARGS+=" use_siso=false"
     fi
@@ -229,6 +230,7 @@ case $BUILD_SYSTEM in
     if grep 'dawn_node.*True' .gclient >/dev/null; then
         GN_ARGS+=" dawn_build_node_bindings=true"
     fi
+    GN_ARGS+=" use_clang_modules=false"
     if [[ -z "$FORCE" && -f "$ROOT_DIR/out/$BUILD_DIR/args.gn" ]]; then
       generate "gn" "gen" $GN_OPTIONS "out/active" # keep existing args
     else
@@ -242,6 +244,7 @@ case $BUILD_SYSTEM in
     CMAKE_FLAGS+=("-DTINT_BUILD_MSL_WRITER=1")
     CMAKE_FLAGS+=("-DTINT_BUILD_SPV_WRITER=1")
     CMAKE_FLAGS+=("-DTINT_BUILD_WGSL_WRITER=1")
+    CMAKE_FLAGS+=("-DTINT_BUILD_SPV_READER=1")
     # tintd requires third_party/jsoncpp and third_party/langsvr
     # which are only downloaded when dawn_tintd=True in .gclient
     if grep 'dawn_tintd.*True' .gclient >/dev/null; then
@@ -260,9 +263,6 @@ case $BUILD_SYSTEM in
     fi
     if [[ -x $(command -v ccache) ]]; then
       CMAKE_FLAGS+=("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache")
-    fi
-    if [[ -n "$SHARED" ]]; then
-      CMAKE_FLAGS+=("-DBUILD_SHARED_LIBS=ON")
     fi
     case $BUILD_TYPE in
       "debug")
@@ -293,10 +293,17 @@ case $BUILD_SYSTEM in
       CMAKE_FLAGS+=("-DCMAKE_INSTALL_PREFIX=out/install")
       CMAKE_FLAGS+=("-DTINT_ENABLE_INSTALL=ON")
       CMAKE_FLAGS+=("-DDAWN_ENABLE_INSTALL=ON")
+      # Build Dawn as a monolithic library.  This is incompatible
+      # with BUILD_SHARED_LIBS=ON
+      CMAKE_FLAGS+=("-DBUILD_SHARED_LIBS=OFF")
       if [[ -n "$SHARED" ]]; then
         CMAKE_FLAGS+=("-DDAWN_BUILD_MONOLITHIC_LIBRARY=SHARED")
       else
         CMAKE_FLAGS+=("-DDAWN_BUILD_MONOLITHIC_LIBRARY=STATIC")
+      fi
+    else
+      if [[ -n "$SHARED" ]]; then
+        CMAKE_FLAGS+=("-DBUILD_SHARED_LIBS=ON")
       fi
     fi
     generate "cmake"             \

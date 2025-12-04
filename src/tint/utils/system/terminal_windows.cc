@@ -25,6 +25,10 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
 // GEN_BUILD:CONDITION(tint_build_is_win)
 
 #include "src/tint/utils/macros/defer.h"
@@ -32,7 +36,7 @@
 #include "src/tint/utils/system/terminal.h"
 
 #define WIN32_LEAN_AND_MEAN 1
-#include <Windows.h>
+#include <windows.h>
 
 namespace tint {
 namespace {

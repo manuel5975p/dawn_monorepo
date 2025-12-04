@@ -88,7 +88,7 @@
 #else  // DAWN_COMPILER_IS(*)
 #define DAWN_ASSERT_CALLSITE_HELPER(file, func, line, condition) \
     do {                                                         \
-        [[maybe_unused]] auto unused = sizeof(condition);        \
+        [[maybe_unused]] auto unused = sizeof(!!(condition));    \
     } while (DAWN_ASSERT_LOOP_CONDITION)
 #endif  // DAWN_COMPILER_IS(*)
 
@@ -104,7 +104,7 @@
         DAWN_ASSERT(DAWN_ASSERT_LOOP_CONDITION && "Unreachable code hit"); \
         DAWN_BUILTIN_UNREACHABLE();                                        \
     } while (DAWN_ASSERT_LOOP_CONDITION)
-// Release-mode assert (similar to Chromium DAWN_CHECK).
+// Release-mode assert (similar to Chromium CHECK).
 // First does a debug-mode assert for better a better debugging experience, then hard-aborts.
 #define DAWN_CHECK(condition) DAWN_CHECK_CALLSITE_HELPER(__FILE__, __func__, __LINE__, condition)
 

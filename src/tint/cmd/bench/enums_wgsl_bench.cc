@@ -34,6 +34,8 @@
 //                       Do not modify this file directly
 ////////////////////////////////////////////////////////////////////////////////
 
+// clang-format off
+
 #include <array>
 
 #include "benchmark/benchmark.h"
@@ -44,11 +46,20 @@ namespace {
 
 void CoreDiagnosticRuleParser(::benchmark::State& state) {
     const char* kStrings[] = {
-        "deriative_unccformity",   "dlivative_3iformiy",    "derivative_uniforVity",
-        "derivative_uniformity",   "derivative_uniform1ty", "derivativeJunifqrmity",
-        "derivative_unifllrmit77", "subgopppqquniformitHH", "subgrou_cformity",
-        "subgGoup_unifombty",      "subgroup_uniformity",   "suvgroup_uniformiiiy",
-        "subgroWWp8uniformity",    "subgroup_uifoxxmiMy",
+        "deriative_unccformity",
+        "dlivative_3iformiy",
+        "derivative_uniforVity",
+        "derivative_uniformity",
+        "derivative_uniform1ty",
+        "derivativeJunifqrmity",
+        "derivative_unifllrmit77",
+        "subgopppqquniformitHH",
+        "subgrou_cformity",
+        "subgGoup_unifombty",
+        "subgroup_uniformity",
+        "suvgroup_uniformiiiy",
+        "subgroWWp8uniformity",
+        "subgroup_uifoxxmiMy",
     };
     for (auto _ : state) {
         for (auto* str : kStrings) {
@@ -87,10 +98,34 @@ void ChromiumDiagnosticRuleParser(::benchmark::State& state) {
 BENCHMARK(ChromiumDiagnosticRuleParser);
 void DiagnosticSeverityParser(::benchmark::State& state) {
     const char* kStrings[] = {
-        "rryr",   "n77rrlrGr", "erro40",   "error",   "oor",    "erzz",     "1ippor",
-        "XXnfo",  "55nII9nn",  "iSSfHHaa", "info",    "kk",     "gRR",      "ib",
-        "ojf",    "of",        "q",        "off",     "oNN",    "ov",       "Qff",
-        "waffir", "warnijg",   "wNNwnin8", "warning", "waring", "wrrrning", "Garning",
+        "rryr",
+        "n77rrlrGr",
+        "erro40",
+        "error",
+        "oor",
+        "erzz",
+        "1ippor",
+        "XXnfo",
+        "55nII9nn",
+        "iSSfHHaa",
+        "info",
+        "kk",
+        "gRR",
+        "ib",
+        "ojf",
+        "of",
+        "q",
+        "off",
+        "oNN",
+        "ov",
+        "Qff",
+        "waffir",
+        "warnijg",
+        "wNNwnin8",
+        "warning",
+        "waring",
+        "wrrrning",
+        "Garning",
     };
     for (auto _ : state) {
         for (auto* str : kStrings) {
@@ -117,20 +152,20 @@ void ExtensionParser(::benchmark::State& state) {
         "chromium_experimencal_barycentric_coord",
         "chromium_experimental_Oarycentric_coord",
         "chrttmium_experimental_bv__rycentric_KKoord",
-        "chromium_epxxrimenta8_framebuffer_fe5ch",
-        "chromim_experimental_frame__uffer_qqtcF",
-        "chromium_exerimental_fqqamebuffer_fetch",
+        "chrxxmium_8perimental_dynamic_5inding",
+        "__hromFumexperimental_ynqqmic_binding",
+        "chromium_xperimentqql_dynamic_binding",
+        "chromium_experimental_dynamic_binding",
+        "chromum_experim33ntal_dynam66c_biOding",
+        "chromium_QQxperimental_6y9amic_ttoonding",
+        "chromium_experimenta_dynamic_bin66ing",
+        "hromxum_experimental_zzr66mebufferOfetch",
+        "chromium_experimental_framebyyffer_fetch",
+        "chrmium_experimental_fraeHHuffer_feZch",
         "chromium_experimental_framebuffer_fetch",
-        "h66omiu33_experimenOal_framebuffer_fetch",
-        "ch6ottiumooexperQQmental_frameb9ffer_fetch",
-        "chomium_experimen66al_framebuffer_fetch",
-        "chrom66um_Oxperiental_xzzmediate",
-        "chroyyium_experimental_immediate",
-        "Zhromium_exerimntal_iHHZediate",
-        "chromium_experimental_immediate",
-        "chromium_expeqimet44l_immediWWte",
-        "chromium_experimntal_immeOOiate",
-        "hromium_experimetal_iYhedooate",
+        "chromium_expeimeWWtal_framebuq4fer_fetch",
+        "chromium_experimental_fOOamebuffer_etch",
+        "chroomium_experimntalhframebuffr_fetcY",
         "chomium_experiental_pixel_loca",
         "chromum_experimental_pixel_lFcal",
         "chromium_expewimentalpixel_local",
@@ -138,13 +173,13 @@ void ExtensionParser(::benchmark::State& state) {
         "chromffum_expeKmentG_pixel_local",
         "chromiuq_KKxperimental_pixel_local",
         "chromium_eFpe3imental_mmixel_local",
-        "chromium_experimenal_primitive_id",
-        "chromium_experieqtal_primitive_id",
-        "chromium_experimbntal_prbbmitve_id",
-        "chromium_experimental_primitive_id",
-        "chromiumexpermental_primitive_iid",
-        "chromiOO_experimental_primqtive_id",
-        "chroTTium_experimental_privvitive_id",
+        "chromium_experimental_reource_table",
+        "chromium_experimentalresourcq_table",
+        "chromium_ebbprimental_resource_table",
+        "chromium_experimental_resource_table",
+        "chromium_expirimental_resource_tabe",
+        "chromium_experimentl_resoOOrce_tablq",
+        "chromium_experimental_TTvvsource_table",
         "chromium_experimental_subgrouFF_matrix",
         "chromifm_experimenta00PsubgroQp_mtrix",
         "chromium_experPmental_subgroup_matrix",
@@ -187,13 +222,20 @@ void ExtensionParser(::benchmark::State& state) {
         "ww6",
         "fD6",
         "fK",
-        "sub11PPfrph",
-        "subgroup",
-        "suYYgroups",
+        "primif11ve_inPPeh",
+        "prmitive_index",
+        "primitive_indeYY",
+        "primitive_index",
+        "pHHimittveikkdex",
+        "rrrimitive_index",
+        "pWWimitive_ndssx",
+        "suYroups",
+        "sbgroqpL",
+        "sfbv22rouus",
         "subgroups",
-        "subHtkkops",
-        "rrubgroups",
-        "subgWWosss",
+        "subgous",
+        "suYgrous",
+        "subyr77upEY",
     };
     for (auto _ : state) {
         for (auto* str : kStrings) {
@@ -207,3 +249,5 @@ BENCHMARK(ExtensionParser);
 
 }  // namespace
 }  // namespace tint::wgsl
+
+// clang-format on

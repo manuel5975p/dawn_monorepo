@@ -1,52 +1,54 @@
+@file:JvmName("WebGpuUtils")
+
 package androidx.webgpu.helper
 
 import android.os.Handler
 import android.os.Looper
 import android.view.Surface
-import androidx.webgpu.Adapter
+import androidx.webgpu.GPUAdapter
 import androidx.webgpu.BackendType
-import androidx.webgpu.CallbackMode.Companion.AllowSpontaneous
-import androidx.webgpu.Device
-import androidx.webgpu.DeviceDescriptor
+import androidx.webgpu.GPUDevice
+import androidx.webgpu.GPUDeviceDescriptor
 import androidx.webgpu.DeviceLostCallback
-import androidx.webgpu.DeviceLostCallbackInfo
+import androidx.webgpu.DeviceLostException
 import androidx.webgpu.DeviceLostReason
 import androidx.webgpu.ErrorType
-import androidx.webgpu.FeatureName
-import androidx.webgpu.Instance
-import androidx.webgpu.InstanceDescriptor
-import androidx.webgpu.RequestAdapterOptions
+import androidx.webgpu.GPUInstance
+import androidx.webgpu.GPUInstanceDescriptor
+import androidx.webgpu.InternalException
+import androidx.webgpu.OutOfMemoryException
+import androidx.webgpu.GPURequestAdapterOptions
 import androidx.webgpu.RequestAdapterStatus
+import androidx.webgpu.GPUSurface
 import androidx.webgpu.RequestDeviceStatus
-import androidx.webgpu.SurfaceDescriptor
-import androidx.webgpu.SurfaceSourceAndroidNativeWindow
-import androidx.webgpu.UncapturedErrorCallbackInfo
-import androidx.webgpu.createInstance
+import androidx.webgpu.GPUSurfaceDescriptor
+import androidx.webgpu.GPUSurfaceSourceAndroidNativeWindow
+import androidx.webgpu.UncapturedErrorCallback
+import androidx.webgpu.UnknownException
+import androidx.webgpu.ValidationException
+import androidx.webgpu.GPU.createInstance
+import androidx.webgpu.getException
 import androidx.webgpu.helper.Util.windowFromSurface
-import androidx.webgpu.requestAdapter
-import androidx.webgpu.requestDevice
-
-public class DeviceLostException(
-    public val device: Device, public val reason: DeviceLostReason, message: String
-) : Exception(message)
-
-public class UncapturedErrorException(
-    public val device: Device, public val type: ErrorType, message: String
-) : Exception(message)
+import java.util.concurrent.Executor
 
 private const val POLLING_DELAY_MS = 100L
 
 public abstract class WebGpu : AutoCloseable {
-    public abstract val instance: Instance
-    public abstract val webgpuSurface: androidx.webgpu.Surface
-    public abstract val device: Device
+    public abstract val instance: GPUInstance
+    public abstract val webgpuSurface: GPUSurface
+    public abstract val device: GPUDevice
 }
 
 public suspend fun createWebGpu(
     surface: Surface? = null,
-    instanceDescriptor: InstanceDescriptor = InstanceDescriptor(),
-    requestAdapterOptions: RequestAdapterOptions = RequestAdapterOptions(),
-    requiredFeatures: Array<FeatureName> = arrayOf()
+    instanceDescriptor: GPUInstanceDescriptor = GPUInstanceDescriptor(),
+    requestAdapterOptions: GPURequestAdapterOptions = GPURequestAdapterOptions(),
+    deviceDescriptor: GPUDeviceDescriptor = GPUDeviceDescriptor(
+        deviceLostCallback = defaultDeviceLostCallback,
+        deviceLostCallbackExecutor = Executor(Runnable::run),
+        uncapturedErrorCallback = defaultUncapturedErrorCallback,
+        uncapturedErrorCallbackExecutor = Executor(Runnable::run)
+    ),
 ): WebGpu {
     initLibrary()
 
@@ -54,15 +56,15 @@ public suspend fun createWebGpu(
     val webgpuSurface =
         surface?.let {
             instance.createSurface(
-                SurfaceDescriptor(
+                GPUSurfaceDescriptor(
                     surfaceSourceAndroidNativeWindow =
-                        SurfaceSourceAndroidNativeWindow(windowFromSurface(it))
+                        GPUSurfaceSourceAndroidNativeWindow(windowFromSurface(it))
                 )
             )
         }
 
     val adapter = requestAdapter(instance, requestAdapterOptions)
-    val device = requestDevice(adapter, requiredFeatures)
+    val device = requestDevice(adapter, deviceDescriptor)
 
     var isClosing = false
     // Long-running event poller for async methods. Can be removed when
@@ -96,39 +98,37 @@ public suspend fun createWebGpu(
 }
 
 private suspend fun requestAdapter(
-    instance: Instance,
-    options: RequestAdapterOptions = RequestAdapterOptions(backendType = BackendType.Vulkan),
-): Adapter {
-    val (status, adapter, message) = instance.requestAdapter(options)
-    check(status == RequestAdapterStatus.Success && adapter != null) {
-        message.ifEmpty { "Error requesting the adapter: $status" }
-    }
-    return adapter
+    instance: GPUInstance,
+    options: GPURequestAdapterOptions = GPURequestAdapterOptions(backendType = BackendType.Vulkan),
+): GPUAdapter {
+    return instance.requestAdapter(options)
 }
 
-private suspend fun requestDevice(adapter: Adapter, requiredFeatures: Array<FeatureName>): Device {
-    val (status, device, message) =
-        adapter.requestDevice(
-            DeviceDescriptor(
-                requiredFeatures = requiredFeatures,
-                deviceLostCallbackInfo =
-                    DeviceLostCallbackInfo(
-                        callback =
-                            DeviceLostCallback { device, reason, message ->
-                                throw DeviceLostException(device, reason, message)
-                            },
-                        mode = AllowSpontaneous,
-                    ),
-                uncapturedErrorCallbackInfo =
-                    UncapturedErrorCallbackInfo { device, type, message ->
-                        throw UncapturedErrorException(device, type, message)
-                    },
-            )
-        )
-    check(status == RequestDeviceStatus.Success && device != null) {
-        message.ifEmpty { "Error requesting the device: $status" }
+private suspend inline fun requestDevice(
+    adapter: GPUAdapter,
+    deviceDescriptor: GPUDeviceDescriptor,
+): GPUDevice {
+    if (deviceDescriptor.deviceLostCallback == null) {
+        deviceDescriptor.deviceLostCallback = defaultDeviceLostCallback
     }
-    return device
+
+    if (deviceDescriptor.uncapturedErrorCallback == null) {
+        deviceDescriptor.uncapturedErrorCallback = defaultUncapturedErrorCallback
+    }
+    return adapter.requestDevice(deviceDescriptor)
+}
+
+private val defaultUncapturedErrorCallback
+    get(): UncapturedErrorCallback {
+        return UncapturedErrorCallback { _, type, message ->
+            throw getException(type, message)
+        }
+    }
+
+private val defaultDeviceLostCallback get(): DeviceLostCallback {
+    return DeviceLostCallback { device, reason, message ->
+        throw DeviceLostException(device, reason, message)
+    }
 }
 
 /** Initializes the native library. This method should be called before making and WebGPU calls. */

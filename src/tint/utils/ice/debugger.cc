@@ -30,7 +30,7 @@
 #ifdef TINT_ENABLE_BREAK_IN_DEBUGGER
 
 #ifdef _MSC_VER
-#include <Windows.h>
+#include <windows.h>
 #elif defined(__linux__)
 #include <signal.h>
 #include <fstream>

@@ -270,7 +270,7 @@ struct Encoder {
     void InstructionBitcast(pb::InstructionBitcast&, const ir::Bitcast*) {}
 
     void InstructionBreakIf(pb::InstructionBreakIf& breakif_out, const ir::BreakIf* breakif_in) {
-        auto num_next_iter_values = static_cast<uint32_t>(breakif_in->NextIterValues().Length());
+        auto num_next_iter_values = static_cast<uint32_t>(breakif_in->NextIterValues().size());
         breakif_out.set_num_next_iter_values(num_next_iter_values);
     }
 
@@ -395,6 +395,9 @@ struct Encoder {
                 [&](const core::type::BindingArray* a) {
                     TypeBindingArray(*type_out.mutable_binding_array(), a);
                 },
+                [&](const core::type::ResourceBinding* a) {
+                    TypeResourceBinding(*type_out.mutable_resource_binding(), a);
+                },
                 [&](const core::type::DepthTexture* t) {
                     TypeDepthTexture(*type_out.mutable_depth_texture(), t);
                 },
@@ -497,7 +500,6 @@ struct Encoder {
 
     void TypeArray(pb::TypeArray& array_out, const core::type::Array* array_in) {
         array_out.set_element(Type(array_in->ElemType()));
-        array_out.set_stride(array_in->Stride());
         tint::Switch(
             array_in->Count(),  //
             [&](const core::type::ConstantArrayCount* c) {
@@ -525,6 +527,8 @@ struct Encoder {
             },
             TINT_ICE_ON_NO_MATCH);
     }
+
+    void TypeResourceBinding(pb::TypeResourceBinding&, const core::type::ResourceBinding*) {}
 
     void TypeDepthTexture(pb::TypeDepthTexture& texture_out,
                           const core::type::DepthTexture* texture_in) {
@@ -562,6 +566,7 @@ struct Encoder {
     }
 
     void TypeExternalTexture(pb::TypeExternalTexture&, const core::type::ExternalTexture*) {}
+
     void TypeInputAttachment(pb::TypeInputAttachment& input_attachment_out,
                              const core::type::InputAttachment* input_attachment_in) {
         input_attachment_out.set_sub_type(Type(input_attachment_in->Type()));
@@ -1075,14 +1080,16 @@ struct Encoder {
                 return pb::BuiltinValue::subgroup_invocation_id;
             case core::BuiltinValue::kSubgroupSize:
                 return pb::BuiltinValue::subgroup_size;
+            case core::BuiltinValue::kNumSubgroups:
+                return pb::BuiltinValue::num_subgroups;
             case core::BuiltinValue::kVertexIndex:
                 return pb::BuiltinValue::vertex_index;
             case core::BuiltinValue::kWorkgroupId:
                 return pb::BuiltinValue::workgroup_id;
             case core::BuiltinValue::kClipDistances:
                 return pb::BuiltinValue::clip_distances;
-            case core::BuiltinValue::kPrimitiveId:
-                return pb::BuiltinValue::primitive_id;
+            case core::BuiltinValue::kPrimitiveIndex:
+                return pb::BuiltinValue::primitive_index;
             case core::BuiltinValue::kBarycentricCoord:
                 return pb::BuiltinValue::barycentric_coord;
             case core::BuiltinValue::kUndefined:
@@ -1391,8 +1398,22 @@ struct Encoder {
                 return pb::BuiltinFn::subgroup_matrix_multiply;
             case core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
                 return pb::BuiltinFn::subgroup_matrix_multiply_accumulate;
+            case core::BuiltinFn::kSubgroupMatrixScalarAdd:
+                return pb::BuiltinFn::subgroup_matrix_scalar_add;
+            case core::BuiltinFn::kSubgroupMatrixScalarSubtract:
+                return pb::BuiltinFn::subgroup_matrix_scalar_subtract;
+            case core::BuiltinFn::kSubgroupMatrixScalarMultiply:
+                return pb::BuiltinFn::subgroup_matrix_scalar_multiply;
             case core::BuiltinFn::kPrint:
                 return pb::BuiltinFn::print;
+            case core::BuiltinFn::kHasBinding:
+                return pb::BuiltinFn::has_binding;
+            case core::BuiltinFn::kGetBinding:
+                return pb::BuiltinFn::get_binding;
+            case core::BuiltinFn::kHasResource:
+                return pb::BuiltinFn::has_resource;
+            case core::BuiltinFn::kGetResource:
+                return pb::BuiltinFn::get_resource;
             case core::BuiltinFn::kNone:
                 break;
         }

@@ -54,8 +54,7 @@ class ShaderModule final : public ShaderModuleBase {
     static ResultOrError<Ref<ShaderModule>> Create(
         Device* device,
         const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-        const std::vector<tint::wgsl::Extension>& internalExtensions,
-        ShaderModuleParseResult* parseResult);
+        const std::vector<tint::wgsl::Extension>& internalExtensions);
 
     struct MetalFunctionData {
         std::string msl;
@@ -68,6 +67,7 @@ class ShaderModule final : public ShaderModuleBase {
     MaybeError CreateFunction(SingleShaderStage stage,
                               const ProgrammableStage& programmableStage,
                               const PipelineLayout* layout,
+                              const ImmediateConstantMask& pipelineImmediateMask,
                               MetalFunctionData* out,
                               uint32_t sampleMask = 0xFFFFFFFF,
                               const RenderPipeline* renderPipeline = nullptr);
@@ -77,8 +77,6 @@ class ShaderModule final : public ShaderModuleBase {
                  const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
                  std::vector<tint::wgsl::Extension> internalExtensions);
     ~ShaderModule() override;
-
-    MaybeError Initialize(ShaderModuleParseResult* parseResult);
 };
 
 }  // namespace dawn::native::metal

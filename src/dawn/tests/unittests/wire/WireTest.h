@@ -141,7 +141,7 @@ namespace utils {
 class TerribleCommandBuffer;
 }  // namespace utils
 
-class WireTest : public testing::Test {
+class WireTest : virtual public testing::Test {
   protected:
     WireTest();
     ~WireTest() override;
@@ -179,6 +179,8 @@ class WireTest : public testing::Test {
 
     dawn::wire::WireServer* GetWireServer();
     dawn::wire::WireClient* GetWireClient();
+
+    size_t GetC2SMaxAllocationSize();
 
     void DeleteServer();
     void DeleteClient();

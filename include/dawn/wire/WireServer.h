@@ -46,6 +46,7 @@ struct DAWN_WIRE_EXPORT WireServerDescriptor {
     const DawnProcTable* procs;
     CommandSerializer* serializer;
     server::MemoryTransferService* memoryTransferService = nullptr;
+    bool useSpontaneousCallbacks = false;
 };
 
 class DAWN_WIRE_EXPORT WireServer : public CommandHandler {
@@ -138,6 +139,11 @@ class DAWN_WIRE_EXPORT MemoryTransferService {
                                            size_t offset,
                                            size_t size) = 0;
         std::span<uint8_t> GetTarget() const;
+
+        // Returns a direct pointer to the source data that will
+        // be copied into Target in DeserializeDataUpdate if accessible, nullptr
+        // otherwise.
+        virtual uint8_t* GetSourceData() const { return nullptr; }
 
       private:
         WriteHandle(const WriteHandle&) = delete;

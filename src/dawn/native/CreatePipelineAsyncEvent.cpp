@@ -65,7 +65,6 @@ template <>
 void CreatePipelineAsyncEvent<ComputePipelineBase, WGPUCreateComputePipelineAsyncCallbackInfo>::
     AddOrGetCachedPipeline() {
     DeviceBase* device = mPipeline->GetDevice();
-    auto deviceGuard = device->GetGuard();
     if (device->GetState() == DeviceBase::State::Alive) {
         mPipeline = device->AddOrGetCachedComputePipeline(std::move(mPipeline));
     }
@@ -85,7 +84,6 @@ template <>
 void CreatePipelineAsyncEvent<RenderPipelineBase,
                               WGPUCreateRenderPipelineAsyncCallbackInfo>::AddOrGetCachedPipeline() {
     DeviceBase* device = mPipeline->GetDevice();
-    auto deviceGuard = device->GetGuard();
     if (device->GetState() == DeviceBase::State::Alive) {
         mPipeline = device->AddOrGetCachedRenderPipeline(std::move(mPipeline));
     }
@@ -176,7 +174,7 @@ void CreatePipelineAsyncEvent<PipelineType, CreatePipelineAsyncCallbackInfo>::In
                             "CreatePipelineAsyncEvent::InitializeAsync", this, "label", eventLabel);
 
     auto asyncTask = [event = Ref<CreatePipelineAsyncEvent>(this)] { event->InitializeImpl(true); };
-    device->GetAsyncTaskManager()->PostTask(std::move(asyncTask));
+    device->GetAsyncTaskManager()->PostTask<AsyncTask>(std::move(asyncTask));
 }
 
 template <typename PipelineType, typename CreatePipelineAsyncCallbackInfo>
@@ -193,43 +191,47 @@ void CreatePipelineAsyncEvent<PipelineType, CreatePipelineAsyncCallbackInfo>::Co
         return;
     }
 
-    DeviceBase* device = mPipeline->GetDevice();
-    // TODO(dawn:2353): Device losts later than this check could potentially lead to racing
-    // condition.
-    if (device->IsLost()) {
-        // Invalid async creation should "succeed" if the device is already lost.
-        if (!mPipeline->IsError()) {
-            mPipeline = PipelineType::MakeError(device, mPipeline->GetLabel().c_str());
+    Ref<DeviceBase> device = mPipeline->GetDevice();
+
+    WGPUCreatePipelineAsyncStatus status = WGPUCreatePipelineAsyncStatus_Success;
+    std::string message;
+    Ref<PipelineType> pipeline;
+
+    // Gather the arguments to mCallback while holding the device lock to handle device loss and
+    // cache lookups. Release the lock before calling mCallback so that reentrant callbacks are
+    // safe.
+    {
+        // TODO(dawn:2353): Device losts later than this check could potentially lead to racing
+        // condition when not using implicit synchronization.
+        auto deviceGuard = device->GetGuard();
+
+        if (device->IsLost()) {
+            // Invalid async creation should "succeed" if the device is already lost.
+            if (!mPipeline->IsError()) {
+                mPipeline = PipelineType::MakeError(device.Get(), mPipeline->GetLabel().c_str());
+            }
+            pipeline = std::move(mPipeline);
+        } else if (mError != nullptr) {
+            switch (mError->GetType()) {
+                case InternalErrorType::Validation:
+                    status = WGPUCreatePipelineAsyncStatus_ValidationError;
+                    break;
+                default:
+                    status = WGPUCreatePipelineAsyncStatus_InternalError;
+                    break;
+            }
+            message = mError->GetFormattedMessage();
+        } else {
+            AddOrGetCachedPipeline();
+            pipeline = std::move(mPipeline);
         }
-        if (mCallback) {
-            mCallback(WGPUCreatePipelineAsyncStatus_Success,
-                      ToAPI(ReturnToAPI(std::move(mPipeline))), kEmptyOutputStringView, userdata1,
-                      userdata2);
-        }
-        return;
     }
 
-    if (mError != nullptr) {
-        WGPUCreatePipelineAsyncStatus status;
-        switch (mError->GetType()) {
-            case InternalErrorType::Validation:
-                status = WGPUCreatePipelineAsyncStatus_ValidationError;
-                break;
-            default:
-                status = WGPUCreatePipelineAsyncStatus_InternalError;
-                break;
-        }
-        if (mCallback) {
-            mCallback(status, nullptr, ToOutputStringView(mError->GetFormattedMessage()), userdata1,
-                      userdata2);
-        }
-        return;
-    }
-
-    AddOrGetCachedPipeline();
     if (mCallback) {
-        mCallback(WGPUCreatePipelineAsyncStatus_Success, ToAPI(ReturnToAPI(std::move(mPipeline))),
-                  kEmptyOutputStringView, userdata1, userdata2);
+        WGPUStringView messageView =
+            message.empty() ? kEmptyOutputStringView : ToOutputStringView(message);
+        mCallback(status, ToAPI(ReturnToAPI(std::move(pipeline))), messageView, userdata1,
+                  userdata2);
     }
 }
 

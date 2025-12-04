@@ -82,7 +82,10 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
 
         for (auto& input : inputs) {
             if (input.attributes.builtin) {
-                auto* param = b.FunctionParam(input.name.Name(), input.type);
+                auto* param = b.FunctionParam(input.type);
+                if (input.name) {
+                    ir.SetName(param, input.name);
+                }
                 param->SetInvariant(input.attributes.invariant);
                 param->SetBuiltin(input.attributes.builtin.value());
                 input_indices.Push(InputIndex{static_cast<uint32_t>(input_params.Length()), 0u});
@@ -112,7 +115,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
                     break;
                 case core::ir::Function::PipelineStage::kCompute:
                 case core::ir::Function::PipelineStage::kUndefined:
-                    TINT_UNREACHABLE();
+                    TINT_IR_UNREACHABLE(ir);
             }
             input_struct_param->SetType(input_struct);
         }
@@ -140,7 +143,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
                 break;
             case core::ir::Function::PipelineStage::kCompute:
             case core::ir::Function::PipelineStage::kUndefined:
-                TINT_UNREACHABLE();
+                TINT_IR_UNREACHABLE(ir);
         }
         output_values.Resize(outputs.Length());
         return output_struct;
@@ -187,7 +190,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
             if (outputs[i].attributes.builtin == core::BuiltinValue::kClipDistances) {
                 // Copy each clip distance to the result array.
                 auto* arr = outputs[i].type->As<core::type::Array>();
-                TINT_ASSERT(arr && arr->ConstantCount());
+                TINT_IR_ASSERT(ir, arr && arr->ConstantCount());
                 for (uint32_t d = 0; d < arr->ConstantCount(); d++) {
                     auto* to = builder.Access<ptr<function, f32>>(result, u32(i), u32(d));
                     auto* from = builder.Access<f32>(output_values[i], u32(d));

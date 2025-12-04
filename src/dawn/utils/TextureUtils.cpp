@@ -82,6 +82,68 @@ bool IsBCTextureFormat(wgpu::TextureFormat textureFormat) {
     }
 }
 
+bool IsNormalizedUncompressedColorTextureFormat(wgpu::TextureFormat textureFormat) {
+    switch (textureFormat) {
+        case wgpu::TextureFormat::R8Unorm:
+        case wgpu::TextureFormat::RG8Unorm:
+        case wgpu::TextureFormat::RGBA8Unorm:
+        case wgpu::TextureFormat::RGBA8UnormSrgb:
+        case wgpu::TextureFormat::BGRA8Unorm:
+        case wgpu::TextureFormat::BGRA8UnormSrgb:
+        case wgpu::TextureFormat::R8Snorm:
+        case wgpu::TextureFormat::RG8Snorm:
+        case wgpu::TextureFormat::RGBA8Snorm:
+        case wgpu::TextureFormat::R16Unorm:
+        case wgpu::TextureFormat::RG16Unorm:
+        case wgpu::TextureFormat::RGBA16Unorm:
+        case wgpu::TextureFormat::R16Snorm:
+        case wgpu::TextureFormat::RG16Snorm:
+        case wgpu::TextureFormat::RGBA16Snorm:
+        case wgpu::TextureFormat::RGB10A2Unorm:
+            return true;
+        default:
+            return false;
+    }
+}
+
+float GetNormalizedFormatMaxComponentValue(wgpu::TextureFormat textureFormat,
+                                           uint32_t componentIndex) {
+    switch (textureFormat) {
+        case wgpu::TextureFormat::R8Unorm:
+        case wgpu::TextureFormat::RG8Unorm:
+        case wgpu::TextureFormat::RGBA8Unorm:
+        case wgpu::TextureFormat::RGBA8UnormSrgb:
+        case wgpu::TextureFormat::BGRA8Unorm:
+        case wgpu::TextureFormat::BGRA8UnormSrgb:
+            return 255.0f;
+
+        case wgpu::TextureFormat::R8Snorm:
+        case wgpu::TextureFormat::RG8Snorm:
+        case wgpu::TextureFormat::RGBA8Snorm:
+            return 127.0f;
+
+        case wgpu::TextureFormat::R16Unorm:
+        case wgpu::TextureFormat::RG16Unorm:
+        case wgpu::TextureFormat::RGBA16Unorm:
+            return 65535.0f;
+
+        case wgpu::TextureFormat::R16Snorm:
+        case wgpu::TextureFormat::RG16Snorm:
+        case wgpu::TextureFormat::RGBA16Snorm:
+            return 32767.0f;
+
+        case wgpu::TextureFormat::RGB10A2Unorm:
+            if (componentIndex < 3) {
+                return 1023.0f;
+            } else {
+                return 3.0f;
+            }
+
+        default:
+            DAWN_UNREACHABLE();
+    }
+}
+
 bool IsETC2TextureFormat(wgpu::TextureFormat textureFormat) {
     switch (textureFormat) {
         case wgpu::TextureFormat::ETC2RGB8Unorm:
@@ -179,18 +241,16 @@ bool IsRenderableFormat(const wgpu::Device& device, wgpu::TextureFormat textureF
                device.HasFeature(wgpu::FeatureName::TextureFormatsTier1);
     }
 
-    if (IsSnorm16TextureFormat(textureFormat)) {
-        return device.HasFeature(wgpu::FeatureName::Snorm16TextureFormats) ||
-               device.HasFeature(wgpu::FeatureName::TextureFormatsTier1);
-    }
-
     switch (textureFormat) {
         case wgpu::TextureFormat::RGB9E5Ufloat:
+            return false;
         case wgpu::TextureFormat::R8Snorm:
         case wgpu::TextureFormat::RG8Snorm:
         case wgpu::TextureFormat::RGBA8Snorm:
-            return false;
-
+        case wgpu::TextureFormat::R16Snorm:
+        case wgpu::TextureFormat::RG16Snorm:
+        case wgpu::TextureFormat::RGBA16Snorm:
+            return device.HasFeature(wgpu::FeatureName::TextureFormatsTier1);
         case wgpu::TextureFormat::RG11B10Ufloat:
             return device.HasFeature(wgpu::FeatureName::RG11B10UfloatRenderable);
 
@@ -223,11 +283,6 @@ bool TextureFormatSupportsMultisampling(const wgpu::Device& device,
                device.HasFeature(wgpu::FeatureName::TextureFormatsTier1);
     }
 
-    if (IsSnorm16TextureFormat(textureFormat)) {
-        return device.HasFeature(wgpu::FeatureName::Snorm16TextureFormats) ||
-               device.HasFeature(wgpu::FeatureName::TextureFormatsTier1);
-    }
-
     switch (textureFormat) {
         case wgpu::TextureFormat::R32Uint:
         case wgpu::TextureFormat::R32Sint:
@@ -250,6 +305,9 @@ bool TextureFormatSupportsMultisampling(const wgpu::Device& device,
         case wgpu::TextureFormat::R8Snorm:
         case wgpu::TextureFormat::RG8Snorm:
         case wgpu::TextureFormat::RGBA8Snorm:
+        case wgpu::TextureFormat::R16Snorm:
+        case wgpu::TextureFormat::RG16Snorm:
+        case wgpu::TextureFormat::RGBA16Snorm:
             return device.HasFeature(wgpu::FeatureName::TextureFormatsTier1);
         default:
             return true;
@@ -275,11 +333,6 @@ bool TextureFormatSupportsResolveTarget(const wgpu::Device& device,
         case wgpu::TextureFormat::RG16Unorm:
         case wgpu::TextureFormat::RGBA16Unorm:
             return device.HasFeature(wgpu::FeatureName::Unorm16TextureFormats);
-
-        case wgpu::TextureFormat::R16Snorm:
-        case wgpu::TextureFormat::RG16Snorm:
-        case wgpu::TextureFormat::RGBA16Snorm:
-            return device.HasFeature(wgpu::FeatureName::Snorm16TextureFormats);
 
         case wgpu::TextureFormat::R8Snorm:
         case wgpu::TextureFormat::RG8Snorm:

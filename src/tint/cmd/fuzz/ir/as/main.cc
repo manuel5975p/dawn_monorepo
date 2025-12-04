@@ -36,6 +36,7 @@
 #include "src/tint/lang/core/ir/binary/encode.h"
 #include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/ir/module.h"
+#include "src/tint/lang/core/ir/transform/substitute_overrides.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/wgsl/ast/module.h"
 #include "src/tint/lang/wgsl/reader/reader.h"
@@ -129,7 +130,7 @@ Options:
     auto args = result.Get();
     if (args.Length() != 2) {
         std::cerr << "Expected exactly 2 args, found: "
-                  << tint::Join(Transform(args, tint::Quote), ", ") << "\n";
+                  << tint::Join(Transform(args, tint::cmd::Quote), ", ") << "\n";
         return false;
     }
 
@@ -263,6 +264,11 @@ bool ProcessFile(const Options& options) {
     opts.printer = options.printer.get();
 
     auto info = tint::cmd::LoadProgramInfo(opts);
+    if (!info.program.IsValid()) {
+        // If the program just fails to load, ignore it as it's probably just a test file added in
+        // anticipation of a new feature.
+        return true;
+    }
 
     if (options.dump_ir) {
         DumpIR(info.program, options);

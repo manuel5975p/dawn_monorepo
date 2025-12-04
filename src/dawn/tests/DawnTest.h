@@ -35,6 +35,7 @@
 #include <atomic>
 #include <memory>
 #include <queue>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -106,6 +107,10 @@
 #define EXPECT_BUFFER_FLOAT_RANGE_EQ(expected, buffer, offset, count) \
     EXPECT_BUFFER(buffer, offset, sizeof(float) * (count),            \
                   new ::dawn::detail::ExpectEq<float>(expected, count))
+
+#define EXPECT_BUFFER_FLOAT_RANGE_TOLERANCE_EQ(expected, buffer, offset, count, tolerance) \
+    EXPECT_BUFFER(buffer, offset, sizeof(float) * (count),                                 \
+                  new ::dawn::detail::ExpectEq<float>(expected, count, tolerance))
 
 // Test a pixel of the mip level 0 of a 2D texture.
 #define EXPECT_PIXEL_RGBA8_EQ(expected, texture, x, y) \
@@ -205,12 +210,16 @@ class DawnTestEnvironment : public testing::Environment {
     uint32_t GetVendorIdFilter() const;
     bool HasBackendTypeFilter() const;
     wgpu::BackendType GetBackendTypeFilter() const;
+    bool HasWebGPUInnerBackendTypeFilter() const;
+    wgpu::BackendType GetWebGPUInnerBackendTypeFilter() const;
+    bool GetWebGPUInnerForceFallbackAdapter() const;
     const char* GetWireTraceDir() const;
 
     const std::vector<std::string>& GetEnabledToggles() const;
     const std::vector<std::string>& GetDisabledToggles() const;
 
     bool RunSuppressedTests() const;
+    bool IsTestLauncherBotMode() const;
 
   protected:
     std::unique_ptr<native::Instance> CreateInstance(platform::Platform* platform = nullptr);
@@ -235,8 +244,12 @@ class DawnTestEnvironment : public testing::Environment {
     uint32_t mVendorIdFilter = 0;
     bool mHasBackendTypeFilter = false;
     wgpu::BackendType mBackendTypeFilter;
+    bool mHasWebGPUInnerBackendTypeFilter = false;
+    wgpu::BackendType mWebGPUInnerBackendTypeFilter = wgpu::BackendType::Undefined;
+    bool mWebGPUInnerForceFallbackAdapter = false;
     std::string mWireTraceDir;
     bool mRunSuppressedTests = false;
+    bool mIsTestLauncherBotMode = false;
 
     ToggleParser mToggleParser;
 
@@ -261,6 +274,8 @@ class DawnTestBase {
     bool IsMetal() const;
     bool IsNull() const;
     bool IsWebGPUOnWebGPU() const;
+    bool IsWebGPUOn(wgpu::BackendType backend) const;
+    bool IsWebGPUOnSwiftshader() const;
     bool IsOpenGL() const;
     bool IsOpenGLES() const;
     bool IsVulkan() const;
@@ -275,7 +290,6 @@ class DawnTestBase {
     bool IsSwiftshader() const;
     bool IsANGLE() const;
     bool IsANGLESwiftShader() const;
-    bool IsANGLED3D11() const;
     bool IsWARP() const;
     bool IsMesaSoftware() const;
 
@@ -298,6 +312,7 @@ class DawnTestBase {
     bool IsCompatibilityMode() const;
     bool IsCPU() const;
     bool RunSuppressedTests() const;
+    bool IsTestLauncherBotMode() const;
 
     bool IsDXC() const;
 
@@ -366,6 +381,8 @@ class DawnTestBase {
         mDeviceErrorCallback;
     testing::StrictMock<testing::MockCppCallback<wgpu::DeviceLostCallback<void>*>>
         mDeviceLostCallback;
+    uint32_t mDeviceLostCallbackFailedCreationAllowedCount = 0;
+    uint32_t mDeviceLostCallbackFailedCreationCalledCount = 0;
 
     // Helper methods to implement the EXPECT_ macros
     std::ostringstream& AddBufferExpectation(const char* file,
@@ -663,9 +680,13 @@ class DawnTestBase {
     void WaitForAllOperations();
 
     bool SupportsFeatures(const std::vector<wgpu::FeatureName>& features);
+    std::set<wgpu::FeatureName> GetSupportedFeatures();
 
     // Exposed device creation helper for tests to use when needing more than 1 device.
     wgpu::Device CreateDevice(std::string isolationKey = "");
+
+    // Get the WireHelper to assist in creating additional Instances when relevant in tests.
+    utils::WireHelper* GetWireHelper() const;
 
     // Called in SetUp() to get the features required to be enabled in the tests. The tests must
     // check if the required features are supported by the adapter in this function and guarantee
@@ -770,6 +791,8 @@ class DawnTestBase {
 
     // Assuming the data is mapped, checks all expectations
     void ResolveExpectations();
+
+    void HandleDeviceCreationFailure();
 
     bool mRequireUseTieredLimits = false;
     native::Adapter mBackendAdapter;

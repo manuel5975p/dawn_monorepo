@@ -161,6 +161,15 @@ luci.bucket(
             acl.BUILDBUCKET_TRIGGERER,
         ),
     ],
+    bindings = [
+        # Allow CI builders to create invocations in their own builds.
+        luci.binding(
+            roles = "role/resultdb.invocationCreator",
+            users = [
+                "dawn-ci-builder@chops-service-accounts.iam.gserviceaccount.com",
+            ],
+        ),
+    ],
 )
 
 luci.bucket(
@@ -171,6 +180,38 @@ luci.bucket(
             groups = [
                 "project-dawn-tryjob-access",
                 "service-account-cq",
+            ],
+        ),
+    ],
+    bindings = [
+        # Allow try builders to create invocations in their own builds.
+        luci.binding(
+            roles = "role/resultdb.invocationCreator",
+            groups = [
+                "project-dawn-tryjob-access",
+            ],
+            users = [
+                "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+            ],
+        ),
+    ],
+)
+
+# Allows builders to write baselines and query ResultDB for new tests.
+luci.realm(
+    name = "@project",
+    bindings = [
+        luci.binding(
+            roles = "role/resultdb.baselineWriter",
+            users = [
+                "dawn-ci-builder@chops-service-accounts.iam.gserviceaccount.com",
+                "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+            ],
+        ),
+        luci.binding(
+            roles = "role/resultdb.baselineReader",
+            users = [
+                "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
             ],
         ),
     ],
@@ -295,6 +336,7 @@ exec("//recipes.star")
 exec("//gn_args.star")
 
 # Handle any other builders defined in other files.
+exec("//chromium_try.star")
 exec("//legacy_builders.star")
 exec("//gn_standalone_ci.star")
 exec("//gn_standalone_try.star")

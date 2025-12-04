@@ -39,6 +39,12 @@ TEST_F(SpirvWriterTest, Function_Empty) {
         b.Return(func);
     });
 
+    auto* eb = b.ComputeFunction("main");
+    b.Append(eb->Block(), [&] {
+        b.Call(func);
+        b.Return(eb);
+    });
+
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST(R"(
         %foo = OpFunction %void None %3
@@ -65,6 +71,14 @@ TEST_F(SpirvWriterTest, Function_DeduplicateType) {
     auto* func_c = b.Function("func_c", ty.void_());
     b.Append(func_c->Block(), [&] {  //
         b.Return(func_c);
+    });
+
+    auto* eb = b.ComputeFunction("main");
+    b.Append(eb->Block(), [&] {
+        b.Call(func_a);
+        b.Call(func_b);
+        b.Call(func_c);
+        b.Return(eb);
     });
 
     ASSERT_TRUE(Generate()) << Error() << output_;
@@ -211,6 +225,12 @@ TEST_F(SpirvWriterTest, Function_ReturnValue) {
         b.Return(func, 42_i);
     });
 
+    auto* eb = b.ComputeFunction("main");
+    b.Append(eb->Block(), [&] {
+        b.Let("x", b.Call(func));
+        b.Return(eb);
+    });
+
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST(R"(
           %3 = OpTypeFunction %int
@@ -234,8 +254,14 @@ TEST_F(SpirvWriterTest, Function_Parameters) {
     func->SetParams({x, y});
 
     b.Append(func->Block(), [&] {
-        auto* result = b.Add(i32, x, y);
+        auto* result = b.Add(x, y);
         b.Return(func, result);
+    });
+
+    auto* eb = b.ComputeFunction("main");
+    b.Append(eb->Block(), [&] {
+        b.Let("x", b.Call(func, b.Zero(ty.i32()), b.Zero(ty.i32())));
+        b.Return(eb);
     });
 
     ASSERT_TRUE(Generate()) << Error() << output_;
@@ -244,6 +270,7 @@ TEST_F(SpirvWriterTest, Function_Parameters) {
        %uint = OpTypeInt 32 0
        %void = OpTypeVoid
          %14 = OpTypeFunction %void
+      %int_0 = OpConstant %int 0
 
                ; Function foo
         %foo = OpFunction %int None %5
@@ -257,9 +284,10 @@ TEST_F(SpirvWriterTest, Function_Parameters) {
                OpReturnValue %11
                OpFunctionEnd
 
-               ; Function unused_entry_point
-%unused_entry_point = OpFunction %void None %14
+               ; Function main
+       %main = OpFunction %void None %14
          %15 = OpLabel
+        %x_0 = OpFunctionCall %int %foo %int_0 %int_0
                OpReturn
                OpFunctionEnd
 )");
@@ -273,11 +301,11 @@ TEST_F(SpirvWriterTest, Function_Call) {
     foo->SetParams({x, y});
 
     b.Append(foo->Block(), [&] {
-        auto* result = b.Add(i32, x, y);
+        auto* result = b.Add(x, y);
         b.Return(foo, result);
     });
 
-    auto* bar = b.Function("bar", ty.void_());
+    auto* bar = b.ComputeFunction("main");
     b.Append(bar->Block(), [&] {
         auto* result = b.Call(i32, foo, 2_i, 3_i);
         b.Return(bar);
@@ -294,7 +322,7 @@ TEST_F(SpirvWriterTest, Function_Call_Void) {
         b.Return(foo);
     });
 
-    auto* bar = b.Function("bar", ty.void_());
+    auto* bar = b.ComputeFunction("main");
     b.Append(bar->Block(), [&] {
         auto* result = b.Call(ty.void_(), foo);
         b.Return(bar);
@@ -349,7 +377,7 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Input_WithCapability) {
     });
 
     Options options;
-    options.use_storage_input_output_16 = true;
+    options.extensions.use_storage_input_output_16 = true;
     ASSERT_TRUE(Generate(options)) << Error() << output_;
     EXPECT_INST("OpCapability StorageInputOutput16");
     EXPECT_INST(R"(OpEntryPoint Fragment %main "main" %main_loc1_Input %main_loc2_Output)");
@@ -377,7 +405,7 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Input_WithoutCapability) {
     });
 
     Options options;
-    options.use_storage_input_output_16 = false;
+    options.extensions.use_storage_input_output_16 = false;
     ASSERT_TRUE(Generate(options)) << Error() << output_;
     EXPECT_INST(R"(OpEntryPoint Fragment %main "main" %main_loc1_Input %main_loc2_Output)");
     EXPECT_INST("%main_loc1_Input = OpVariable %_ptr_Input_v4float Input");
@@ -405,7 +433,7 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Output_WithCapability) {
     });
 
     Options options;
-    options.use_storage_input_output_16 = true;
+    options.extensions.use_storage_input_output_16 = true;
     ASSERT_TRUE(Generate(options)) << Error() << output_;
     EXPECT_INST("OpCapability StorageInputOutput16");
     EXPECT_INST(R"(OpEntryPoint Fragment %main "main" %main_loc1_Input %main_loc2_Output)");
@@ -433,7 +461,7 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Output_WithoutCapability) {
     });
 
     Options options;
-    options.use_storage_input_output_16 = false;
+    options.extensions.use_storage_input_output_16 = false;
     ASSERT_TRUE(Generate(options)) << Error() << output_;
     EXPECT_INST(R"(OpEntryPoint Fragment %main "main" %main_loc1_Input %main_loc2_Output)");
     EXPECT_INST("%main_loc1_Input = OpVariable %_ptr_Input_v4float Input");
@@ -511,8 +539,8 @@ TEST_F(SpirvWriterTest, Function_PassMatrixByPointer) {
     auto* value_b = b.FunctionParam("value_b", mat_ty);
     target->SetParams({value_a, scalar, value_b});
     b.Append(target->Block(), [&] {
-        auto* scale = b.Multiply(mat_ty, value_a, scalar);
-        auto* sum = b.Add(mat_ty, scale, value_b);
+        auto* scale = b.Multiply(value_a, scalar);
+        auto* sum = b.Add(scale, value_b);
         b.Return(target, sum);
     });
 
@@ -525,8 +553,14 @@ TEST_F(SpirvWriterTest, Function_PassMatrixByPointer) {
         b.Return(caller, result);
     });
 
+    auto* eb = b.ComputeFunction("main");
+    b.Append(eb->Block(), [&] {
+        b.Let("x", b.Call(caller));
+        b.Return(eb);
+    });
+
     Options options;
-    options.pass_matrix_by_pointer = true;
+    options.workarounds.pass_matrix_by_pointer = true;
     ASSERT_TRUE(Generate(options)) << Error() << output_;
 
     EXPECT_INST(R"(

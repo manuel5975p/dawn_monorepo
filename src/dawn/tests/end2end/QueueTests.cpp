@@ -205,9 +205,6 @@ TEST_P(QueueWriteBufferTests, MaxBufferSizeWriteBuffer) {
 // Test a special code path: writing when dynamic uploader already contatins some unaligned
 // data, it might be necessary to use a ring buffer with properly aligned offset.
 TEST_P(QueueWriteBufferTests, UnalignedDynamicUploader) {
-    // TODO(crbug.com/413053623): implement webgpu::Texture
-    DAWN_SUPPRESS_TEST_IF(IsWebGPUOnWebGPU());
-
     utils::UnalignDynamicUploader(device);
 
     wgpu::BufferDescriptor descriptor;
@@ -638,8 +635,8 @@ TEST_P(QueueWriteTextureTests, VaryingBytesPerRowCube) {
     DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
     // TODO(crbug.com/dawn/2295): diagnose this failure on Pixel 6 OpenGLES
     DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsARM());
-    // TODO(crbug.com/dawn/2131): diagnose this failure on Win Angle D3D11
-    DAWN_SUPPRESS_TEST_IF(IsANGLED3D11());
+    // TODO(crbug.com/444741058): Fails on Intel-based brya devices running Android Desktop.
+    DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsIntel() && IsAndroid());
     // TODO(crbug.com/dawn/42241333): diagnose stencil8 failure on Angle Swiftshader
     DAWN_SUPPRESS_TEST_IF(format == wgpu::TextureFormat::Stencil8 && IsANGLESwiftShader());
 
@@ -800,7 +797,8 @@ DAWN_INSTANTIATE_TEST_P(QueueWriteTextureTests,
                          MetalBackend({"use_blit_for_buffer_to_depth_texture_copy",
                                        "use_blit_for_buffer_to_stencil_texture_copy"}),
                          OpenGLBackend(), OpenGLESBackend(),
-                         OpenGLESBackend({"use_blit_for_stencil_texture_write"}), VulkanBackend()},
+                         OpenGLESBackend({"use_blit_for_stencil_texture_write"}), VulkanBackend(),
+                         WebGPUBackend()},
                         {
                             wgpu::TextureFormat::R8Unorm,
                             wgpu::TextureFormat::RG8Unorm,
@@ -998,7 +996,8 @@ DAWN_INSTANTIATE_TEST(QueueWriteTextureSimpleTests,
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
-                      VulkanBackend());
+                      VulkanBackend(),
+                      WebGPUBackend());
 
 }  // anonymous namespace
 }  // namespace dawn

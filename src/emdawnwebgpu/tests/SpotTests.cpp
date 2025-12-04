@@ -37,8 +37,11 @@
 #include <string>
 #include <utility>
 
+#include "dawn/utils/WGPUHelpers.h"
+
 namespace {
 
+namespace utils = dawn::utils;
 using testing::_;
 using testing::HasSubstr;
 
@@ -49,15 +52,15 @@ class SpotTests : public testing::Test {
             std::array{wgpu::InstanceFeatureName::TimedWaitAny};
         wgpu::InstanceDescriptor instanceDesc{.requiredFeatureCount = kInstanceFeatures.size(),
                                               .requiredFeatures = kInstanceFeatures.data()};
-        instance = wgpu::CreateInstance(&instanceDesc);
+        mInstance = wgpu::CreateInstance(&instanceDesc);
 
         wgpu::Adapter adapter;
         EXPECT_EQ(wgpu::WaitStatus::Success,
-                  instance.WaitAny(instance.RequestAdapter(
-                                       nullptr, wgpu::CallbackMode::WaitAnyOnly,
-                                       [&adapter](wgpu::RequestAdapterStatus, wgpu::Adapter a,
-                                                  wgpu::StringView) { adapter = std::move(a); }),
-                                   UINT64_MAX));
+                  mInstance.WaitAny(mInstance.RequestAdapter(
+                                        nullptr, wgpu::CallbackMode::WaitAnyOnly,
+                                        [&adapter](wgpu::RequestAdapterStatus, wgpu::Adapter a,
+                                                   wgpu::StringView) { adapter = std::move(a); }),
+                                    UINT64_MAX));
         EXPECT_TRUE(adapter);
         wgpu::SupportedFeatures features;
         adapter.GetFeatures(&features);
@@ -68,26 +71,26 @@ class SpotTests : public testing::Test {
         deviceDesc.requiredFeatures = features.features;
         wgpu::Device device;
         EXPECT_EQ(wgpu::WaitStatus::Success,
-                  instance.WaitAny(
+                  mInstance.WaitAny(
                       adapter.RequestDevice(&deviceDesc, wgpu::CallbackMode::WaitAnyOnly,
                                             [&device](wgpu::RequestDeviceStatus, wgpu::Device d,
                                                       wgpu::StringView) { device = std::move(d); }),
                       UINT64_MAX));
         EXPECT_TRUE(device);
-        this->adapter = adapter;
-        this->device = device;
+        this->mAdapter = adapter;
+        this->mDevice = device;
     }
 
   protected:
-    wgpu::Instance instance;
-    wgpu::Adapter adapter;
-    wgpu::Device device;
+    wgpu::Instance mInstance;
+    wgpu::Adapter mAdapter;
+    wgpu::Device mDevice;
 };
 
 TEST_F(SpotTests, QuerySet) {
     // Spot test wgpuQuerySetGetType which uses indexOf on an int-to-string table.
     wgpu::QuerySetDescriptor querySetDesc{.type = wgpu::QueryType::Timestamp, .count = 1};
-    wgpu::QuerySet querySet = device.CreateQuerySet(&querySetDesc);
+    wgpu::QuerySet querySet = mDevice.CreateQuerySet(&querySetDesc);
     EXPECT_TRUE(querySet);
     EXPECT_EQ(querySet.GetType(), querySetDesc.type);
 }
@@ -96,7 +99,7 @@ TEST_F(SpotTests, BufferGetMapState) {
     // Spot test one of the string-to-int tables (Int_BufferMapState) to make sure
     // that Closure's minification didn't minify its keys.
     wgpu::BufferDescriptor bufferDesc{.usage = wgpu::BufferUsage::CopyDst, .size = 4};
-    wgpu::Buffer buffer = device.CreateBuffer(&bufferDesc);
+    wgpu::Buffer buffer = mDevice.CreateBuffer(&bufferDesc);
     EXPECT_EQ(buffer.GetMapState(), wgpu::BufferMapState::Unmapped);
 }
 
@@ -107,7 +110,7 @@ TEST_F(SpotTests, GetCompilationInfo) {
 
         wgpu::ShaderModuleDescriptor descriptor{};
         descriptor.nextInChain = &wgslDesc;
-        auto sm = device.CreateShaderModule(&descriptor);
+        auto sm = mDevice.CreateShaderModule(&descriptor);
         auto future = sm.GetCompilationInfo(
             wgpu::CallbackMode::WaitAnyOnly,
             [](wgpu::CompilationInfoRequestStatus, const wgpu::CompilationInfo* compilationInfo) {
@@ -117,7 +120,7 @@ TEST_F(SpotTests, GetCompilationInfo) {
                 // After this, any compilation info will be freed. (There was a bug here which
                 // this test catches, but only in ASAN builds.)
             });
-        EXPECT_EQ(wgpu::WaitStatus::Success, instance.WaitAny(future, UINT64_MAX));
+        EXPECT_EQ(wgpu::WaitStatus::Success, mInstance.WaitAny(future, UINT64_MAX));
     }
 }
 
@@ -125,7 +128,7 @@ TEST_F(SpotTests, ExternalRefCount) {
     wgpu::BufferDescriptor bufferDesc{
         .usage = wgpu::BufferUsage::MapRead, .size = 16, .mappedAtCreation = true};
 
-    wgpu::Buffer buffer = device.CreateBuffer(&bufferDesc);
+    wgpu::Buffer buffer = mDevice.CreateBuffer(&bufferDesc);
     ASSERT_TRUE(buffer);
     EXPECT_EQ(buffer.GetMapState(), wgpu::BufferMapState::Mapped);
     {
@@ -136,6 +139,22 @@ TEST_F(SpotTests, ExternalRefCount) {
     // Make sure the device wasn't implicitly destroyed (because we thought
     // the last external ref was dropped).
     EXPECT_EQ(buffer.GetMapState(), wgpu::BufferMapState::Mapped);
+}
+
+TEST_F(SpotTests, InvalidComponentSwizzle) {
+    wgpu::TextureDescriptor textureDesc = {};
+    textureDesc.size = {1, 1, 0};
+    textureDesc.usage = wgpu::TextureUsage::TextureBinding;
+    textureDesc.format = wgpu::TextureFormat::RGBA8Unorm;
+    wgpu::Texture texture = mDevice.CreateTexture(&textureDesc);
+
+    wgpu::TextureViewDescriptor viewDesc = {};
+    wgpu::TextureComponentSwizzleDescriptor swizzleDesc = {};
+    // An invalid ComponentSwizzle value doesn't crash.
+    swizzleDesc.swizzle.r = static_cast<wgpu::ComponentSwizzle>(-1);
+    viewDesc.nextInChain = &swizzleDesc;
+    wgpu::TextureView view = texture.CreateView(&viewDesc);
+    ASSERT_TRUE(view);
 }
 
 template <typename T>
@@ -178,18 +197,18 @@ void TestGetFeatures(T o) {  // o is either wgpu::Adapter or wgpu::Device.
 
 // Test GetFeatures and HasFeature enum lookups.
 TEST_F(SpotTests, GetFeatures) {
-    TestGetFeatures(adapter);
-    TestGetFeatures(device);
+    TestGetFeatures(mAdapter);
+    TestGetFeatures(mDevice);
 }
 
 TEST_F(SpotTests, GetWGSLLanguageFeatures) {
     wgpu::SupportedWGSLLanguageFeatures f;
-    instance.GetWGSLLanguageFeatures(&f);
+    mInstance.GetWGSLLanguageFeatures(&f);
     auto features = std::span(f.features, f.featureCount);
     for (auto feature : features) {
         // GetWGSLLanguageFeatures should filter out any unknown features.
         EXPECT_NE(feature, wgpu::WGSLLanguageFeatureName{0});
-        EXPECT_TRUE(instance.HasWGSLLanguageFeature(feature));
+        EXPECT_TRUE(mInstance.HasWGSLLanguageFeature(feature));
     }
 
     // Test a specific feature to make sure minification worked.
@@ -200,8 +219,91 @@ TEST_F(SpotTests, GetWGSLLanguageFeatures) {
         })) {
         auto feature = wgpu::WGSLLanguageFeatureName::UnrestrictedPointerParameters;
         EXPECT_NE(std::find(features.begin(), features.end(), feature), features.end());
-        EXPECT_TRUE(instance.HasWGSLLanguageFeature(feature));
+        EXPECT_TRUE(mInstance.HasWGSLLanguageFeature(feature));
     }
+}
+
+TEST_F(SpotTests, ImportExternalTexture) {
+    auto cExternalTexture = static_cast<WGPUExternalTexture>(EM_ASM_PTR(
+        {
+            const cDevice = $0;
+            const device = WebGPU.getJsObject(cDevice);
+
+            const cvs = document.createElement('canvas');
+            cvs.width = 1;
+            cvs.height = 1;
+            const ctx = cvs.getContext('2d');
+            ctx.fillStyle = '#0f0';
+            ctx.fillRect(0, 0, 1, 1);
+            window.myVideoFrame = new VideoFrame(cvs, {timestamp : 0});
+
+            const jsExternalTexture = device.importExternalTexture({source : window.myVideoFrame});
+            const cExternalTexture = WebGPU.importJsExternalTexture(jsExternalTexture);
+            return cExternalTexture;
+        },
+        mDevice.Get()));
+    auto externalTexture = wgpu::ExternalTexture::Acquire(cExternalTexture);
+
+    wgpu::BufferDescriptor bufferDesc{
+        .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc,
+        .size = sizeof(uint32_t),
+    };
+    auto buffer = mDevice.CreateBuffer(&bufferDesc);
+
+    wgpu::BufferDescriptor readbackDesc{
+        .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
+        .size = sizeof(uint32_t),
+    };
+    auto readback = mDevice.CreateBuffer(&readbackDesc);
+
+    wgpu::BindGroupLayout bgl = utils::MakeBindGroupLayout(
+        mDevice, {{0, wgpu::ShaderStage::Compute, &utils::kExternalTextureBindingLayout},
+                  {1, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage}});
+    wgpu::BindGroup bg = utils::MakeBindGroup(mDevice, bgl, {{0, externalTexture}, {1, buffer}});
+
+    auto module = utils::CreateShaderModule(mDevice, R"(
+        @group(0) @binding(0) var t: texture_external;
+        @group(0) @binding(1) var<storage, read_write> b: u32;
+
+        @compute @workgroup_size(1) fn main() {
+            b = pack4x8unorm(textureLoad(t, vec2u(0, 0)));
+        })");
+
+    wgpu::ComputePipelineDescriptor pipelineDesc{
+        .layout = utils::MakeBasicPipelineLayout(mDevice, &bgl),
+        .compute = {.module = module},
+    };
+    auto pipeline = mDevice.CreateComputePipeline(&pipelineDesc);
+
+    auto encoder = mDevice.CreateCommandEncoder();
+    {
+        auto pass = encoder.BeginComputePass();
+        pass.SetBindGroup(0, bg);
+        pass.SetPipeline(pipeline);
+        pass.DispatchWorkgroups(1);
+        pass.End();
+    }
+    encoder.CopyBufferToBuffer(buffer, 0, readback, 0, sizeof(uint32_t));
+    auto commandBuffer = encoder.Finish();
+    mDevice.GetQueue().Submit(1, &commandBuffer);
+
+    // Note we can't (yet) use EXPECT_BUFFER_U32_EQ here.
+    uint32_t result = 0;
+    mInstance.WaitAny(
+        readback.MapAsync(
+            wgpu::MapMode::Read, 0, wgpu::kWholeMapSize, wgpu::CallbackMode::WaitAnyOnly,
+            [&](wgpu::MapAsyncStatus, wgpu::StringView) {
+                result = static_cast<const uint32_t*>(readback.GetConstMappedRange())[0];
+                readback.Unmap();
+            }),
+        UINT64_MAX);
+    EXPECT_EQ(result, uint32_t(0xff00ff00));  // ABGR
+
+    EM_ASM({
+        // VideoFrames should always be closed manually.
+        window.myVideoFrame.close();
+        delete window.myVideoFrame;
+    });
 }
 
 }  // namespace

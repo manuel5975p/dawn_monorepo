@@ -179,15 +179,13 @@ class ValidationTest : public testing::Test {
                                    dawn::utils::ComboLimits& required);
     virtual std::vector<const char*> GetEnabledToggles();
     virtual std::vector<const char*> GetDisabledToggles();
+    virtual std::vector<const char*> GetWGSLBlocklistedFeatures();
 
     // Sets up the internal members by initializing the instances, adapter, and device.
     void SetUp(const wgpu::InstanceDescriptor* nativeDesc,
                const wgpu::InstanceDescriptor* wireDesc = nullptr);
 
     uint64_t GetInstanceDeprecationCountForTesting();
-    // Helps compute expected deprecated warning count for creating device with given descriptor.
-    uint32_t GetDeviceCreationDeprecationWarningExpectation(
-        const wgpu::DeviceDescriptor& descriptor);
     // Request device and handle deprecation warning emitted during creating device.
     wgpu::Device RequestDeviceSync(const wgpu::DeviceDescriptor& deviceDesc);
 
@@ -213,5 +211,8 @@ class ValidationTest : public testing::Test {
     testing::Matcher<std::string> mErrorMatcher;
     bool mExpectDestruction = false;
 };
+
+template <typename T, typename Base = ValidationTest>
+class ValidationTestWithParam : public Base, public testing::WithParamInterface<T> {};
 
 #endif  // SRC_DAWN_TESTS_UNITTESTS_VALIDATION_VALIDATIONTEST_H_

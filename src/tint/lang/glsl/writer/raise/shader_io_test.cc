@@ -37,7 +37,12 @@ namespace {
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
 
-using GlslWriter_ShaderIOTest = core::ir::transform::TransformTest;
+class GlslWriter_ShaderIOTest : public core::ir::transform::TransformTest {
+  public:
+    GlslWriter_ShaderIOTest() {
+        capabilities.Add(core::ir::Capability::kLoosenValidationForShaderIO);
+    }
+};
 
 TEST_F(GlslWriter_ShaderIOTest, NoInputsOrOutputs) {
     auto* ep = b.ComputeFunction("foo");
@@ -84,7 +89,7 @@ TEST_F(GlslWriter_ShaderIOTest, Parameters_NonStruct) {
     b.Append(ep->Block(), [&] {
         auto* ifelse = b.If(front_facing);
         b.Append(ifelse->True(), [&] {
-            b.Multiply(ty.vec4<f32>(), position, b.Add(ty.f32(), color1, color2));
+            b.Multiply(position, b.Add(color1, color2));
             b.ExitIf(ifelse);
         });
         b.Return(ep);
@@ -194,7 +199,7 @@ TEST_F(GlslWriter_ShaderIOTest, Parameters_Struct) {
             auto* position = b.Access(ty.vec4<f32>(), str_param, 1_i);
             auto* color1 = b.Access(ty.f32(), str_param, 2_i);
             auto* color2 = b.Access(ty.f32(), str_param, 3_i);
-            b.Multiply(ty.vec4<f32>(), position, b.Add(ty.f32(), color1, color2));
+            b.Multiply(position, b.Add(color1, color2));
             b.ExitIf(ifelse);
         });
         b.Return(ep);
@@ -315,7 +320,7 @@ TEST_F(GlslWriter_ShaderIOTest, Parameters_Mixed) {
         b.Append(ifelse->True(), [&] {
             auto* position = b.Access(ty.vec4<f32>(), str_param, 0_i);
             auto* color1 = b.Access(ty.f32(), str_param, 1_i);
-            b.Multiply(ty.vec4<f32>(), position, b.Add(ty.f32(), color1, color2));
+            b.Multiply(position, b.Add(color1, color2));
             b.ExitIf(ifelse);
         });
         b.Return(ep);
@@ -889,7 +894,7 @@ TEST_F(GlslWriter_ShaderIOTest, InterpolationOnVertexInput) {
 
     auto* str_param = b.FunctionParam("input", str_ty);
     auto* ival = b.FunctionParam("ival", ty.i32());
-    ival->SetLocation(1);
+    ival->SetLocation(2);
     ival->SetInterpolation(core::Interpolation{core::InterpolationType::kFlat});
     ep->SetParams({str_param, ival});
 
@@ -902,7 +907,7 @@ MyStruct = struct @align(4) {
   color:f32 @offset(0), @location(1), @interpolate(linear, sample)
 }
 
-%vert = @vertex func(%input:MyStruct, %ival:i32 [@location(1), @interpolate(flat)]):vec4<f32> [@invariant, @position] {
+%vert = @vertex func(%input:MyStruct, %ival:i32 [@location(2), @interpolate(flat)]):vec4<f32> [@invariant, @position] {
   $B1: {
     %4:vec4<f32> = construct 0.5f
     ret %4
@@ -918,7 +923,7 @@ MyStruct = struct @align(4) {
 
 $B1: {  # root
   %vert_loc1_Input:ptr<__in, f32, read> = var undef @location(1)
-  %vert_loc1_Input_1:ptr<__in, i32, read> = var undef @location(1)  # %vert_loc1_Input_1: 'vert_loc1_Input'
+  %vert_loc2_Input:ptr<__in, i32, read> = var undef @location(2)
   %vert_position:ptr<__out, vec4<f32>, write> = var undef @invariant @builtin(position)
   %vert___point_size:ptr<__out, f32, write> = var undef @builtin(__point_size)
 }
@@ -933,7 +938,7 @@ $B1: {  # root
   $B3: {
     %10:f32 = load %vert_loc1_Input
     %11:MyStruct = construct %10
-    %12:i32 = load %vert_loc1_Input_1
+    %12:i32 = load %vert_loc2_Input
     %13:vec4<f32> = call %vert_inner, %11, %12
     %14:f32 = swizzle %13, x
     %15:f32 = swizzle %13, y

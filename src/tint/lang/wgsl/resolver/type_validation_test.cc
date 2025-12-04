@@ -357,24 +357,15 @@ TEST_F(ResolverTypeValidationTest, ArraySize_NestedStorageBufferLargeArray) {
 
 TEST_F(ResolverTypeValidationTest, ArraySize_TooBig_ImplicitStride) {
     // struct S {
-    //   @offset(800000) a : f32
+    //   @size(800000) a : f32
     // }
     // var<private> a : array<S, 65535>;
-    Structure("S", Vector{Member(Source{{12, 34}}, "a", ty.f32(), Vector{MemberOffset(800000_a)})});
+    Structure("S", Vector{Member(Source{{12, 34}}, "a", ty.f32(), Vector{MemberSize(800000_a)})});
     GlobalVar("a", ty.array(ty(Source{{12, 30}}, "S"), Expr(Source{{12, 34}}, 65535_a)),
               core::AddressSpace::kPrivate);
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "12:34 error: array byte size (0xc34f7cafc) must not exceed 0xffffffff bytes");
-}
-
-TEST_F(ResolverTypeValidationTest, ArraySize_TooBig_ExplicitStride) {
-    // var<private> a : @stride(8000000) array<f32, 65535>;
-    GlobalVar("a", ty.array(ty.f32(), Expr(Source{{12, 34}}, 65535_a), Vector{Stride(8000000)}),
-              core::AddressSpace::kPrivate);
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: array byte size (0x7a1185ee00) must not exceed 0xffffffff bytes");
+              "12:34 error: array byte size (0xc34f3cb00) must not exceed 0xffffffff bytes");
 }
 
 TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_PrivateVar) {
@@ -383,9 +374,10 @@ TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_PrivateVar) {
     Override("size", Expr(10_i));
     GlobalVar("a", ty.array(Source{{12, 34}}, ty.f32(), "size"), core::AddressSpace::kPrivate);
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: 'array' with an 'override' element count can only be used as the store "
-              "type of a 'var<workgroup>'");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: override-sized arrays can only be used in the <workgroup> address space
+note: while instantiating 'var' a)");
 }
 
 TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_InArray) {
@@ -424,25 +416,29 @@ TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_FunctionVar_Explicit)
              Decl(Var("a", ty.array(Source{{12, 34}}, ty.f32(), "size"))),
          });
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: 'array' with an 'override' element count can only be used as the store "
-              "type of a 'var<workgroup>'");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: override-sized arrays can only be used in the <workgroup> address space
+note: while instantiating 'var' a)");
 }
 
 TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_FunctionLet_Explicit) {
     // override size = 10i;
+    // var<workgroup> w : array<f32, size>;
     // fn f() {
-    //   var a : array<f32, size>;
+    //   let l : array<f32, size> = a;
     // }
     Override("size", Expr(10_i));
+    GlobalVar("w", ty.array(ty.f32(), "size"), core::AddressSpace::kWorkgroup);
     Func("f", tint::Empty, ty.void_(),
          Vector{
-             Decl(Var("a", ty.array(Source{{12, 34}}, ty.f32(), "size"))),
+             Decl(Let(Source{{12, 34}}, "a", ty.array(ty.f32(), "size"), Expr("w"))),
          });
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: 'array' with an 'override' element count can only be used as the store "
-              "type of a 'var<workgroup>'");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: override-sized arrays can only be used in the <workgroup> address space
+12:34 note: while instantiating 'let a')");
 }
 
 TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_FunctionVar_Implicit) {
@@ -455,12 +451,13 @@ TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_FunctionVar_Implicit)
     GlobalVar("w", ty.array(ty.f32(), "size"), core::AddressSpace::kWorkgroup);
     Func("f", tint::Empty, ty.void_(),
          Vector{
-             Decl(Var("a", Expr(Source{{12, 34}}, "w"))),
+             Decl(Var(Source{{12, 34}}, "a", Expr(Source{{12, 34}}, "w"))),
          });
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: 'array' with an 'override' element count can only be used as the store "
-              "type of a 'var<workgroup>'");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: override-sized arrays can only be used in the <workgroup> address space
+12:34 note: while instantiating 'var' a)");
 }
 
 TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_FunctionLet_Implicit) {
@@ -473,12 +470,13 @@ TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_FunctionLet_Implicit)
     GlobalVar("w", ty.array(ty.f32(), "size"), core::AddressSpace::kWorkgroup);
     Func("f", tint::Empty, ty.void_(),
          Vector{
-             Decl(Let("a", Expr(Source{{12, 34}}, "w"))),
+             Decl(Let(Source{{12, 34}}, "a", Expr("w"))),
          });
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: 'array' with an 'override' element count can only be used as the store "
-              "type of a 'var<workgroup>'");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: override-sized arrays can only be used in the <workgroup> address space
+12:34 note: while instantiating 'let a')");
 }
 
 TEST_F(ResolverTypeValidationTest, ArraySize_UnnamedOverride_Equivalence) {
@@ -506,7 +504,34 @@ TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_Param) {
     Func("f", Vector{Param("a", ty.array(Source{{12, 34}}, ty.f32(), "size"))}, ty.void_(),
          tint::Empty);
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: type of function parameter must be constructible");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: override-sized arrays can only be used in the <workgroup> address space
+note: while instantiating parameter a)");
+}
+
+TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_PointerParam_Workgroup) {
+    // override size = 10i;
+    // fn f(a : ptr<workgroup, array<f32, size>>) {
+    // }
+    Override("size", Expr(10_i));
+    Func("f", Vector{Param("a", ty.ptr(workgroup, ty.array(Source{{12, 34}}, ty.f32(), "size")))},
+         ty.void_(), tint::Empty);
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_PointerParam_Private) {
+    // override size = 10i;
+    // fn f(a : ptr<private, array<f32, size>>) {
+    // }
+    Override("size", Expr(10_i));
+    Func("f", Vector{Param("a", ty.ptr(private_, ty.array(Source{{12, 34}}, ty.f32(), "size")))},
+         ty.void_(), tint::Empty);
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: override-sized arrays can only be used in the <workgroup> address space
+note: while instantiating ptr<private, array<f32, size>, read_write>)");
 }
 
 TEST_F(ResolverTypeValidationTest, ArraySize_NamedOverride_ReturnType) {
@@ -883,15 +908,6 @@ TEST_F(ResolverTypeValidationTest, ArrayOfNonStorableType) {
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
               "12:34 error: texture_2d<f32> cannot be used as an element type of an array");
-}
-
-TEST_F(ResolverTypeValidationTest, ArrayOfNonStorableTypeWithStride) {
-    auto ptr_ty = ty.ptr<uniform, u32>(Source{{12, 34}});
-    GlobalVar("arr", ty.array(ptr_ty, 4_i, Vector{Stride(16)}), core::AddressSpace::kPrivate);
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: ptr<uniform, u32, read> cannot be used as an element type of an array");
 }
 
 namespace GetCanonicalTests {

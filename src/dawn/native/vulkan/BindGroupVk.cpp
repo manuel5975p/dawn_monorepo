@@ -28,7 +28,9 @@
 #include "dawn/native/vulkan/BindGroupVk.h"
 
 #include <utility>
+#include <vector>
 
+#include "dawn/common/Enumerator.h"
 #include "dawn/common/MatchVariant.h"
 #include "dawn/common/Range.h"
 #include "dawn/common/ityp_stack_vec.h"
@@ -49,8 +51,9 @@ ResultOrError<Ref<BindGroup>> BindGroup::Create(
     Device* device,
     const UnpackedPtr<BindGroupDescriptor>& descriptor) {
     Ref<BindGroup> bindGroup;
-    DAWN_TRY_ASSIGN(bindGroup, ToBackend(descriptor->layout->GetInternalBindGroupLayout())
-                                   ->AllocateBindGroup(device, descriptor));
+    DAWN_TRY_ASSIGN(
+        bindGroup,
+        ToBackend(descriptor->layout->GetInternalBindGroupLayout())->AllocateBindGroup(descriptor));
     DAWN_TRY(bindGroup->Initialize(descriptor));
     return bindGroup;
 }
@@ -63,11 +66,22 @@ BindGroup::BindGroup(Device* device,
 BindGroup::~BindGroup() = default;
 
 MaybeError BindGroup::InitializeImpl() {
+    DAWN_TRY(InitializeStaticBindings());
+
+    // Note that dynamic bindings are left uninitialized as initial bindings will have their
+    // descriptors written the first time that this BindGroup is used. The metadata buffer and
+    // shader validation will ensure that uninitialized descriptors are not used.
+
+    SetLabelImpl();
+    return {};
+}
+
+MaybeError BindGroup::InitializeStaticBindings() {
     const auto* layout = ToBackend(GetLayout());
 
     // Now do a write of a single descriptor set with all possible chained data allocated on the
     // stack if possible. We need to preallocate the vectors to avoid reallocation that would
-    // invalidate the pointers chainer in `writes`.
+    // invalidate the pointers chained in `writes`.
     // TODO(https://crbug.com/438554018): Use Vulkan's descriptor set update template so as to need
     // a single allocation, and one that could be reused at the layout level.
     const uint32_t bindingCount = static_cast<uint32_t>((GetLayout()->GetBindingCount()));
@@ -113,6 +127,13 @@ MaybeError BindGroup::InitializeImpl() {
             continue;
         }
 
+        // Round uniform buffer binding sizes up to a multiple of 16 bytes since Tint will polyfill
+        // them as array<vec4u, ...>.
+        auto bufferInfo = std::get<BufferBindingInfo>(layout->GetBindingInfo(i).bindingLayout);
+        if (bufferInfo.type == wgpu::BufferBindingType::Uniform) {
+            binding.size = Align(binding.size, 16u);
+        }
+
         auto [writeIndex, write] = AddWrite(i);
         writeBufferInfo[writeIndex].buffer = handle;
         writeBufferInfo[writeIndex].offset = binding.offset;
@@ -152,7 +173,7 @@ MaybeError BindGroup::InitializeImpl() {
 
         writeImageInfo[writeIndex].imageView = handle;
         writeImageInfo[writeIndex].imageLayout =
-            VulkanImageLayout(view->GetTexture()->GetFormat(), wgpu::TextureUsage::TextureBinding);
+            VulkanImageLayout(view->GetFormat(), wgpu::TextureUsage::TextureBinding);
         write->pImageInfo = &writeImageInfo[writeIndex];
     }
 
@@ -160,7 +181,7 @@ MaybeError BindGroup::InitializeImpl() {
         TextureView* view = ToBackend(GetBindingAsTextureView(i));
 
         VkImageView handle = VK_NULL_HANDLE;
-        if (view->GetTexture()->GetFormat().format == wgpu::TextureFormat::BGRA8Unorm) {
+        if (view->GetFormat().format == wgpu::TextureFormat::BGRA8Unorm) {
             handle = view->GetHandleForBGRA8UnormStorage();
         } else {
             handle = view->GetHandle();
@@ -193,9 +214,61 @@ MaybeError BindGroup::InitializeImpl() {
     // TODO(https://crbug.com/42242088): Batch these updates
     device->fn.UpdateDescriptorSets(device->GetVkDevice(), numWrites, writes.data(), 0, nullptr);
 
-    SetLabelImpl();
-
     return {};
+}
+
+void BindGroup::UpdateDynamicArrayBindings(
+    const std::vector<DynamicArrayState::ResourceUpdate>& updates) {
+    // This backend only supports DynamicArrayKind::SampledTexture at the moment.
+    DAWN_ASSERT(GetLayout()->HasDynamicArray());
+    DAWN_ASSERT(GetLayout()->GetDynamicArrayKind() == wgpu::DynamicBindingKind::SampledTexture);
+
+    std::vector<VkDescriptorImageInfo> imageWrites;
+    std::vector<uint32_t> arrayElements;
+
+    for (DynamicArrayState::ResourceUpdate update : updates) {
+        // Never remove bindings since we would need to defer this until after the GPU is done
+        // potentially reading the descriptor. The metadata buffer and shader validation will
+        // prevent reading this entry anyway.
+        if (update.textureView == nullptr) {
+            continue;
+        }
+
+        VkImageView handle = ToBackend(update.textureView)->GetHandle();
+        if (handle == nullptr) {
+            continue;
+        }
+
+        VkDescriptorImageInfo imageWrite = {
+            .sampler = VkSampler{},
+            .imageView = handle,
+            .imageLayout = VulkanImageLayout(update.textureView->GetFormat(),
+                                             wgpu::TextureUsage::TextureBinding),
+        };
+        imageWrites.push_back(imageWrite);
+        arrayElements.push_back(uint32_t(update.slot));
+    }
+
+    std::vector<VkWriteDescriptorSet> writes;
+    for (size_t i = 0; i < imageWrites.size(); i++) {
+        VkWriteDescriptorSet write{
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .pNext = nullptr,
+            .dstSet = GetHandle(),
+            .dstBinding = uint32_t(GetLayout()->GetDynamicArrayStart()),
+            .dstArrayElement = arrayElements[i],
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+            .pImageInfo = &imageWrites[i],
+            .pBufferInfo = nullptr,
+            .pTexelBufferView = nullptr,
+        };
+        writes.push_back(write);
+    }
+
+    Device* device = ToBackend(GetDevice());
+    device->fn.UpdateDescriptorSets(device->GetVkDevice(), writes.size(), writes.data(), 0,
+                                    nullptr);
 }
 
 void BindGroup::DestroyImpl() {

@@ -507,7 +507,11 @@ MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) 
     return MapInternal(mode & wgpu::MapMode::Write, offset, size, "D3D12 map async");
 }
 
-void Buffer::UnmapImpl() {
+MaybeError Buffer::FinalizeMapImpl(BufferState newState) {
+    return {};
+}
+
+void Buffer::UnmapImpl(BufferState oldState) {
     GetD3D12Resource()->Unmap(0, &mWrittenMappedRange);
     mMappedData = nullptr;
     mWrittenMappedRange = {0, 0};
@@ -637,11 +641,11 @@ MaybeError Buffer::SynchronizeBufferBeforeMapping() {
         SharedBufferMemoryBase::PendingFenceList fences;
         contents->AcquirePendingFences(&fences);
         for (const auto& fence : fences) {
-            HANDLE fenceEvent = 0;
             ComPtr<ID3D12Fence> d3dFence = ToBackend(fence.object)->GetD3DFence();
             if (d3dFence->GetCompletedValue() < fence.signaledValue) {
-                d3dFence->SetEventOnCompletion(fence.signaledValue, fenceEvent);
-                WaitForSingleObject(fenceEvent, INFINITE);
+                // If hEvent is NULL, SetEventOnCompletion will return when fence reaches
+                // fence.signaledValue.
+                d3dFence->SetEventOnCompletion(fence.signaledValue, NULL);
             }
         }
     }
@@ -660,12 +664,20 @@ MaybeError Buffer::SynchronizeBufferBeforeUseOnGPU() {
         contents->AcquirePendingFences(&fences);
 
         ID3D12CommandQueue* commandQueue = queue->GetCommandQueue();
+        const auto& queueFence = ToBackend(device->GetQueue())->GetSharedFence();
+        const ExecutionSerial queueSubmittedSerial = queue->GetLastSubmittedCommandSerial();
         for (const auto& fence : fences) {
-            DAWN_TRY(CheckHRESULT(commandQueue->Wait(ToBackend(fence.object)->GetD3DFence(),
-                                                     fence.signaledValue),
+            auto d3dFence = ToBackend(fence.object);
+            if (d3dFence.Get() == queueFence.Get()) {
+                // We don't need to wait on the fence that we signaled (self-wait).
+                DAWN_CHECK(ExecutionSerial(fence.signaledValue) <= queueSubmittedSerial);
+                continue;
+            }
+
+            DAWN_TRY(CheckHRESULT(commandQueue->Wait(d3dFence->GetD3DFence(), fence.signaledValue),
                                   "D3D12 fence wait"););
             // Keep D3D12 fence alive until commands complete.
-            device->ReferenceUntilUnused(ToBackend(fence.object)->GetD3DFence());
+            device->ReferenceUntilUnused(d3dFence->GetD3DFence());
         }
 
         mLastUsageSerial = queue->GetPendingCommandSerial();
@@ -702,7 +714,7 @@ MaybeError Buffer::ClearBuffer(CommandRecordingContext* commandContext,
         DAWN_TRY(MapInternal(true, static_cast<size_t>(offset), static_cast<size_t>(size),
                              "D3D12 map at clear buffer"));
         memset(mMappedData, clearValue, size);
-        UnmapImpl();
+        UnmapImpl(GetState());
     } else if (clearValue == 0u) {
         DAWN_TRY(device->ClearBufferToZero(commandContext, this, offset, size));
     } else {

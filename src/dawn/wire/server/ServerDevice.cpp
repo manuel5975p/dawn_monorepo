@@ -40,6 +40,7 @@ void Server::OnUncapturedError(ObjectHandle device, WGPUErrorType type, WGPUStri
     cmd.message = message;
 
     SerializeCommand(cmd);
+    Flush();
 }
 
 void Server::OnDeviceLost(DeviceLostUserdata* userdata,
@@ -72,9 +73,10 @@ WireResult Server::DoDevicePopErrorScope(Known<WGPUDevice> device,
     userdata->eventManager = eventManager;
     userdata->future = future;
 
-    mProcs.devicePopErrorScope(device->handle, {nullptr, WGPUCallbackMode_AllowProcessEvents,
-                                                ForwardToServer<&Server::OnDevicePopErrorScope>,
-                                                userdata.release(), nullptr});
+    mProcs.devicePopErrorScope(
+        device->handle,
+        MakeCallbackInfo<WGPUPopErrorScopeCallbackInfo, &Server::OnDevicePopErrorScope>(
+            userdata.release()));
     return WireResult::Success;
 }
 
@@ -99,8 +101,7 @@ WireResult Server::DoDeviceCreateComputePipelineAsync(
     ObjectHandle pipelineObjectHandle,
     const WGPUComputePipelineDescriptor* descriptor) {
     Reserved<WGPUComputePipeline> pipeline;
-    WIRE_TRY(Objects<WGPUComputePipeline>().Allocate(&pipeline, pipelineObjectHandle,
-                                                     AllocationState::Reserved));
+    WIRE_TRY(Allocate(&pipeline, pipelineObjectHandle, AllocationState::Reserved));
 
     auto userdata = MakeUserdata<CreatePipelineAsyncUserData>();
     userdata->device = device.AsHandle();
@@ -110,9 +111,8 @@ WireResult Server::DoDeviceCreateComputePipelineAsync(
 
     mProcs.deviceCreateComputePipelineAsync(
         device->handle, descriptor,
-        {nullptr, WGPUCallbackMode_AllowProcessEvents,
-         ForwardToServer<&Server::OnCreateComputePipelineAsyncCallback>, userdata.release(),
-         nullptr});
+        MakeCallbackInfo<WGPUCreateComputePipelineAsyncCallbackInfo,
+                         &Server::OnCreateComputePipelineAsyncCallback>(userdata.release()));
     return WireResult::Success;
 }
 
@@ -141,8 +141,7 @@ WireResult Server::DoDeviceCreateRenderPipelineAsync(
     ObjectHandle pipelineObjectHandle,
     const WGPURenderPipelineDescriptor* descriptor) {
     Reserved<WGPURenderPipeline> pipeline;
-    WIRE_TRY(Objects<WGPURenderPipeline>().Allocate(&pipeline, pipelineObjectHandle,
-                                                    AllocationState::Reserved));
+    WIRE_TRY(Allocate(&pipeline, pipelineObjectHandle, AllocationState::Reserved));
 
     auto userdata = MakeUserdata<CreatePipelineAsyncUserData>();
     userdata->device = device.AsHandle();
@@ -152,9 +151,8 @@ WireResult Server::DoDeviceCreateRenderPipelineAsync(
 
     mProcs.deviceCreateRenderPipelineAsync(
         device->handle, descriptor,
-        {nullptr, WGPUCallbackMode_AllowProcessEvents,
-         ForwardToServer<&Server::OnCreateRenderPipelineAsyncCallback>, userdata.release(),
-         nullptr});
+        MakeCallbackInfo<WGPUCreateRenderPipelineAsyncCallbackInfo,
+                         &Server::OnCreateRenderPipelineAsyncCallback>(userdata.release()));
     return WireResult::Success;
 }
 

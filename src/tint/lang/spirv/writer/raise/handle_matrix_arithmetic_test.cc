@@ -47,7 +47,7 @@ TEST_F(SpirvWriter_HandleMatrixArithmeticTest, Add_Mat2x3f) {
     func->SetParams({arg1, arg2});
 
     b.Append(func->Block(), [&] {
-        auto* result = b.Add(ty.mat2x3<f32>(), arg1, arg2);
+        auto* result = b.Add(arg1, arg2);
         b.Return(func, result);
     });
 
@@ -88,7 +88,7 @@ TEST_F(SpirvWriter_HandleMatrixArithmeticTest, Add_Mat4x2h) {
     func->SetParams({arg1, arg2});
 
     b.Append(func->Block(), [&] {
-        auto* result = b.Add(ty.mat4x2<f16>(), arg1, arg2);
+        auto* result = b.Add(arg1, arg2);
         b.Return(func, result);
     });
 
@@ -135,7 +135,7 @@ TEST_F(SpirvWriter_HandleMatrixArithmeticTest, Subtract_Mat3x2f) {
     func->SetParams({arg1, arg2});
 
     b.Append(func->Block(), [&] {
-        auto* result = b.Subtract(ty.mat3x2<f32>(), arg1, arg2);
+        auto* result = b.Subtract(arg1, arg2);
         b.Return(func, result);
     });
 
@@ -179,7 +179,7 @@ TEST_F(SpirvWriter_HandleMatrixArithmeticTest, Subtract_Mat2x4h) {
     func->SetParams({arg1, arg2});
 
     b.Append(func->Block(), [&] {
-        auto* result = b.Subtract(ty.mat2x4<f16>(), arg1, arg2);
+        auto* result = b.Subtract(arg1, arg2);
         b.Return(func, result);
     });
 
@@ -220,7 +220,7 @@ TEST_F(SpirvWriter_HandleMatrixArithmeticTest, Mul_Mat2x3f_Scalar) {
     func->SetParams({arg1, arg2});
 
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.mat2x3<f32>(), arg1, arg2);
+        auto* result = b.Multiply(arg1, arg2);
         b.Return(func, result);
     });
 
@@ -255,7 +255,7 @@ TEST_F(SpirvWriter_HandleMatrixArithmeticTest, Mul_Mat3x4f_Vector) {
     func->SetParams({arg1, arg2});
 
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.vec4<f32>(), arg1, arg2);
+        auto* result = b.Multiply(arg1, arg2);
         b.Return(func, result);
     });
 
@@ -290,7 +290,7 @@ TEST_F(SpirvWriter_HandleMatrixArithmeticTest, Mul_Mat4x2f_Mat2x4) {
     func->SetParams({arg1, arg2});
 
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.mat2x2<f32>(), arg1, arg2);
+        auto* result = b.Multiply(arg1, arg2);
         b.Return(func, result);
     });
 
@@ -325,7 +325,7 @@ TEST_F(SpirvWriter_HandleMatrixArithmeticTest, Mul_Scalar_Mat3x2h) {
     func->SetParams({arg1, arg2});
 
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.mat3x2<f16>(), arg1, arg2);
+        auto* result = b.Multiply(arg1, arg2);
         b.Return(func, result);
     });
 
@@ -360,7 +360,7 @@ TEST_F(SpirvWriter_HandleMatrixArithmeticTest, Mul_Vector_Mat3x4f) {
     func->SetParams({arg1, arg2});
 
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.vec4<f16>(), arg1, arg2);
+        auto* result = b.Multiply(arg1, arg2);
         b.Return(func, result);
     });
 
@@ -395,7 +395,7 @@ TEST_F(SpirvWriter_HandleMatrixArithmeticTest, Mul_Mat3x3f_Mat3x3) {
     func->SetParams({arg1, arg2});
 
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.mat3x3<f16>(), arg1, arg2);
+        auto* result = b.Multiply(arg1, arg2);
         b.Return(func, result);
     });
 

@@ -735,7 +735,6 @@ out:
             loader_destroy_pointer_layer_list(ptr_instance, &ptr_instance->app_activated_layer_list);
 
             loader_delete_layer_list_and_properties(ptr_instance, &ptr_instance->instance_layer_list);
-            loader_clear_scanned_icd_list(ptr_instance, &ptr_instance->icd_tramp_list);
             loader_destroy_generic_list(ptr_instance, (struct loader_generic_list *)&ptr_instance->ext_list);
 
             // Free any icd_terms that were created.
@@ -755,6 +754,7 @@ out:
                 loader_icd_destroy(ptr_instance, icd_term, pAllocator);
             }
 
+            loader_clear_scanned_icd_list(ptr_instance, &ptr_instance->icd_tramp_list);
             free_string_list(ptr_instance, &ptr_instance->enabled_layer_names);
 
             loader_instance_heap_free(ptr_instance, ptr_instance);
@@ -857,9 +857,9 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDevices(VkInstan
     struct loader_envvar_id_filter vendor_id_filter;
     struct loader_envvar_id_filter driver_id_filter;
 
-    parse_id_filter_enviroment_var(inst, VK_DEVICE_ID_FILTER_ENV_VAR, &device_id_filter);
-    parse_id_filter_enviroment_var(inst, VK_VENDOR_ID_FILTER_ENV_VAR, &vendor_id_filter);
-    parse_id_filter_enviroment_var(inst, VK_DRIVER_ID_FILTER_ENV_VAR, &driver_id_filter);
+    parse_id_filter_environment_var(inst, VK_DEVICE_ID_FILTER_ENV_VAR, &device_id_filter);
+    parse_id_filter_environment_var(inst, VK_VENDOR_ID_FILTER_ENV_VAR, &vendor_id_filter);
+    parse_id_filter_environment_var(inst, VK_DRIVER_ID_FILTER_ENV_VAR, &driver_id_filter);
 
     // Call down the chain to get the physical device info
     if ((0 == device_id_filter.count) && (0 == vendor_id_filter.count) && (0 == driver_id_filter.count)) {
@@ -2617,9 +2617,9 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDeviceGroups(
     struct loader_envvar_id_filter vendor_id_filter;
     struct loader_envvar_id_filter driver_id_filter;
 
-    parse_id_filter_enviroment_var(inst, VK_DEVICE_ID_FILTER_ENV_VAR, &device_id_filter);
-    parse_id_filter_enviroment_var(inst, VK_VENDOR_ID_FILTER_ENV_VAR, &vendor_id_filter);
-    parse_id_filter_enviroment_var(inst, VK_DRIVER_ID_FILTER_ENV_VAR, &driver_id_filter);
+    parse_id_filter_environment_var(inst, VK_DEVICE_ID_FILTER_ENV_VAR, &device_id_filter);
+    parse_id_filter_environment_var(inst, VK_VENDOR_ID_FILTER_ENV_VAR, &vendor_id_filter);
+    parse_id_filter_environment_var(inst, VK_DRIVER_ID_FILTER_ENV_VAR, &driver_id_filter);
 
     // Call down the chain to get the physical device group info.
     if ((0 == device_id_filter.count) && (0 == vendor_id_filter.count) && (0 == driver_id_filter.count)) {

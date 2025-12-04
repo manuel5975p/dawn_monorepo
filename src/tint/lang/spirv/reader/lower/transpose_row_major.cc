@@ -586,7 +586,7 @@ struct State {
 
             b.Append(fn->Block(), [&] {
                 auto* res = b.Var(ty.ptr(function, to_ty));
-                b.LoopRange(ty, u32(0), u32(*count), u32(1), [&](core::ir::Value* idx) {
+                b.LoopRange(u32(0), u32(*count), u32(1), [&](core::ir::Value* idx) {
                     core::ir::Value* transposed = nullptr;
                     auto* cur = b.Access(from_ty->ElemType(), in, idx);
                     if (auto* nested = outer_ty->ElemType()->As<core::type::Array>()) {
@@ -640,12 +640,11 @@ struct State {
         // The element type is the only thing that will change. That does not affect the stride of
         // the array itself, which may either be the natural stride or an larger stride in the case
         // of an explicitly laid out array.
-        if (arr->Is<spirv::type::ExplicitLayoutArray>()) {
-            return ty.Get<spirv::type::ExplicitLayoutArray>(elem_ty, arr->Count(), arr->Align(),
-                                                            arr->Size(), arr->Stride());
+        if (auto* ex = arr->As<spirv::type::ExplicitLayoutArray>()) {
+            return ty.Get<spirv::type::ExplicitLayoutArray>(elem_ty, arr->Count(), arr->Size(),
+                                                            ex->Stride());
         }
-        return ty.Get<core::type::Array>(elem_ty, arr->Count(), arr->Align(), arr->Size(),
-                                         arr->Stride(), arr->Stride());
+        return ty.Get<core::type::Array>(elem_ty, arr->Count(), arr->Size());
     }
 
     const core::type::Type* RewriteStruct(const core::type::Struct* old_struct) {
@@ -762,6 +761,7 @@ Result<SuccessType> TransposeRowMajor(core::ir::Module& ir) {
                                               core::ir::Capability::kAllowStructMatrixDecorations,
                                               core::ir::Capability::kAllowNonCoreTypes,
                                               core::ir::Capability::kAllowOverrides,
+                                              core::ir::Capability::kAllowPointerToHandle,
                                           });
     if (result != Success) {
         return result.Failure();
